@@ -1,16 +1,16 @@
-# 自动亮度与原厂策略
+# Auto-Brightness and Stock Policy
 
-GNOME 电源管理器按 Piano 的环境光门限和相对亮度曲线调光，保留用户手动选择的亮度，不修改 SensorProxy 的照度读数。显示关闭后停止调光，唤醒时恢复保存的亮度，再处理新的环境光。
+GNOME Power Manager adjusts screen brightness using Piano's ambient light thresholds and relative brightness curve, preserving the user's manually chosen brightness without altering SensorProxy's illuminance readings. Dimming stops when the display turns off; on wake, the saved brightness is restored before processing new ambient light readings.
 
-## 原厂配置与来源
+## Stock Configuration and Sources
 
-主环境光传感器为 Sensortek STK3BCX，原厂采样间隔为 250 ms。HyperOS 的显示服务还使用 1000／3000 ms 快慢环境窗口、辅助背面传感器、距离传感器和场景策略；GNOME 补丁只使用主传感器，不移植整套场景判断。
+The primary ambient light sensor is a Sensortek STK3BCX, sampled at 250 ms in stock firmware. HyperOS's display service also uses 1000/3000 ms fast/slow ambient windows, a secondary rear sensor, a proximity sensor, and scene-based policies; the GNOME patch uses only the primary sensor and does not port the full scene-detection stack.
 
-`linux/desktops/gnome/ambient-policy/piano.ini` 中的三条照度门限来自同机 HyperOS `OS3.0.309.0.WPYCNXM` 显示服务的运行配置：大幅增亮 15 点、变暗 19 点、小幅增亮 15 点，分别要求连续越过门限 1000／1000／5000 ms。这些是绝对 lux 曲线，不是通用的百分比回差表。例如，已接受照度为 136.01251 lux 时，三条曲线分别给出 314.8489、27.4224、243.3144 lux，与原厂显示服务保留的阈值一致。
+The three illuminance threshold curves in `linux/desktops/gnome/ambient-policy/piano.ini` come from the runtime configuration of the stock HyperOS `OS3.0.309.0.WPYCNXM` display service on the same device: 15 points for large brightening, 19 points for darkening, and 15 points for small brightening, requiring continuous threshold crossing for 1000, 1000, and 5000 ms respectively. These are absolute lux curves rather than a generic percentage hysteresis table. For example, at an accepted illuminance of 136.01251 lux, the three curves yield 314.8489, 27.4224, and 243.3144 lux, matching the thresholds held by the stock display service.
 
-108 点目标亮度曲线来自同机 HyperOS 4.0.6 的 `product.img` 中 `/overlay/AospFrameworkResOverlay.apk`：`config_autoBrightnessLevels` 前补 0 lux，与 `config_autoBrightnessDisplayValuesNits` 逐点配对。Linux 使用这些点做线性插值，不把 Android 的背光数组直接作为 Linux 百分比。
+The 108-point target luminance curve comes from `/overlay/AospFrameworkResOverlay.apk` inside `product.img` of HyperOS 4.0.6 on the same device: 0 lux is prepended to `config_autoBrightnessLevels` and paired point by point with `config_autoBrightnessDisplayValuesNits`. Linux linearly interpolates between these points instead of treating Android's backlight array directly as Linux percentages.
 
-| 环境光 | 原厂目标亮度 |
+| Ambient Light | Stock Target Luminance |
 | --- | --- |
 | 0 lux | 3.5 nit |
 | 7 lux | 24 nit |
@@ -20,13 +20,13 @@ GNOME 电源管理器按 Piano 的环境光门限和相对亮度曲线调光，�
 | 300 lux | 123 nit |
 | 500 lux | 144 nit |
 
-背光使用 KTZ8866 指数电流映射。芯片的 [04b 数据手册](https://kinet-ic.com/uploads/web/KTZ8866/KTZ8866-04b.pdf)给出 `I ∝ 1.003040572^code`；设备两颗芯片的 `BL_CFG1=0x53`，其中 `BLED_MAP=0`，与该模式一致。原厂的普通亮度／高亮度区间和 `mi_bl_level_remap` 转换见[显示亮度说明](display-depth.md#hdr-亮度与背光)。
+The backlight uses the KTZ8866 exponential current mapping. The chip's [04b datasheet](https://kinet-ic.com/uploads/web/KTZ8866/KTZ8866-04b.pdf) specifies `I ∝ 1.003040572^code`; both chips on the device have `BL_CFG1=0x53`, where `BLED_MAP=0`, matching this mode. For stock's normal/HBM brightness ranges and `mi_bl_level_remap` conversion, see [HDR Brightness and Backlight](display-depth.md#hdr-brightness-and-backlight).
 
-## 相对亮度映射
+## Relative Brightness Mapping
 
-[GSD 48.1 上游实现](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/power/gsd-power-manager.c#L2833)将亮度百分比按 lux 线性缩放。照度从 197 降到 7 lux 时，60% 会变为约 2%；而原厂目标亮度仅从 113.7 降到 24 nit，直接按照度比例计算会过度变暗。
+[Upstream GSD 48.1](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/power/gsd-power-manager.c#L2833) scales brightness percentage linearly with lux. When illuminance drops from 197 to 7 lux, 60% drops to around 2%; yet the stock target luminance only decreases from 113.7 to 24 nit, so direct lux-ratio scaling over-dims the display.
 
-Piano 策略先用三条门限确定已接受的照度，再取得目标亮度 `N(lux)`。用户在 `L0` lux 下选择 `P0` 百分比后，后续目标为：
+The Piano policy first uses the three threshold curves to determine the accepted illuminance, then looks up the target luminance `N(lux)`. Once the user selects percentage `P0` at `L0` lux, subsequent targets are computed as:
 
 ```text
 P(lux) = clamp(P0 + K × ln(N(lux) / N(L0)), 0, 100)
@@ -34,20 +34,20 @@ K = 100 / ((2047 - 20) × ln(1.003040572))
   = 16.249888161019676
 ```
 
-`20..2047` 是 GSD 在该背光接口上使用的码值范围。这里计算相对电流变化，不宣称 Linux 输出已校准到绝对 nit；内容相关背光、面板透射率和原厂 HDR 补偿也不包含在内。未来改变内核背光码值含义时，必须同步调整该系数。
+`20..2047` is the code range GSD uses on this backlight interface. This formula computes relative current change and does not claim that Linux output is calibrated to absolute nits; content-adaptive backlight control, panel transmittance, and stock HDR compensation are also excluded. If the meaning of kernel backlight code values changes in the future, this coefficient must be updated accordingly.
 
-例如，197 lux 下手动设为 60%，降到 7 lux 后目标约为 35%，升到 300 lux 后约为 61%。7 lux 下手动设为 61%，降到 0 lux 后约为 30%，不再因为照度为零直接落到最低档。用户仍能主动选择最低亮度；零百分比和零 lux 都可作为有限的基准，之后光线变亮仍能恢复。
+For example, setting brightness manually to 60% at 197 lux yields a target of about 35% when dropping to 7 lux, and about 61% when rising to 300 lux. Setting it manually to 61% at 7 lux yields about 30% at 0 lux, instead of collapsing straight to the minimum level when illuminance reaches zero. Users can still manually select minimum brightness; both 0% and 0 lux serve as finite baselines, allowing brightness to recover when ambient light increases again.
 
-持续门限后沿用 GNOME 的 0.1 Hz 指数平滑，时间常数约 1.59 秒。定时器补全没有后续传感器通知的过渡；相同整数目标不重复提交。手动调亮度立即重建基准，释放或丢失传感器时取消定时器并清除门限计时。显示关闭时不接受新的调光目标，保留亮度基准和用户请求值。
+After the debounce threshold is met, GNOME's 0.1 Hz exponential smoothing (time constant ~1.59 seconds) is retained. A timer completes transitions when no further sensor notifications arrive; identical integer targets are not resubmitted. Manual brightness changes immediately rebuild the baseline, while releasing or losing the sensor cancels the timer and resets threshold timing. While the display is off, new dimming targets are ignored, preserving both the brightness baseline and the user-requested value.
 
-## 桌面与构建接入
+## Desktop and Build Integration
 
-只在设备树包含 `xiaomi,piano` 且 SensorProxy 单位为 `lux` 时选择 Piano 曲线。其他设备、其他单位或缺配置时保留上游映射。配置和程序都安装在标准 GSD 软件包里，不增加调光服务。
+The Piano curve is selected only when the Device Tree contains `xiaomi,piano` and SensorProxy reports units in `lux`. Other devices, other units, or missing configuration fall back to the upstream mapping. Both the configuration and binary are installed inside the standard GSD package, without adding an extra dimming daemon.
 
-Debian sid 和 Nyarch 共用 GSD 51 的标准 Shell brightness API，保留 Shell 的用户亮度偏移，由 GSD 输出相对自动亮度目标；同时包含键盘背光热插拔刷新和[启动时锁屏状态同步](power-button.md#默认设置)。共享系列覆盖 51.0 和 51.1。Debian 包在签名 APT 所选源码版本后追加 `+sunuefi1`；Nyarch 保留目标 pacman 仓库的上游版本，pkgrel 后追加 `.1`。
+Debian sid and Nyarch share GSD 51's standard Shell brightness API, preserving the Shell's user brightness offset while GSD outputs the relative auto-brightness target; this also includes keyboard backlight hotplug refresh and [lock-screen state synchronization at startup](power-button.md#default-settings). The shared patch series covers 51.0 and 51.1. The Debian package appends `+sunuefi1` to the source version selected from signed APT; Nyarch keeps the upstream version from the target pacman repository and appends `.1` to `pkgrel`.
 
-`./build.sh gsd` 从目标 sid 的签名 APT 索引选择并校验源码，在隔离的 ARM64 builder 中沿原 `debian/rules` 构建。`build/gsd/runtime` 提供 daemon／common 两包，`SOURCE.json` 记录源码、目标 ABI、补丁和软件包摘要。构建命令见[策略打包说明](../../../linux/desktops/gnome/ambient-policy/README.md)。
+`./build.sh gsd` selects and verifies the source from the target sid signed APT index and builds it in an isolated ARM64 builder following the original `debian/rules`. `build/gsd/runtime` provides the daemon and common packages, and `SOURCE.json` records the source, target ABI, patches, and package digests. See the [policy packaging guide](../../../linux/desktops/gnome/ambient-policy/README.md) for build commands.
 
-## 标准设置界面
+## Standard Settings UI
 
-GNOME 设置的电源页面使用原生自动亮度开关。它要求 SensorProxy 的 `HasAmbientLight=true`，并且 GSD 提供可控制的屏幕亮度；`ambient-enabled` 控制启用状态。没有强制显示硬件能力或增加第二个设置入口。
+The Power page in GNOME Settings uses the native automatic brightness toggle. It requires SensorProxy to report `HasAmbientLight=true` and GSD to expose controllable screen brightness; `ambient-enabled` controls whether it is enabled. Hardware capabilities are not force-advertised, and no second settings entry is added.

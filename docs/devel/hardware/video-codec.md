@@ -1,29 +1,26 @@
-# Piano 视频编解码
+# Piano Video Codec
 
-视频编解码使用 Linux 的 Qualcomm Iris 驱动和标准 V4L2 接口。FFmpeg 的适配放在
-[`linux/bsp/patches/ffmpeg/`](../../../linux/bsp/patches/ffmpeg/)，四个发行版的构建都会安装带补丁的完整软件包。
+Video encoding and decoding use Linux's Qualcomm Iris driver and the standard V4L2 interface. FFmpeg patches live in [`linux/bsp/patches/ffmpeg/`](../../../linux/bsp/patches/ffmpeg/), and all four distro builds install full patched packages.
 
-## 软件包与构建
+## Packages and Builds
 
-| 系统 | FFmpeg | 构建入口 |
+| Distro | FFmpeg | Build Entry Point |
 | --- | --- | --- |
-| Debian sid | 9.0.2（Debian 源版本 `7:9.0.2-6`），保留 Debian 打包配置 | `tools/build_ffmpeg_packages.py` |
-| SteamOS | 8.1.1，保持 Valve 8.x 库接口和编译选项 | `tools/build_arch_ffmpeg.py` |
-| Nyarch | 9.0.2，保持当前 Arch 库接口 | `tools/build_arch_ffmpeg.py` |
+| Debian sid | 9.0.2 (Debian archive version `7:9.0.2-6`), keeping Debian packaging configuration | `tools/build_ffmpeg_packages.py` |
+| SteamOS | 8.1.1, keeping Valve 8.x library ABI and build options | `tools/build_arch_ffmpeg.py` |
+| Nyarch | 9.0.2, keeping current Arch library ABI | `tools/build_arch_ffmpeg.py` |
 
-Arch 构建器读取目标系统已安装包的编译选项、依赖和版本信息，保留完整编解码功能，
-重新生成 pacman 包。不会把 FFmpeg 9 降级成 7，也不会用精简调试程序覆盖系统软件。
-软件包和源码来源记录在对应发行版构建目录的 `packages/ffmpeg/SOURCE.json`。
+The Arch builder reads build options, dependencies, and version metadata from the target system's installed package, retains the full codec feature set, and rebuilds pacman packages. It neither downgrades FFmpeg 9 to 7 nor overwrites system packages with stripped debug binaries. Package and source provenance are recorded in `packages/ffmpeg/SOURCE.json` under the corresponding distro build directory.
 
-Debian 的包在 sid ARM64 环境编译；其他主机提供同一目标 ABI 的根目录，由构建器复制到隔离环境：
+Debian packages are built in a sid ARM64 environment; on other hosts, supply a rootfs matching the target ABI, which the builder copies into an isolated environment:
 
 ```sh
 sudo ./build.sh ffmpeg --sysroot build/distros/debian-sid/rootfs --output build/ffmpeg --jobs 8
 ```
 
-构建器验证签名 sid Sources、`.dsc` 及全部归档哈希，使用未删减的 Debian `debian/rules`，同时构建标准与 extra codec 变体。运行集合包含独立的 `ffplay` 和七个 FFmpeg 9 库包，不再包含已移除的 `libpostproc`。Debian 的 orig 归档与 Nyarch 使用的 FFmpeg 9 官方归档相同，复用 `patches/ffmpeg/9.0.2/series.json`，不复制一套 Debian 专用补丁。Debian 打包版本单独记录在同目录 `debian.json`。
+The builder verifies signed sid `Sources`, `.dsc`, and all archive hashes, uses the unmodified Debian `debian/rules`, and builds both the standard and extra codec variants. The runtime package set includes the standalone `ffplay` and the seven FFmpeg 9 library packages, omitting the removed `libpostproc`. Debian's orig tarball is identical to the official FFmpeg 9 tarball used by Nyarch and reuses `patches/ffmpeg/9.0.2/series.json` rather than duplicating a Debian-specific patch set. The Debian packaging version is recorded separately in `debian.json` in the same directory.
 
-单独准备共用源码：
+To prepare the shared source tree standalone:
 
 ```sh
 python tools/prepare_ffmpeg_source.py \
@@ -31,87 +28,47 @@ python tools/prepare_ffmpeg_source.py \
   --output build/ffmpeg-source-9
 ```
 
-源码归档及补丁固定 SHA256，补丁禁止模糊匹配，不修改 `upstream/`。
-FFmpeg 8 和 9 分别使用官方 8.1.1、9.0.2 归档。上游 9.0.2 及 Debian 的补丁系列尚未包含这些 V4L2 修正，因此继续重建标准发行版软件包。
+Source archives and patches are pinned by SHA256, fuzzy patch application is disabled, and `upstream/` is never modified. FFmpeg 8 and 9 use the official 8.1.1 and 9.0.2 archives respectively. Upstream 9.0.2 and Debian's patch series do not yet include these V4L2 fixes, so the standard distro packages continue to be rebuilt.
 
-SteamOS 和 Nyarch 的包缓存同时核对版本、补丁系列与二进制包哈希。
-修改系列后重新构建完整包；复用缓存时重新安装该包，不保留被基础软件源替换的版本。
+The SteamOS and Nyarch package caches check version, patch series, and binary package hashes together. Modifying the patch series triggers a full rebuild; reusing the cache reinstalls the cached package rather than leaving a version overwritten by the base repositories.
 
-Debian 的 `SOURCE.json` 同时绑定签名 sid 源身份、目标已安装运行库 ABI、原始 `debian/rules`／`debian/control`、补丁和二进制哈希。源码或 ABI 改变不能命中旧包；同目录的 `--resume` 校验这些身份后复用完整 `.changes` 或继续未完成对象，不重下已验哈希的归档、不重新配置完整软件包。
+Debian's `SOURCE.json` binds the signed sid archive identity, target installed runtime library ABI, original `debian/rules` and `debian/control`, patches, and binary hashes together. Any source or ABI change invalidates cached packages; `--resume` in the same directory verifies these identities before reusing a complete `.changes` build or resuming incomplete targets, without re-downloading hash-verified archives or reconfiguring already-complete packages.
 
-## Qt 录制
+## Qt Recording
 
-在 Debian 上，Qt Multimedia 录制 8 位 H.264 的 MP4 或 MOV 时，先尝试 Qt 原有的硬件编码器，再尝试 V4L2。打不开编码设备时继续走原有的软件编码。Qt 按尺寸、帧率和码率选择 H.264 级别，例如 3840×2160、60 fps 请求 Level 5.2。项目的 FFmpeg 包会把这一级别交给 V4L2 驱动。
+On Debian, when Qt Multimedia records 8-bit H.264 into MP4 or MOV, it tries Qt's existing hardware encoders first and then falls back to V4L2. If the encoder device cannot be opened, it falls back to the original software encoder. Qt selects the H.264 level from resolution, frame rate, and bitrate—for example, requesting Level 5.2 for 3840×2160 at 60 fps. The project's FFmpeg packages pass this level through to the V4L2 driver.
 
-Qt 的改动随 Debian 原生包提供，不需要给应用设置插件路径。APT 源保留 Qt Multimedia 的同版本 ARM64 运行包、开发包和示例；不依赖这些包版本的文档仍从 Debian 官方源安装。
+The Qt changes are delivered as native Debian packages, requiring no custom plugin paths for applications. The APT repository hosts matching ARM64 runtime, development, and example packages for Qt Multimedia; version-independent documentation continues to install from official Debian repositories.
 
-在平板上安装这组 Qt 包及签名源的 FFmpeg 后，用系统的 Plasma Camera
-直接录制真实后摄及内置麦克风，不运行旧相机服务，不加载虚拟摄像头。
-相机已按所选档位采集时，Plasma Camera 保留实际采集时间戳，不再按另一个
-时钟抽帧。后摄实录 65 秒，MP4 可解码出 3921 张 3840×2160 画面，码流为
-H.264 Level 5.2、约 21.8 Mbit/s，最长画面间隔约 16.67 ms。
-前摄也用 Iris 完成 1920×1080／30 fps 有声录像，码流为 Level 4.0。
-音轨与画面结束时间可相差约 0.4 秒；还要对照同一声光事件检查同步，
-不能用两个轨道都能解码代替同步验收。
+With these Qt packages and the signed-source FFmpeg packages installed on the tablet, the system's Plasma Camera records directly from the real rear camera and built-in microphone, without running legacy camera services or loading a virtual camera. When the camera captures at the selected profile, Plasma Camera preserves actual capture timestamps instead of resampling frames on a separate clock. A 65-second rear-camera recording produces an MP4 decoding to 3921 frames at 3840×2160, encoded as H.264 Level 5.2 at ~21.8 Mbit/s, with a maximum frame interval of ~16.67 ms. The front camera also records 1920×1080 at 30 fps with audio through Iris at Level 4.0. Audio and video track end times can differ by ~0.4 s; A/V sync must still be verified against a shared audiovisual event rather than treated as passing simply because both tracks decode cleanly.
 
-## 解码流程修正
+## Decode Flow Fixes
 
-依据 [Linux stateful decoder 文档](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dev-decoder.html)，
-先向 OUTPUT 队列提交压缩数据，收到初始 SOURCE_CHANGE 后才配置 CAPTURE 队列。
-后者负责交付解码后的画面。
+Per the [Linux stateful decoder documentation](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dev-decoder.html), compressed data is submitted to the OUTPUT queue first, and the CAPTURE queue is configured only after the initial `SOURCE_CHANGE` event arrives. The CAPTURE queue delivers the decoded frames.
 
-视频中途改变分辨率时，必须先取完旧画面以及标有 LAST 的最后一个缓冲区，再恢复解码。
-容量足够时复用缓冲区，否则只重建 CAPTURE，保留 OUTPUT 中尚未处理的数据。
-空 LAST 表示切换边界，不应生成画面；LAST 携带有效数据时仍要交付最后一帧。
+When resolution changes mid-stream, all old frames and the final buffer marked `LAST` must be drained before decoding resumes. Existing buffers are reused if their capacity is sufficient; otherwise, only the CAPTURE queue is reallocated while unprocessed data in OUTPUT is preserved. An empty `LAST` buffer marks a transition boundary and must not emit a frame; a `LAST` buffer carrying valid payload must still deliver the final frame.
 
-输入文件结束与分辨率切换分别处理。STOP 只在两个队列都运行时发送，EOS 通知
-不会直接丢弃尚未取出的画面。非阻塞 DQEVENT 返回 ENOENT 表示事件队列为空，
-不作为解码错误；其他 I/O 错误仍返回给调用者。
+End-of-file and resolution changes are handled separately. `STOP` is issued only when both queues are streaming, and an EOS notification does not discard unretrieved frames. A non-blocking `DQEVENT` returning `ENOENT` indicates an empty event queue rather than a decode error; other I/O errors are still propagated to the caller.
 
-## 已验证与剩余问题
+## Verified Cases and Remaining Issues
 
-FFmpeg 7 的适配和 Nyarch 完整 FFmpeg 9 软件包，均已在 Iris 硬件上完成
-640×480 H.264 样本的 12 帧解码和 12 帧编码。这个结果不能推导为所有格式、
-分辨率和播放器都已正常。
+Both the FFmpeg 7 patch set and the full Nyarch FFmpeg 9 package have completed 12-frame decode and 12-frame encode of a 640×480 H.264 sample on Iris hardware. This result does not imply that all codecs, resolutions, and players work.
 
-640×480 → 1280×720 的连续码流暴露了两处问题：
+A continuous 640×480 → 1280×720 stream exposed two issues:
 
-1. **旧画面引用阻塞重新分配。** 播放器可以保留上一帧，同时等待下一帧；
-   原来的 FFmpeg 却要等旧引用全部释放，才创建新缓冲区。默认补丁使用
-   驱动声明的 `V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS` 能力，将旧映射保留到最后一个引用释放，
-   同时建立新一代缓冲区，不提前释放播放器仍在使用的内存。
-2. **Iris 重复发送结束标记。** 驱动把正常的空 PSC_LAST 标成 ERROR，并在处理
-   ERROR 时跳过 LAST 状态更新。随后新队列又收到一次 LAST，使播放器提前结束。
-   内核补丁修正了空 PSC_LAST 的判断，并让带错误的最后一帧也正确结束旧队列。
+1. **Stale frame references blocking reallocation.** Players may retain the previous frame while waiting for the next; stock FFmpeg waited for all old references to be released before allocating new buffers. The default patch uses the driver's advertised `V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS` capability to keep old mappings alive until the last reference drops while allocating a new generation of buffers, avoiding premature freeing of memory still used by the player.
+2. **Duplicate end markers from Iris.** The driver flagged a normal empty `PSC_LAST` as `ERROR` and skipped the `LAST` state update when handling `ERROR`. The new queue then received another `LAST`, terminating playback early. The kernel patch fixes empty `PSC_LAST` detection and ensures a final frame carrying an error still properly closes out the old queue.
 
-FFmpeg 缓冲区补丁与 Iris 的 PSC_LAST 修正均已纳入默认构建；内核改动收在
-[`0004-media.patch`](../../../patches/linux/7.3/0004-media.patch) 中。
-FFmpeg 7 和 9 在实机完成 640×480 → 1280×720 → 640×480 的连续切换，
-36 帧全部解码、零解码错误，两版也各完成 12 帧 H.264 硬件编码。
+Both the FFmpeg buffer patch and the Iris `PSC_LAST` fix are included in default builds; the kernel changes live in [`0004-media.patch`](../../../patches/linux/7.3/0004-media.patch). Both FFmpeg 7 and 9 completed continuous 640×480 → 1280×720 → 640×480 transitions on hardware with all 36 frames decoded and zero decode errors, and both versions completed 12 frames of H.264 hardware encoding.
 
-SteamOS 的完整 FFmpeg 8.1.1 包复用同一份 NV12 行复制、序列头合并和未启动编码器
-退出修正。输入帧只提供可见高度，驱动的对齐高度仅用于目标缓冲区布局，
-不能按后者读取源图像。实机已完成 1280×720 的 30 帧 H.264 编码和全部 30 帧硬解。
-裸码流的帧数检查使用 `-fps_mode passthrough`，避免输出同步策略丢弃时间戳相同的画面。
+SteamOS's full FFmpeg 8.1.1 package reuses the same NV12 row-copy, sequence-header merge, and unstarted-encoder teardown fixes. Input frames only supply the visible height; the driver's aligned height applies solely to destination buffer layout and must not be used to read past the source image. On hardware, 30 frames of 1280×720 H.264 encode and all 30 frames of hardware decode passed. Frame-count checks on raw bitstreams use `-fps_mode passthrough` so output sync logic does not drop frames with identical timestamps.
 
-同一内核补丁在取得核心锁之前先等待中断线程结束，
-修复实机发现的驱动退出死锁。设备已完成模块卸载、重新加载和正常重启。
+The same kernel patch waits for interrupt threads to finish before acquiring the core lock, fixing a driver-teardown deadlock observed on hardware. Module unload, reload, and normal reboot have been verified on the device.
 
-Iris 的 V4L2 帧率协商在设置 OUTPUT 时同步 CAPTURE，单独设置 CAPTURE
-不反向改 OUTPUT。开流中不能应用的编码帧率变更返回 `EBUSY`，原值保留。
-平板已核对协商值、超限拒绝和停流后重新设置。
+Iris V4L2 frame-rate negotiation syncs CAPTURE when OUTPUT is set, while setting CAPTURE alone does not back-propagate to OUTPUT. Encoder frame-rate changes that cannot be applied while streaming return `EBUSY` and preserve the previous value. Negotiated values, out-of-range rejection, and reconfiguration after stream stop have been verified on the tablet.
 
-后摄 3840×2160 画面可由 Iris 编成 H.264，与内置麦克风的 AAC 一起直接写 MP4。
-实测 8 秒的文件能完整解码 423 帧，平均约 53 fps；码流报告 H.264 High Level 5.0。
-3840×2160@60 至少需要 H.264 Level 5.2。两套 FFmpeg 补丁共用同一改动，
-让 `h264_v4l2m2m -level:v 52` 在开流前把 Level 5.2 请求交给 V4L2。
-不指定级别时保留驱动默认值；驱动拒绝指定值时报告错误。平板以 720p 测试图案
-编码时，读回默认 Level 5.0、显式 Level 5.2，两段各成功解码 30 帧。
-3840×2160 的合成输入也完整读回 120 帧、60 fps 和 Level 5.2。
-这只核对编码和封装，不包含相机采集、实时帧间隔或长时间音画同步。
+3840×2160 frames from the rear camera can be encoded to H.264 by Iris and muxed directly into MP4 alongside AAC audio from the built-in microphone. An 8-second test recording decoded cleanly to 423 frames (~53 fps average); the bitstream reported H.264 High Level 5.0. 3840×2160@60 requires at least H.264 Level 5.2. Both FFmpeg patch sets share a change allowing `h264_v4l2m2m -level:v 52` to request Level 5.2 from V4L2 before streaming starts. Omitting the level keeps the driver default; if the driver rejects an explicit value, an error is reported. Encoding a 720p test pattern on the tablet read back the default Level 5.0 and explicit Level 5.2, with 30 frames decoded cleanly for each clip. Synthetic 3840×2160 input also read back 120 frames at 60 fps and Level 5.2. This verifies encoding and muxing only, not camera capture, live frame pacing, or long-duration A/V sync.
 
-FFmpeg 的 `h264_v4l2m2m` 随第一包提供 H.264 的 SPS/PPS，而直写 Matroska
-在首包之前就需要这组参数。TS 可在码流内接收它们，录好后可以通过 `-c copy` 转封。
+FFmpeg's `h264_v4l2m2m` delivers H.264 SPS/PPS with the first packet, whereas muxing directly to Matroska requires those parameters before the first packet. MPEG-TS accepts them in-band and can be remuxed afterward with `-c copy`.
 
-后续验证必须确认完整输出切换前后的全部帧，不能仅看进程退出码。其他编码格式、
-容器播放时序以及播放器自动选择硬解的行为，也需要分别检查。
+Follow-up verification must confirm all frames before and after transitions are emitted intact rather than relying solely on process exit codes. Other codecs, container playback timing, and automatic hardware-decode selection in media players also need separate testing.

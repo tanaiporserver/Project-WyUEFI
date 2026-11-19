@@ -1,10 +1,10 @@
-# Piano 传感器
+# Piano Sensors
 
-发布构建使用 [piano-sensors](https://github.com/blu-sharky/piano-sensors/tree/65a92202db65ad13493b43fbf15d6abb3b7bcf92) 的固定提交 `65a92202db65ad13493b43fbf15d6abb3b7bcf92`，源码位于 `upstream/piano-sensors-current`。它提供标准 FastRPC/SSC 用户空间、设备数据导入和 iio-sensor-proxy 启动顺序。本地补丁增加 vendor 文件服务配置的只读导入，并在 PD 前加载 socinfo；没有另写 daemon。
+Release builds use the pinned [piano-sensors](https://github.com/blu-sharky/piano-sensors/tree/65a92202db65ad13493b43fbf15d6abb3b7bcf92) commit `65a92202db65ad13493b43fbf15d6abb3b7bcf92`, located in `upstream/piano-sensors-current`. It provides the standard FastRPC/SSC userspace, device data import, and `iio-sensor-proxy` startup ordering. Local patches add read-only import of the vendor file service configuration and load `socinfo` before starting the PD; no custom daemon is written.
 
-## 构建与包来源
+## Build and Package Sources
 
-在 Debian sid root ARM64 builder 中运行；其他主机用 `--sysroot` 指定已完成的 sid ARM64 根目录：
+Run inside a Debian sid root ARM64 builder; on other hosts, pass `--sysroot` pointing to a completed sid ARM64 root directory:
 
 ```sh
 ./build.sh sources
@@ -12,26 +12,26 @@
 ./build.sh release-rootfs
 ```
 
-`sensors` 默认写入 `build/sensors`，要求源码 HEAD 与固定提交一致、工作区干净，再将源码复制到输出目录的 `upstream/` 并应用 `config/release.json` 列出的补丁。构建器从签名 sid Sources 取得 libssc 和 iio-sensor-proxy，核对 `.dsc` 和所有归档的 SHA-256，经原有 Debian quilt、Meson 和 debhelper 配方生成软件包，不运行上游的 trixie 构建脚本。上游 checkout 保持干净。
+`sensors` writes to `build/sensors` by default. It requires the source `HEAD` to match the pinned commit with a clean working tree, copies the source into `upstream/` under the output directory, and applies the patches listed in `config/release.json`. The builder fetches `libssc` and `iio-sensor-proxy` from signed sid `Sources`, verifies the SHA-256 of the `.dsc` and all archives, and builds packages through the original Debian quilt, Meson, and debhelper recipes without running the upstream trixie build script. The upstream checkout stays clean.
 
 ```sh
 sudo ./build.sh sensors build/sensors --sysroot build/distros/debian-sid/rootfs --jobs 8
 ```
 
-`--sysroot` 只读复制输入根目录；构建依赖、APT 源和编译工具只进入输出目录内的隔离副本。`--libssc-only` 保留只构建库与 CLI 的入口。导入器补丁按上游包版本 5 登记；目标源版本和本地包修订号统一记录在 `patches/piano-sensors/5/build.json`，运行依赖由目标 sid 库生成。完整包缓存核对目标库版本、签名源身份、原始 Debian 配方及补丁哈希；同目录加 `--resume` 复用已完成的源包和未完成的对象，不重复下载通过校验的归档，也不重复配置已完成的包。
+`--sysroot` copies the input root directory read-only; build dependencies, APT sources, and build tools are only installed into an isolated copy inside the output directory. `--libssc-only` remains available to build only the library and CLI. Importer patches are registered against upstream package version 5; target source versions and local package revisions are recorded centrally in `patches/piano-sensors/5/build.json`, and runtime dependencies are generated against the target sid libraries. The full package cache verifies target library versions, signed source identity, original Debian recipes, and patch hashes; passing `--resume` on the same directory reuses completed source packages and partial build objects without re-downloading verified archives or reconfiguring finished packages.
 
-官方 CI 的 runtime 集合为六个包：
+The official CI runtime set consists of six packages:
 
-| 包 | 当前固定源码对应的版本 |
+| Package | Version for Current Pinned Source |
 | --- | --- |
-| `piano-sensors` | sid 构建为 `5+sunuefi2`，架构 `all` |
-| `fastrpc-support`、`libfastrpc1` | sid 标准包 `1.0.9-1`，架构 `arm64` |
-| `libssc2`、`libssc-bin` | `0.4.4-2.1+piano1+sunuefi3`，架构 `arm64` |
-| `iio-sensor-proxy` | `3.9-1+piano1+sunuefi1`，架构 `arm64` |
+| `piano-sensors` | sid build `5+sunuefi2`, arch `all` |
+| `fastrpc-support`, `libfastrpc1` | standard sid package `1.0.9-1`, arch `arm64` |
+| `libssc2`, `libssc-bin` | `0.4.4-2.1+piano1+sunuefi3`, arch `arm64` |
+| `iio-sensor-proxy` | `3.9-1+piano1+sunuefi1`, arch `arm64` |
 
-FastRPC 使用签名 sid `contrib` Packages 验证的标准二进制包，不再下载 trixie-backports 包。基础配方同时启用 `main contrib` 的二进制与源码索引。libssc 的属性类型与公开向量接口、iio-sensor-proxy 的启动认领顺序修正仍未包含在上述 sid 源码中，因此保留对应补丁。版本、签名索引及归档哈希、六包集合均记录到输出清单。
+FastRPC uses standard binary packages verified against signed sid `contrib` `Packages` indices instead of downloading `trixie-backports` packages. The base recipe enables both binary and source indices for `main contrib`. The `libssc` property type fixes and public vector interface, as well as the `iio-sensor-proxy` startup claim-order fix, are not yet present in these sid sources, so the corresponding patches are retained. Versions, signed index and archive hashes, and the six-package set are all recorded in the output manifest.
 
-`tools/build_release_rootfs.py --sensors-dir` 默认使用 `build/sensors/runtime`。六个 `.deb` 需直接位于该目录；`SOURCE` 和 `SHA256SUMS` 可一同放在它的父目录或目录内。顶层构建成功后写入的 `SOURCE` 为：
+`tools/build_release_rootfs.py --sensors-dir` defaults to `build/sensors/runtime`. All six `.deb` files must sit directly in that directory; `SOURCE` and `SHA256SUMS` may reside together in either its parent directory or the directory itself. After a successful top-level build, the written `SOURCE` file contains:
 
 ```json
 {
@@ -40,89 +40,68 @@ FastRPC 使用签名 sid `contrib` Packages 验证的标准二进制包，不再
   "patches": [
     {
       "path": "patches/piano-sensors/0001-import-vendor-reg-config.patch",
-      "sha256": "<构建时记录的补丁 SHA-256>"
+      "sha256": "<patch SHA-256 recorded at build time>"
     },
     {
       "path": "patches/piano-sensors/0002-fix-libssc-property-types.patch",
-      "sha256": "<构建时记录的补丁 SHA-256>"
+      "sha256": "<patch SHA-256 recorded at build time>"
     },
     {
       "path": "patches/piano-sensors/0003-libssc-raw-vector-reports.patch",
-      "sha256": "<构建时记录的补丁 SHA-256>"
+      "sha256": "<patch SHA-256 recorded at build time>"
     }
   ]
 }
 ```
 
-rootfs builder 核对来源字段、补丁清单与补丁哈希、每个 runtime 包的 SHA-256、包名、架构及上述版本，并要求六包齐全。原上游 CI 的 trixie 二进制包不满足 sid 发布输入。校验文件中的路径以它所在目录为基准，解压后需保持 `runtime/` 层级；开发包、调试包、`.changes` 和 `.buildinfo` 留在 `sources/` 供构建核对，不要求随 runtime 分发。
+The rootfs builder validates the source fields, patch list and patch hashes, and the SHA-256, package name, architecture, and exact version of each runtime package, requiring all six packages to be present. Upstream CI trixie binary packages do not satisfy the sid release input requirements. Paths in the checksum file are relative to its containing directory, so extraction must preserve the `runtime/` layout; dev packages, debug packages, `.changes`, and `.buildinfo` remain in `sources/` for build verification and do not need to be distributed with the runtime set.
 
-这些包通过普通、保留签名检查的 APT 安装，以解析依赖。当前发布 rootfs 基线还需要 `erofs-utils`、`libqmi-glib5`、`libqmi-proxy`、`libqrtr-glib0`；APT 同时解析 `libmbim-glib4`、`libmbim-proxy`，其余运行库沿用已有 rootfs 的 ABI。离线安装也必须备齐这些依赖。
+These packages are installed via standard APT with signature checking intact to resolve dependencies. The current release rootfs baseline also requires `erofs-utils`, `libqmi-glib5`, `libqmi-proxy`, and `libqrtr-glib0`; APT resolves `libmbim-glib4` and `libmbim-proxy` as well, while the remaining runtime libraries follow the existing rootfs ABI. Offline installations must also supply all of these dependencies.
 
-## 启动与设备数据
+## Startup and Device Data
 
-ADSP 由内核 `remoteproc` 自动启动；用户空间按 `piano-sensors-import.service` → `adsprpcd-sensorspd.service` → `iio-sensor-proxy.service` 运行。sensors PD 依赖原厂配置导入，并等待标准 FastRPC 设备节点，不依赖启动 DSP 的项目脚本。`ExecStartPre` 加载 `socinfo` 和 `fastrpc`。`adsprpcd sensorspd` 启动后，上游脚本最多等待 60 秒，依次查询 accelerometer、light、proximity、compass。超时仍继续启动并记录缺失类型，所以服务 active 不代表四类传感器均正常。
+ADSP is auto-started by kernel `remoteproc`; userspace starts in the order `piano-sensors-import.service` → `adsprpcd-sensorspd.service` → `iio-sensor-proxy.service`. The sensors PD depends on stock configuration import and waits for standard FastRPC device nodes rather than project scripts to boot the DSP. `ExecStartPre` loads `socinfo` and `fastrpc`. After `adsprpcd sensorspd` starts, the upstream script waits up to 60 seconds and queries `accelerometer`, `light`, `proximity`, and `compass` in sequence. On timeout, startup still proceeds and logs the missing types, so an active service does not guarantee all four sensor types are functional.
 
-上游包 mask `adsprpcd.service`（根 PD）与 `adsprpcd_audiopd.service`，并用 `/etc/udev/rules.d/59-fastrpc-remoteproc.rules` 覆盖 FastRPC 自动启动所有 DSP 的规则。ADSP 启动由内核负责，再运行 sensors PD；当前音频 GPR 路径不依赖 audio PD。
+The upstream package masks `adsprpcd.service` (root PD) and `adsprpcd_audiopd.service`, and overrides FastRPC's rule that auto-starts all DSPs via `/etc/udev/rules.d/59-fastrpc-remoteproc.rules`. The kernel handles ADSP boot before the sensors PD starts; the current audio GPR path does not depend on the audio PD.
 
-首次启动时，import 从这台平板自己的 ODM 配置、vendor 文件服务配置和 persist 注册表/校准数据生成 `/var/lib/piano-sensors` 中的副本。vendor 的 `/etc/sensors/sns_reg_config` 通过 read-only device-mapper 与 `dump.erofs` 读取，以临时文件检查非空后原子保存为 `/var/lib/piano-sensors/vendor/sns_reg_config`，并链接至 `/vendor/etc/sensors/sns_reg_config`。ODM 也使用只读映射；persist 保留 `ro,noload` 挂载，ADSP 后续更新写入导入副本。构建不复制 `内部记录目录 中的用户数据，也不随镜像分发这些配置或校准文件。
+On first boot, the importer populates `/var/lib/piano-sensors` from this tablet's own ODM configuration, vendor file service configuration, and `persist` registry/calibration data. Vendor `/etc/sensors/sns_reg_config` is read via a read-only device-mapper target and `dump.erofs`, verified non-empty in a temporary file, atomically saved to `/var/lib/piano-sensors/vendor/sns_reg_config`, and linked to `/vendor/etc/sensors/sns_reg_config`. ODM also uses a read-only mapping; `persist` remains mounted `ro,noload`, and subsequent ADSP updates are written to the imported copy. The build does not copy user data from the internal logs directory, nor does it distribute these configuration or calibration files with the image.
 
-importer 默认读取 `super` 的 primary metadata slot 0，并选择 `odm_a`、`vendor_a`。部署前需与当前 ROM 的逻辑分区布局核对；`PIANO_SENSORS_ODM_NAME` / `PIANO_SENSORS_VENDOR_NAME` 可覆盖名称，`PIANO_SENSORS_ODM` / `PIANO_SENSORS_VENDOR` 可直接提供已有只读 EROFS 设备或镜像，`PIANO_SENSORS_VENDOR_LINK` 可覆盖链接位置。名称变量不改变 metadata slot 0 的读取方式。不能仅凭包安装成功判断它导入了当前 ROM 的配置。
+By default, the importer reads primary metadata slot 0 of `super` and selects `odm_a` and `vendor_a`. Verify this against the current ROM's logical partition layout before deployment: `PIANO_SENSORS_ODM_NAME` / `PIANO_SENSORS_VENDOR_NAME` override partition names, `PIANO_SENSORS_ODM` / `PIANO_SENSORS_VENDOR` supply an existing read-only EROFS device or image directly, and `PIANO_SENSORS_VENDOR_LINK` overrides the symlink path. The name variables do not change how metadata slot 0 is read. Successful package installation alone does not guarantee that the current ROM's configuration was imported.
 
-本机原厂 vendor 文本为 version 1，包含 input/output/property 路径，没有其他设备示例中的 hw_platform 映射；persist 下同名文件则是已解析 JSON 的时间戳缓存，二者不能互换。现场日志已确认 SSC QMI service 400 可通信，`registry` SUID 可发现，但 `accel` 查询返回空 UID。补齐配置后的读数仍需正常重启后的验证；不增加等待时间或添加固定平台值来掩盖空 UID。
+The stock vendor text file on this device is version 1, containing input/output/property paths without the `hw_platform` mapping seen in examples from other devices; the file of the same name under `persist` is a parsed-JSON timestamp cache, and the two are not interchangeable. Field logs confirmed that SSC QMI service 400 is reachable and the `registry` SUID is discoverable, while the `accel` query returned an empty UID. Readings after completing the configuration still require verification after a clean reboot; do not mask empty UIDs by extending timeouts or injecting hardcoded platform values.
 
-`system_heap` 暂不作为产品服务依赖。2026-10-08 的冷启动启用该 heap 后，反向 RPC 返回 `0xe`；之前 fastrpc ioctl fallback 能读 JSON。已确认的两条路径差异如下：
+`system_heap` is not currently a production service dependency. During a cold boot on 2026-10-08 with this heap enabled, reverse RPC returned `0xe`, whereas the earlier `fastrpc` ioctl fallback was able to read JSON. Confirmed differences between the two paths:
 
-* [FastRPC 1.0.7 rpcmem](https://github.com/qualcomm/fastrpc/blob/v1.0.7/src/rpcmem_linux.c) 优先打开 `/dev/dma_heap/system`；只有打开失败才改用 fastrpc 分配 ioctl。前者导入一般页组成的 DMA-BUF，后者来自 compute-cb 的 `dma_alloc_coherent`，受其 DMA mask 约束。
-* 当前 [fastrpc 映射](../../../patches/linux/7.3/0011-fastrpc-drain-ssr-invokes.patch) 只取首段 SG DMA 地址，并用一个连续地址区间传给 DSP。identity/direct domain 下非连续物理 SG 不满足这一表示；translated DMA domain 可由 IOMMU 提供连续 IOVA。
-* listener 最小 buffer 为4 KiB，所以还需核对单段情况。DMA32 的高物理页可能经 SWIOTLB bounce；system_heap 提供 CPU/device 同步回调，但当前 rpcmem/listener 未调用 DMA-BUF CPU 同步接口，fastrpc 也没有相应 SG 同步。未取得失败 buffer 的物理/DMA地址、SG段数和同步状态前，不把 bounce 作为已确认根因。
-* [AEE 错误定义](https://github.com/qualcomm/fastrpc/blob/v1.0.7/inc/AEEStdErr.h) 中 `0xe` 是 `AEE_EBADPARM`、`0x14` 是 `AEE_EUNSUPPORTED`；`mod_table` 日志不能直接解释为内核 `-EFAULT` 或 SMMU fault。
+* [FastRPC 1.0.7 rpcmem](https://github.com/qualcomm/fastrpc/blob/v1.0.7/src/rpcmem_linux.c) prefers opening `/dev/dma_heap/system` and falls back to the `fastrpc` allocation ioctl only if opening fails. The former imports a DMA-BUF backed by regular pages; the latter allocates via `dma_alloc_coherent` on `compute-cb`, constrained by its DMA mask.
+* The current [fastrpc mapping](../../../patches/linux/7.3/0011-fastrpc-drain-ssr-invokes.patch) takes only the first scatter-gather (SG) DMA address and passes a single contiguous address range to the DSP. Under an identity/direct domain, discontiguous physical SG lists cannot satisfy this representation; a translated DMA domain allows the IOMMU to provide a contiguous IOVA.
+* The minimum listener buffer size is 4 KiB, so single-segment cases also need checking. High physical pages under `DMA32` may bounce through SWIOTLB; `system_heap` provides CPU/device sync callbacks, yet neither `rpcmem`/listener invokes DMA-BUF CPU sync APIs nor does `fastrpc` perform matching SG sync. Until the failing buffer's physical/DMA addresses, SG segment count, and sync state are captured, bouncing is not treated as a confirmed root cause.
+* In [AEE error definitions](https://github.com/qualcomm/fastrpc/blob/v1.0.7/inc/AEEStdErr.h), `0xe` is `AEE_EBADPARM` and `0x14` is `AEE_EUNSUPPORTED`; `mod_table` log messages cannot be interpreted directly as kernel `-EFAULT` or an SMMU fault.
 
-`patches/linux/7.3/0001-platform.patch` 为 SM8750 compute-cb 选择标准 DMA domain，保留其他设备的现有策略；只取消预加载不能覆盖摄像头等其他功能启用 heap 的情况。临时 namespace 只用于早先的一次分配路径对照，没有作为产品方案。
+`patches/linux/7.3/0001-platform.patch` selects a standard DMA domain for SM8750 `compute-cb` while keeping existing policies for other devices; simply dropping preloading does not cover cases where camera or other features enable the heap. A temporary namespace was used only for an earlier allocation-path comparison and is not a production solution.
 
-本地 native 包已用 Debian trixie ARM64 sysroot、QEMU 与标准 `dpkg-buildpackage -b -us -uc -aarm64` 构建为 `5+sunuefi1`，保留 socinfo，去掉 system_heap 预加载。`build/sensors-patched/runtime` 复用官方 CI 的另外五包；父目录的 SOURCE、SHA256SUMS 与 BUILD.json 记录源码/补丁/包哈希及构建来源，可作为 `--sensors-dir` 输入。该包构建通过不代表上述 DMA 映射问题已解决。
+The local native package was built as `5+sunuefi1` using a Debian trixie ARM64 sysroot, QEMU, and standard `dpkg-buildpackage -b -us -uc -aarm64`, keeping `socinfo` and removing `system_heap` preloading. `build/sensors-patched/runtime` reuses the other five packages from official CI; `SOURCE`, `SHA256SUMS`, and `BUILD.json` in the parent directory record source/patch/package hashes and build provenance, and can be passed directly to `--sensors-dir`. A passing package build does not mean the DMA mapping issue above is resolved.
 
-## 运行状态
+## Runtime Status
 
-2026-10-08，当前a8+CPUCP版本通过普通BOOT启动后，标准SSC客户端已返回
-陀螺仪三轴、罗盘连续读数和光线0lux。陀螺仪在现有libssc中已有实现，CLI帮助
-漏列但 `ssccli --sensor gyroscope --timeout 3` 可以使用；其输出中的`m/s`
-不是已核验的角速度单位，后续修正须依据协议，不据该字符串换算测值。
+On 2026-10-08, after booting the current `a8+CPUCP` build via normal BOOT, the standard SSC client returned 3-axis gyroscope data, continuous compass readings, and 0 lux for ambient light. Gyroscope support already exists in `libssc`; although omitted from CLI help, `ssccli --sensor gyroscope --timeout 3` works. The `m/s` unit printed in its output is not a verified angular velocity unit; future fixes must follow the protocol rather than converting values based on that string.
 
-从本机原厂`sensors.qsh.so`核对数据类型后，通过正常libssc SUID查询确认
-`rgb`（STK3BCX）、`cct_front`（STK3BCX前置色温）、`ambient_light_back`
-及`ambient_light_back_strm`（SIP1328后置光线）、`flicker`（SIP1328）可用。
-前置色温、后置光线和防闪烁均已限时订阅并正常关闭，收到原始SSC报告。
-前两者使用1025标准浮点载荷；防闪烁为769独立格式，不把未知字段强标成
-lux、Kelvin或Hz。后置事件包含六个浮点分量，原厂handler原样转交Android。
-这证明通道和数据到达，尚未完成全部语义、桌面策略或校准验证。
+After verifying data types against the device's stock `sensors.qsh.so`, normal `libssc` SUID queries confirmed availability of `rgb` (STK3BCX), `cct_front` (STK3BCX front color temperature), `ambient_light_back` and `ambient_light_back_strm` (SIP1328 rear ambient light), and `flicker` (SIP1328). Timed subscriptions to front color temperature, rear ambient light, and flicker all received raw SSC reports and closed cleanly. The first two use standard float payload 1025; flicker uses a separate format 769, and unknown fields are not forced into lux, Kelvin, or Hz labels. Rear ambient light events carry six floating-point components, which the stock handler forwards verbatim to Android. This proves channel connectivity and data delivery, not full semantic, desktop policy, or calibration verification.
 
-库另有三个属性声明错误：`available`/`sample-rate`/`stream-type`注册为
-字符串，getter却写boolean/float/uint，读取触发GLib类型检查失败。标准软件包
-已通过 Debian quilt 修正，并使用原有 `debian/rules` 构建标准 ARM64 库、CLI、开发包和 GIR。默认构建已选择此补丁；只重建库可用 `./build.sh sensors build/libssc-only --libssc-only`，但这两包不能单独代替发布需要的完整六包。修正不修改传感器载荷或用常量补值。该问题与QMI能返回测量
-是不同层次；不能把声明修正直接称为硬件校准完成。
+The library also had three property declaration bugs: `available`, `sample-rate`, and `stream-type` were registered as strings while their getters wrote boolean/float/uint values, causing GLib type-check failures on read. The standard packages fix this via Debian quilt and build standard ARM64 library, CLI, dev, and GIR packages using the original `debian/rules`. Default builds include this patch; to rebuild only the library, run `./build.sh sensors build/libssc-only --libssc-only`, though those two packages alone cannot substitute for the full six-package release set. The fix neither alters sensor payloads nor pads values with constants. This issue is at a different layer from QMI returning measurements; fixing property declarations does not constitute completed hardware calibration.
 
-本机已安装同源的 `libssc2` 和 `libssc-bin` 新版本，并重启标准 SensorProxy。
-属性读取返回 `available=true`、`sample-rate=26.0`、`stream-type=0`，
-陀螺仪仍能返回三轴数据，stderr 不再出现上述类型断言。完整六包输入已通过
- rootfs 消费函数检查；此时下一份 root 镜像尚未生成，不把当前平板安装
-结果等同于新镜像已部署。GIR 在同一源码构建中生成，库的 SONAME 仍为 2。
+The matching updated `libssc2` and `libssc-bin` packages were installed on the device and standard SensorProxy was restarted. Property reads returned `available=true`, `sample-rate=26.0`, and `stream-type=0`; the gyroscope continued returning 3-axis data, and stderr no longer emitted the type assertions above. The full six-package input passed the rootfs consumer check; because the next root image had not yet been generated at that time, the on-device installation result should not be equated with a deployed new image. GIR files are generated in the same source build, and the library SONAME remains 2.
 
-后续 `+sunuefi2` 增加[公开向量接口及限时客户端](ssc-vector.md)，
-默认发布配置已选择0003补丁，平板上前置色温、后置光线和防闪烁订阅均收到
-数据并正常关闭。它保留全部分量，不向未知数据指定物理单位，不新增
-daemon或改变GNOME的既有光线接口。标准包依赖阻止新客户端混用旧库。
+A subsequent `+sunuefi2` revision added the [public vector interface and timed client](ssc-vector.md). The default release configuration enables patch 0003, and subscriptions for front color temperature, rear ambient light, and flicker on the tablet all received data and closed cleanly. It preserves all components, assigns no physical units to unknown data, adds no new daemon, and leaves GNOME's existing ambient light interface unchanged. Standard package dependencies prevent mixing the new client with the old library.
 
-原始记录位于`内部记录目录
-`a8-ssc-gyroscope.txt`、`a8-ssc-vendor-inventory.jsonl`及
-`a8-ssc-vendor-payloads.jsonl`。原厂ELF只做静态读取，没有在Linux执行。
+Raw logs are stored in the internal logs directory (`a8-ssc-gyroscope.txt`, `a8-ssc-vendor-inventory.jsonl`, and `a8-ssc-vendor-payloads.jsonl`). Stock ELFs are only inspected statically and are never executed under Linux.
 
-2026-10-08，`7.2.9-piano-gnome-g086a94c4529d` 经普通 BOOT 启动，六个 compute-cb 的 `iommu_group/type` 均为 `DMA`。标准 `5+sunuefi1` 服务运行，`/dev/dma_heap/system` 可见，`InaccessiblePaths`、`RootDirectory`、`RootImage` 均为空，未使用之前隐藏 heap 的临时方案。
+On 2026-10-08, `7.2.9-piano-gnome-g086a94c4529d` booted via normal BOOT with all six `compute-cb` instances reporting `iommu_group/type` as `DMA`. The standard `5+sunuefi1` service ran with `/dev/dma_heap/system` visible and `InaccessiblePaths`, `RootDirectory`, and `RootImage` all empty, without using the earlier temporary workaround that hid the heap.
 
-SensorProxy 的 HasAccelerometer/Light/Proximity/Compass 均为 true；一次三秒采样返回加速度约 `(8.49, -0.08, 4.75) m/s²` 和罗盘约 `195°`，LightLevel 为 `153`。这证明测试正常 heap 条件下 SSC 数据读取已工作，不能扩大为所有 buffer、全部传感器或待机恢复都已验证。桌面自动旋转仍需现场核对。一次早先的 g086 启动没有形成可用调试接口；成功也没有解释那次失联原因。
+SensorProxy reported `HasAccelerometer/Light/Proximity/Compass` all as `true`; a three-second sample returned accelerometer values around `(8.49, -0.08, 4.75) m/s²`, compass around `195°`, and `LightLevel` at `153`. This confirms that SSC data reads work under normal heap conditions in testing, but cannot be generalized to claim that all buffers, all sensors, or suspend/resume are verified. Desktop auto-rotation still requires on-device verification. An earlier `g086` boot failed to expose a usable debug interface; this successful boot does not explain that loss of connectivity.
 
-GNOME 的 DBus 订阅包括 gnome-shell、gsd-power 和 gsd-media-keys，`ambient-enabled=true`。一次自然光照变化中 LightLevel从138降到124，KTZ8866背光及背光从1256降到1135，未手动写亮度，确认标准桌面自动亮度已有响应；完整范围尚未测试。自动旋转当前未由 Mutter 管理：键盘套提供鼠标/触控板且没有 tablet-mode switch，GNOME48.7按标准策略退出 touch-mode。摘下键盘后的旋转仍待确认，不强制绕过这项策略。
+GNOME's D-Bus subscribers included `gnome-shell`, `gsd-power`, and `gsd-media-keys`, with `ambient-enabled=true`. During a natural lighting change, `LightLevel` dropped from 138 to 124 and the KTZ8866 backlight dropped from 1256 to 1135 without manual brightness writes, confirming that standard desktop auto-brightness responds; the full brightness range has not yet been tested. Auto-rotation is not currently managed by Mutter: the keyboard cover exposes a mouse/touchpad without a tablet-mode switch, so GNOME 48.7 exits touch-mode per standard policy. Rotation with the keyboard detached remains to be verified, and this policy is not forcibly bypassed.
 
-本地原始记录位于 `内部记录目录 和 `g086-live-journal.txt`。可读取标准服务日志：
+Local raw logs are stored in the internal logs directory, including `g086-live-journal.txt`. Standard service logs can be read with:
 
 ```sh
 systemctl status piano-sensors-import adsprpcd-sensorspd iio-sensor-proxy

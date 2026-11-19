@@ -1,147 +1,105 @@
-# 显示位深与 HDR
+# Display Bit Depth and HDR
 
-## 当前实现
+## Current Implementation
 
-Piano 的默认内核使用 RGB101010 和 DSC 1.1：输入是 **10 bpc**，压缩传输为 **8 bpp**，slice 为 `800×24`。压缩位率不等于面板位深。BOE、CSOT 两份原厂最终设备树采用相同的十位传输配置，驱动按面板选择初始化序列。
+Piano's default kernel uses RGB101010 with DSC 1.1: **10 bpc** input, **8 bpp** compressed transport, and `800×24` slices. Compressed bit rate does not equal panel bit depth. Both the BOE and CSOT final stock Device Trees use the same 10-bit transport configuration, and the driver selects the initialization sequence per panel.
 
-标准 DRM/KMS 接口包括：
+Standard DRM/KMS interfaces include:
 
-| 接口 | 能力 |
+| Interface | Capability |
 | --- | --- |
-| `max bpc` | 固定 10..10，与当前面板和 DSC 配置一致 |
-| `GAMMA_LUT` | 均匀 65536 项，映射为 GCv2 的 1024 个主采样点和 256 个暗部扩展点 |
-| `DEGAMMA_LUT` | 1025 项均匀采样、每色 16 位，映射到 IGCv5 高精度曲线 |
-| `CTM` | 现有 PCC 色彩矩阵 |
-| `EDID`、`Colorspace`、`HDR_OUTPUT_METADATA` | 固定内屏的合成能力描述、BT.2020 RGB 与 PQ 输出转换；需要匹配的校准固件 |
+| `max bpc` | Fixed at `10..10`, matching the current panel and DSC configuration |
+| `GAMMA_LUT` | Uniform 65536 entries, mapped to GCv2's 1024 main sample points and 256 dark-region extension points |
+| `DEGAMMA_LUT` | 1025 uniform samples, 16-bit per channel, mapped to the IGCv5 high-precision curve |
+| `CTM` | Existing PCC color transformation matrix |
+| `EDID`, `Colorspace`, `HDR_OUTPUT_METADATA` | Synthesized capability description for the fixed internal panel, BT.2020 RGB, and PQ output conversion; requires matching calibration firmware |
 
-GC 和 IGC 在同一 REGDMA 缓冲区提交到使用的两路 DSPP，完成后一起生效。实机已完成暗部扩展的恒等、非线性和旁路恢复，完整曲线为 2532 个 word，旁路为 8 个 word，两路 DSPP 均返回完成状态。实现及资源管理见 [GCv2／IGCv5 后端](gcv2-night-light.md)。
+GC and IGC are submitted in the same REGDMA buffer to both active DSPPs and take effect together upon completion. Identity, non-linear, and bypass restoration for the dark-region extension have been verified on hardware: a full curve takes 2532 words, bypass takes 8 words, and both DSPPs report completion. See the [GCv2/IGCv5 backend](gcv2-night-light.md) for implementation details and resource management.
 
-KDE 6.6 报告色深为自动 10 位，可选范围为 `10..10`，因此不显示切换位深的控件；
-GNOME 51 也没有独立的 8／10／12 位选择器。当前 KWin 使用 `AR30` 十位主平面。
-改变传输位深还需要匹配面板命令和 DSC PPS，不能仅扩大 `max bpc` 属性范围。
+KDE 6.6 reports color depth as automatic 10-bit with an allowed range of `10..10`, so no bit-depth selector is shown; GNOME 51 also lacks a standalone 8/10/12-bit selector. KWin currently uses an `AR30` 10-bit primary plane. Changing the transport bit depth also requires matching panel commands and DSC PPS, not just widening the `max bpc` property range.
 
-固定内屏通过标准属性接收合成器的 PQ／BT.2020 输出，由 DPU 转换为面板原生编码，
-不是把 PQ 数据直接送入 DDIC。原版 KWin 可以切换 HDR 和广色域；合成器负责
-混合内容和色调映射，驱动负责面板信号转换。普通 SDR 默认仍走原有路径。
-EDR 是合成器利用背光余量的独立策略，不等同于这个 HDR 输出模式。
+The fixed internal panel receives PQ/BT.2020 output from the compositor through standard properties, and the DPU converts it to the panel's native encoding rather than sending PQ data directly to the DDIC. Stock KWin can toggle HDR and wide color gamut; the compositor handles mixed content and tone mapping, while the driver handles panel signal conversion. Standard SDR continues to use the existing path by default. EDR is a separate compositor policy that uses backlight headroom and is not equivalent to this HDR output mode.
 
-## 分辨率与刷新率
+## Resolutions and Refresh Rates
 
-同机原厂 `DisplayManager` 和 SurfaceFlinger 枚举的七档模式均为
-`2136×3200`，横屏为 `3200×2136`；刷新率为 30、48、50、60、90、120、144 Hz。
-BOE、CSOT 最终设备树中每条 DSI 的时序宽度为 1600、高度为 2136，双 DSI 合成
-完整宽度。Linux 面板模式表与这些尺寸和刷新率一致，默认选 120 Hz。
+On the same device, stock `DisplayManager` and SurfaceFlinger enumerate seven modes, all at `2136×3200` (`3200×2136` in landscape), with refresh rates of 30, 48, 50, 60, 90, 120, and 144 Hz. In the final BOE and CSOT Device Trees, each DSI link has a timing width of 1600 and height of 2136, with dual-DSI combining to the full width. The Linux panel mode table matches these dimensions and refresh rates, defaulting to 120 Hz.
 
-内核提供 2560×1708、2400×1602、1920×1280、1600×1068、1280×854，以及 EDID 兼容所需的 640×480 源模式，各自保留七档刷新率。DSI 桥在 `adjusted_mode` 中恢复同刷新率的原生时序，DPU 将平面和光标的目标坐标缩放到完整面板，再进行 SSPP 分配和双路裁剪。DSC 的 slice 和面板命令保持原样。
+The kernel exposes 2560×1708, 2400×1602, 1920×1280, 1600×1068, and 1280×854 source modes, plus 640×480 for EDID compatibility, each preserving all seven refresh rates. The DSI bridge restores the native timing at the same refresh rate in `adjusted_mode`, and the DPU scales plane and cursor destination coordinates to the full panel before SSPP allocation and dual-pipe cropping. DSC slices and panel commands remain unchanged.
 
-SteamOS／KDE 在 Linux 7.3.3 上已切换 2400×1602@120／60、1280×854@60、2560×1708@120、1600×1068@120，再恢复 3200×2136@120。Mesa 的[缓冲高度对齐修正](../linux/steamos.md#ffmpeg-和图形运行时)保留模式尺寸，补足 GPU 导入需要的尾部空间。物理屏幕保持全屏显示；1600×1068 模式下，内核读回两路 `800×1068 → 1600×2136`，光标也缩放到物理坐标。其他组合及切换后的触摸定位仍需逐项检查。
+On Linux 7.3.3, SteamOS/KDE has switched through 2400×1602@120/60, 1280×854@60, 2560×1708@120, and 1600×1068@120 before returning to 3200×2136@120. Mesa's [buffer height alignment fix](../linux/steamos.md#ffmpeg-and-graphics-runtime) preserves the mode dimensions while padding the tail space required for GPU import. The physical display remains full-screen; in 1600×1068 mode, kernel readback confirms both halves scaling `800×1068 → 1600×2136`, and the cursor scales to physical coordinates as well. Other combinations and post-switch touch positioning still need to be checked case by case.
 
-标准 `scaling mode` 属性支持 `None` 和 `Full`；低分辨率需要 `Full`，超出原生尺寸的请求会被拒绝。全屏映射保留绝对触摸坐标的对应关系，不引入黑边坐标换算。KDE 默认通过 KWin 已有的 `KWIN_DRM_FORCE_SCALING_MODE=FULL` 选择全屏缩放；游戏模式使用内核默认值。桌面的逻辑缩放比例仍独立生效。
+The standard `scaling mode` property supports `None` and `Full`; lower resolutions require `Full`, and requests exceeding native dimensions are rejected. Full-screen mapping preserves the 1:1 correspondence of absolute touch coordinates without introducing letterbox coordinate conversion. KDE selects full-screen scaling by default via KWin's existing `KWIN_DRM_FORCE_SCALING_MODE=FULL`, while Gaming Mode uses the kernel default. Desktop logical scaling continues to apply independently.
 
-双路 SSPP 各自缩放半幅画面，内部交界处的双线性插值需要另一半的相邻源像素。Piano QSEED 3.4 的线性 RGB 平面在水平放大且垂直不缩小时使用水平预加载值 7，并仅在内部右边界额外读取一个源像素；物理画面最右侧不增加读取范围。这套配置覆盖非整数倍放大，不再限定为 1600×1068 的两倍放大。原生尺寸、缩小、旋转、压缩缓冲和 YUV 平面保留原路径。
+Dual SSPPs each scale half of the frame, so bilinear interpolation along the internal seam needs the adjacent source pixel from the other half. On Piano's QSEED 3.4, linear RGB planes use a horizontal preload value of 7 when upscaling horizontally without vertical downscaling, and read one extra source pixel only at the internal right boundary; the rightmost physical edge of the frame does not extend its fetch range. This configuration covers non-integer upscaling rather than being limited to 2x scaling at 1600×1068. Native resolution, downscaling, rotation, compressed buffers, and YUV planes remain on the original path.
 
-Debian 13／KDE 实机确认 1920×1280@120 和 2560×1708@120 的中央文字接缝消失。3200×2136、2560×1708、1920×1280、1600×1068 和 640×480 的 60／120 Hz 桌面切换及熄屏亮屏均通过。当前 Mesa 26.1.6 下，2400×1602 和 1280×854 被 KWin 的测试缓冲检查拒绝，不能据此认定桌面切换通过；两者已通过直接 DRM 路径的左半幅缩放回读。非整数比例的回读与理想双线性参考仍有不到 4／255 的通道差异；原生和两倍缩放对照的回读保持不变。并发回读右半幅会重复左半幅，因此不用于判断右侧实际显示效果。
+On-device verification on Debian 13/KDE confirms the center text seam disappears at 1920×1280@120 and 2560×1708@120. Desktop mode switching and screen-off/on cycles at 60/120 Hz pass for 3200×2136, 2560×1708, 1920×1280, 1600×1068, and 640×480. With current Mesa 26.1.6, 2400×1602 and 1280×854 are rejected by KWin's test-buffer check, so desktop switching cannot be considered passing for them; both have passed left-half scaling readback through the direct DRM path. Readback for non-integer ratios still shows under 4/255 per-channel difference against an ideal bilinear reference, while native and 2x-scaled control readbacks remain unchanged. Concurrent readback of the right half duplicates the left half and therefore cannot be used to judge actual right-side display output.
 
-## 原厂的色彩处理
+## Stock Color Processing
 
-固定的 [MiCode 显示驱动](https://github.com/MiCode/vendor_opensource_display-drivers/tree/aa06fd1757c28dce96fbe4e04d4530ec21b52aac)及同机 Android DRM 状态表明：
+The pinned [MiCode display driver](https://github.com/MiCode/vendor_opensource_display-drivers/tree/aa06fd1757c28dce96fbe4e04d4530ec21b52aac) and on-device Android DRM state show:
 
-- 原厂 SDR／P3 模式使用 IGCv5、GCv2 和 Gamut v4，IGC 和 GC 都开启高精度扩展。同机运行状态中 IGC 的内部 dither 开启；QDCM 配置里 `expert_*`、`hal_*`、`video*` 等模式关闭它，见[12-bit 与抖动](#12-bit-与抖动)。
-- IGC 的高精度格式是 257 个普通点加 128 个暗部扩展点，不能按均匀 385 点解释。原厂 QDCM 的 sRGB 表与普通步长 `1/256`、暗部步长 `1/1024` 对应；独立的 Gamma 2.2 表误差不超过一个十六位码值。默认后端向用户空间提供均匀 1025 点接口，再选取硬件所需的两组采样点。
-- GC 的高精度格式是 1024 个主采样点加 256 个暗部扩展点。原厂 Gamma 2.2 主表覆盖 `0..1`，暗部表覆盖约 `0..255/65536`，输出码值为 `0..82`。SDR 与活动 HDR 播放中两路 GC 控制字均为 `0x5`，两组表相同；Linux 用标准均匀 LUT 提供这两组采样，不把暗部扩展解释为 FRC。
-- 原厂 DSI 的 `hdr_properties` 描述静态原色和亮度能力；它不等于 HDMI／DP 的动态 `HDR_OUTPUT_METADATA`，也不证明 DDIC 直接接收 PQ 像素。
-- 同机 HyperOS 4 播放 HDR10 视频时，视频图层为 `BT2020_ITU_PQ`，显示输出仍为 `DISPLAY_P3`，HDR 的 render intent 为 `0x113`。两路视频平面使用 Gamut v6 三维查找表，整屏继续使用 IGCv5、GCv2 和 Gamut v4。移植时需要处理视频内容到面板输出的转换，不能把 PQ 数据直接送往现有面板链路。
+- Stock SDR/P3 modes use IGCv5, GCv2, and Gamut v4, with high-precision extensions enabled on both IGC and GC. On-device runtime state has IGC internal dither enabled, while QDCM profiles such as `expert_*`, `hal_*`, and `video*` disable it; see [12-bit and Dithering](#12-bit-and-dithering).
+- IGC's high-precision format consists of 257 regular points plus 128 dark-region extension points and must not be interpreted as 385 uniform points. The stock QDCM sRGB table matches a regular step of `1/256` and a dark-region step of `1/1024`; an independent Gamma 2.2 table deviates by at most one 16-bit code value. The default backend exposes a uniform 1025-point interface to userspace and selects the two sample sets required by hardware.
+- GC's high-precision format consists of 1024 main sample points plus 256 dark-region extension points. The stock Gamma 2.2 main table spans `0..1`, while the dark-region table spans roughly `0..255/65536` with output code values `0..82`. In both SDR and active HDR playback, both GC control words read `0x5` and both table sets are identical; Linux supplies both sample sets through a standard uniform LUT without treating the dark-region extension as FRC.
+- Stock DSI `hdr_properties` describes static color primaries and luminance capabilities; it is not equivalent to HDMI/DP dynamic `HDR_OUTPUT_METADATA`, nor does it prove that the DDIC accepts PQ pixels directly.
+- When stock HyperOS 4 plays HDR10 video on the same device, the video layer is `BT2020_ITU_PQ`, display output remains `DISPLAY_P3`, and the HDR render intent is `0x113`. Both video planes use Gamut v6 3D LUTs, while the full display continues using IGCv5, GCv2, and Gamut v4. Porting requires converting video content to panel output rather than feeding PQ data directly into the existing panel link.
 
-参考源码：[`reg_dmav2_setup_dspp_igcv5`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_reg_dma_v1_color_proc.c#L5366)、[`dsi_panel_parse_hdr_config`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/dsi/dsi_panel.c#L4061)。
+Reference source: [`reg_dmav2_setup_dspp_igcv5`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_reg_dma_v1_color_proc.c#L5366), [`dsi_panel_parse_hdr_config`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/dsi/dsi_panel.c#L4061).
 
-HyperOS 4 的配置位于 `/odm/etc/display/qdcm_calib_data_xiaomi_p81_35_02_0b_vid_mode_dualdsi_dsc_panel.json` 和对应的 `p81_42_02_0a` 文件。JSON 中的十六进制 payload 还需还原字节对顺序，才能读取内部曲线和 XML：
+HyperOS 4 calibration configs live at `/odm/etc/display/qdcm_calib_data_xiaomi_p81_35_02_0b_vid_mode_dualdsi_dsc_panel.json` and the corresponding `p81_42_02_0a` file. Hex payloads inside the JSON must have their byte-pair order reversed before the embedded curves and XML can be read:
 
-- `native_hdr` 的输出 Gamma 为 2.2，包含 P3 面板校准、17 点色调映射、实时亮度补偿和内容统计；CSOT 配置中的满屏峰值约 844.5 nit，SDR 参考峰值为 400 nit。这些是配置值，不是测试物理亮度测量。
-- HDR 模式和 intent 1 的 `standard_*` 模式配置了 LUMA dither，但 `temporalEnable=0`；配置内容不能代替播放时的寄存器状态，也不能单凭该字段认定面板 FRC。
-- [显示补丁中的高精度后端](../../../patches/linux/7.3/0002-display.patch)暴露均匀 1025 项 `DEGAMMA_LUT`，由驱动选取两组硬件采样点。当前组合 DMA 为 64 KiB，容纳两路 GC、IGC 和 Gamut 状态；实机恒等、非线性和旁路恢复已完成。
-- Linux 7.3 的 [`0016` 补丁](../../../patches/linux/7.3/0016-drm-igcv5-high-precision-dither.patch)按原厂 IGC 控制字，在存在 Degamma LUT 时打开高精度内部抖动，强度为 4；空 LUT 仍保持旁路。它不改变十位 DSC，也不提供面板 FRC 控制。
+- `native_hdr` targets an output Gamma of 2.2 and includes P3 panel calibration, 17-point tone mapping, real-time brightness compensation, and content statistics; in the CSOT config, full-screen peak is around 844.5 nit and SDR reference peak is 400 nit. These are configuration values, not physical luminance measurements.
+- HDR modes and intent-1 `standard_*` modes configure LUMA dither with `temporalEnable=0`; config fields cannot substitute for live playback register state, nor can this field alone establish panel FRC.
+- The [high-precision backend in the display patch](../../../patches/linux/7.3/0002-display.patch) exposes a uniform 1025-entry `DEGAMMA_LUT`, from which the driver picks both hardware sample sets. The combined DMA buffer is 64 KiB, holding GC, IGC, and Gamut state for both pipes; identity, non-linear, and bypass restoration have been verified on hardware.
+- Linux 7.3's [`0016` patch](../../../patches/linux/7.3/0016-drm-igcv5-high-precision-dither.patch) matches the stock IGC control word by enabling high-precision internal dithering at strength 4 whenever a Degamma LUT is present, while keeping an empty LUT in bypass. It does not change 10-bit DSC and does not provide panel FRC control.
 
-### HDR 亮度与背光
+### HDR Brightness and Backlight
 
-原厂使用两颗 KTZ8866 背光芯片。系统的 `0..4095` 请求先经过普通亮度／高亮度区间映射，再经过 `mi_bl_level_remap` 曲线，最后写入两颗芯片的 11 位亮度寄存器。不能把系统请求值直接当作芯片码值或亮度。
+Stock uses two KTZ8866 backlight chips. System requests in `0..4095` first go through normal/HBM range mapping, then through the `mi_bl_level_remap` curve, and are finally written to each chip's 11-bit brightness register. System request values must not be treated directly as chip code values or luminance.
 
-2026-10-20 的 HDR10 播放对照中，最低亮度时系统请求为 17，两颗芯片均读回 374；最高亮度时请求为 4095，芯片均读回 2047。保持最低亮度后，物理屏幕的变暗得到目视确认。原厂 `actual_brightness` 回调固定返回 0，不能用于判断屏幕是否熄灭；寄存器读回也不是亮度计测得的 nit。
+In the 2026-10-20 HDR10 playback comparison, minimum brightness requested 17 from the system and both chips read back 374; maximum brightness requested 4095 and both chips read back 2047. Holding minimum brightness visually confirmed physical screen dimming. The stock `actual_brightness` callback always returns 0 and cannot be used to determine whether the screen is off; register readbacks are also not colorimeter-measured nits.
 
-暂停在同一 HDR 视频缓冲区后，再做“最高 → 最低 → 最高”的对照：整屏 IGC、GC、PCC、Gamut 表保持一致，两路视频平面的 Gamut v6 表随亮度变化，最后恢复为第一份表。合成器报告的视频白点也从 800 变为 4.5，再回到 800 nit；这是软件亮度描述，不是实测亮度。原厂 HDR 处理包含亮度相关的视频色调映射，移植时需要同时处理背光和内容映射。
+While paused on the same HDR video buffer, a "max → min → max" comparison showed that full-screen IGC, GC, PCC, and Gamut tables stayed constant, whereas the Gamut v6 tables on both video planes changed with brightness and returned to the first table at the end. The compositor-reported video white point also changed from 800 to 4.5 and back to 800 nit; this is a software luminance descriptor rather than a measured value. Stock HDR processing includes brightness-dependent video tone mapping, so porting must handle both backlight and content mapping.
 
-播放器可以通过窗口亮度覆盖系统设置。调试时先检查 `mWindowManagerBrightnessOverride`，再判断系统调光命令是否适用；目视测试保持一个档位等待观察，避免自动恢复后才询问结果。
+Media players can override system settings via window brightness. When debugging, check `mWindowManagerBrightnessOverride` first before assuming system dimming commands apply; during visual checks, hold a single level while observing to avoid asking for confirmation after it auto-reverts.
 
-相关实现：[`dsi_panel_set_backlight`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/dsi/dsi_panel.c)、[`mi_backlight_ktz8866.c`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/mi_disp/mi_backlight_ktz8866.c)、[`sde_backlight_device_get_brightness`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_connector.c)。
+Related implementation: [`dsi_panel_set_backlight`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/dsi/dsi_panel.c), [`mi_backlight_ktz8866.c`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/mi_disp/mi_backlight_ktz8866.c), [`sde_backlight_device_get_brightness`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_connector.c).
 
-## 12-bit 与抖动
+## 12-bit and Dithering
 
-[小米官方规格](https://www.mi.com/global/product/xiaomi-pad-8-pro/)宣称支持 12-bit 色深。原厂链路是十位传输；额外两位只可能来自面板内部 FRC 或 SoC 侧的抖动，下文列出已排除和尚未读取的部分。
+[Xiaomi's official specs](https://www.mi.com/global/product/xiaomi-pad-8-pro/) claim 12-bit color depth. The stock link is 10-bit transport; the extra two bits can only come from internal panel FRC or SoC-side dithering. The sections below list what has been ruled out and what remains unread.
 
-不能直接打开高通普通 pingpong dither 来代替。原厂 [`_sde_encoder_setup_dither`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_encoder.c#L4002)在 DSC10／30bpp 配置下关闭该模块，其位深表只覆盖 6／7／8 位输出。IGC 的 16 位 LUT、内部 dither 和面板 12-bit FRC 也不是同一个概念。
+Qualcomm's standard pingpong dither cannot be enabled as a substitute. Stock [`_sde_encoder_setup_dither`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_encoder.c#L4002) disables this block under DSC10/30bpp configurations, and its bit-depth table only covers 6/7/8-bit outputs. IGC's 16-bit LUT, internal dither, and panel 12-bit FRC are also distinct concepts.
 
-同机 HyperOS 4 在 SDR 和活动 HDR10 播放时，两路 pingpong 抖动使能寄存器（SDE 偏移 `0x6a0e0`／`0x6b0e0`）和 DSPP 抖动使能寄存器（`0x5582c`／`0x5782c`）均读回 0。HDR 播放时同时确认了 `BT2020_ITU_PQ` 图层和 `renderIntent=0x113`；属性 blob 和静态配置均不能代替这组硬件读回。
+During both SDR and active HDR10 playback on stock HyperOS 4 on the same device, both pingpong dither enable registers (SDE offsets `0x6a0e0`/`0x6b0e0`) and both DSPP dither enable registers (`0x5582c`/`0x5782c`) read back 0. During HDR playback, the `BT2020_ITU_PQ` layer and `renderIntent=0x113` were confirmed simultaneously; neither property blobs nor static configs can substitute for this hardware readback.
 
-原厂没有使用更高位深的链路：CSOT 节点 `qcom,mdss_dsi_p81_35_02_0b_dualdsi_dsc_vid` 写明 `qcom,mdss-dsi-bpp = 30`、`qcom,mdss-dsc-bit-per-component = 10`，公开 DSC 延迟计算以最高 10 bpc 的硬件配置为依据。Linux 两种面板的初始化命令均与原厂 120 Hz 时序组逐条一致：CSOT 为 97 条，BOE 为 104 条，包含各自的 B2／B3 顺序。相同初始化不能单独证明内部 FRC 的有效位深或切换方式。
+Stock does not use a higher bit-depth link: the CSOT node `qcom,mdss_dsi_p81_35_02_0b_dualdsi_dsc_vid` specifies `qcom,mdss-dsi-bpp = 30` and `qcom,mdss-dsc-bit-per-component = 10`, and public DSC latency calculations are based on hardware configurations up to 10 bpc. On Linux, the initialization commands for both panels match the stock 120 Hz timing group command for command: 97 commands for CSOT and 104 for BOE, including their respective B2/B3 sequences. Identical initialization alone does not prove the effective bit depth or switching mechanism of internal FRC.
 
-DSPP 抖动位置来自原厂最终设备树的 `qcom,sde-dspp-dither = <0x82c 0x10007>` 和 DSPP0／DSPP1 基址 `0x55000`／`0x57000`。这两路后混合模块均关闭，不能作为原厂两位 FRC 的来源。DDIC 内部 FRC 的控制方式仍没有从公开源码或寄存器中确认。
+The DSPP dither register locations come from the final stock Device Tree's `qcom,sde-dspp-dither = <0x82c 0x10007>` and DSPP0/DSPP1 base addresses `0x55000`/`0x57000`. Both post-blend blocks are disabled and cannot be the source of stock's two bits of FRC. How DDIC internal FRC is controlled has still not been confirmed from public source code or registers.
 
-AIQE 也没有经原厂驱动启用。同机 HyperOS 4 启动时，SSIP 熔丝配置读到
-`disable=1`、`polarity=0`，驱动据此设置 `ssip_allowed=0`，不安装 AIQE
-操作和 DRM 属性；活动内屏的属性快照与此一致。设备树中的 AIQE dither
-地址不能作为它正在实现 FRC 的依据。判断路径见原厂
-[`sde_hw_check_ssip_fuse`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_catalog.c#L6327)、
-[`dspp_aiqe`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_dspp.c#L479)
-和 [`_dspp_aiqe_install_property`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_color_processing_aiqe.c#L40)。
+AIQE is not enabled by the stock driver either. At boot on stock HyperOS 4 on the same device, the SSIP fuse configuration reads `disable=1` and `polarity=0`, causing the driver to set `ssip_allowed=0` and skip installing AIQE operations and DRM properties; the active internal display's property snapshot matches this. The AIQE dither address in the Device Tree is not evidence that it implements FRC. For the decision path, see stock [`sde_hw_check_ssip_fuse`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_catalog.c#L6327), [`dspp_aiqe`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_hw_dspp.c#L479), and [`_dspp_aiqe_install_property`](https://github.com/MiCode/vendor_opensource_display-drivers/blob/aa06fd1757c28dce96fbe4e04d4530ec21b52aac/msm/sde/sde_color_processing_aiqe.c#L40).
 
-原厂配置只在部分模式里要求后混合抖动。`/odm/etc/display/` 下 CSOT 的 `qdcm_calib_data_xiaomi_p81_35_02_0b_vid_mode_dualdsi_dsc_panel.json` 和 BOE 的 `p81_42_02_0a` 同名文件各有 35 个模式，抖动字段逐项相同：
+Stock configs only request post-blend dithering in a subset of modes. Under `/odm/etc/display/`, CSOT's `qdcm_calib_data_xiaomi_p81_35_02_0b_vid_mode_dualdsi_dsc_panel.json` and BOE's corresponding `p81_42_02_0a` file each contain 35 modes with identical dithering fields entry for entry:
 
-| 模式（render intent） | `PostBlendDither` | `PostBlendPaDither` | IGC 内部抖动 |
+| Mode (render intent) | `PostBlendDither` | `PostBlendPaDither` | IGC Internal Dither |
 | --- | --- | --- | --- |
-| `native_hdr`、`native_p3`、`native_srgb`（275，即 HDR10 播放时的 `0x113`） | 开 | 关 | 开，强度 4 |
-| `standard_hdr`、`standard_p3`、`standard_srgb`（1，Android 的 ENHANCE） | 开 | 关 | 开，强度 4 |
-| `GM1`、`GM2`、`GM3`、`GM11`、`GM22`、`GM33`（263～265），`smart_MC`、`smart_MC1`（258） | 关 | 关 | 开，强度 4 |
-| `expert_*`（267～269）、`hal_*`（256、257）、`video*`（259～262）、`Native_D65_*`（273）、`standard_native`（0） | 关 | 关 | 关 |
+| `native_hdr`, `native_p3`, `native_srgb` (275, i.e. `0x113` during HDR10 playback) | On | Off | On, strength 4 |
+| `standard_hdr`, `standard_p3`, `standard_srgb` (1, Android's ENHANCE) | On | Off | On, strength 4 |
+| `GM1`, `GM2`, `GM3`, `GM11`, `GM22`, `GM33` (263–265), `smart_MC`, `smart_MC1` (258) | Off | Off | On, strength 4 |
+| `expert_*` (267–269), `hal_*` (256, 257), `video*` (259–262), `Native_D65_*` (273), `standard_native` (0) | Off | Off | Off |
 
-配置中开启的 `PostBlendDither` 都是同一组值：`ditherMode` 为 `LUMA`，`strengthR`／`strengthG`／`strengthB` 均为 6，`temporalEnable=0`，4×4 矩阵 `[15,7,13,5,3,11,1,9,12,4,14,6,0,8,2,10]`。实际 SDR 和 HDR 播放中这些后混合模块仍关闭，Linux 不额外开启；IGC 内部抖动由 7.3 的 `0016` 补丁在存在 Degamma LUT 时按强度 4 打开。
+Every mode with `PostBlendDither` enabled in config uses the exact same settings: `ditherMode` set to `LUMA`, `strengthR`/`strengthG`/`strengthB` all set to 6, `temporalEnable=0`, and the 4×4 matrix `[15,7,13,5,3,11,1,9,12,4,14,6,0,8,2,10]`. In actual SDR and HDR playback these post-blend blocks remain off, so Linux does not enable them either; IGC internal dither is enabled at strength 4 by the 7.3 `0016` patch whenever a Degamma LUT is present.
 
+## Standard HDR Output
 
-## 标准 HDR 输出
+The panel driver synthesizes EDID 1.4, a CTA HDR data block, and DisplayID native timing. This describes the capabilities of the full DPU/fixed internal panel path rather than an EDID actually supplied by the screen. The 10-bit input, P3-D65 primaries, Gamma 2.2, and luminance figures come from the corresponding stock config; because the native 120 Hz pixel clock exceeds base EDID's 655.35 MHz ceiling, it is described in full via DisplayID type VII. Lower-resolution inputs in the base block are handled by full-screen DPU scaling without changing DSI/DSC timing. KDE's default display configuration matches both the legacy EDID-less entry and the synthesized identity, keeping 3200×2136@120 with 2x scaling.
 
-面板驱动合成 EDID 1.4、CTA HDR 数据块和 DisplayID 原生时序。这是完整 DPU／
-固定内屏路径的能力描述，不是屏幕实际提供的 EDID。十位输入、P3-D65 原色、
-Gamma 2.2 和亮度来自对应原厂配置；原生 120 Hz 时钟超过基础 EDID 的
-655.35 MHz 上限，由 DisplayID type VII 完整描述。基础块中的低分辨率输入由
-DPU 全屏缩放处理，不改变 DSI／DSC 时序。KDE 的默认显示配置同时匹配旧的无 EDID
-入口和合成身份，保持 3200×2136@120、两倍缩放。
+Matching `qcom/sm8750/piano-{boe,csot}-display.bin` files supply the conversion data. See [display calibration firmware](../../../vendor/firmware/piano-display/README.md) for generation sources and methods, and [local firmware package](../../../linux/bsp/README.md#local-firmware-packages) for standalone installation. If the firmware is missing, malformed, or does not match the hardware blocks, HDR properties are not attached, no HDR EDID is generated, and standard SDR continues to boot. Capability properties are created before DRM device registration.
 
-匹配的 `qcom/sm8750/piano-{boe,csot}-display.bin` 提供转换数据。
-生成来源与方法见[显示校准固件](../../../vendor/firmware/piano-display/README.md)，
-独立安装见[本地固件包](../../../linux/bsp/README.md#本地固件包)。
-固件缺失、格式错误或硬件块不匹配时不附加 HDR 属性、不生成 HDR EDID，
-普通 SDR 继续启动。能力属性在 DRM 设备注册前创建。
+There are three output states: standard SDR bypass, BT.2020 SDR, and PQ HDR. The latter two apply IGCv5 linearization, Gamut v4.3 17³ color gamut and panel calibration, and the stock GCv2 curve in sequence, broadcasting the same batch of REGDMA commands to both DSPPs. While conversion is active, an empty or identity `GAMMA_LUT` does not alter pixels and remains accepted. `CTM`, non-identity `GAMMA_LUT`, and `DEGAMMA_LUT` share hardware with output conversion, so atomic check rejects those combinations and the compositor must perform them on the GPU; commit failure does not automatically trigger a GPU fallback. This stays compatible with the identity Gamma table submitted by GNOME at its default white point, while non-identity adjustments such as Night Light and ICC VCGT still require the compositor to provide its own path. Standard LUT and Night Light interfaces for normal SDR are unchanged. Driver exit and DMA errors continue to follow the [REGDMA resource retention rules](gcv2-night-light.md).
 
-输出状态分为三种：普通 SDR 旁路、BT.2020 SDR 和 PQ HDR。后两者依次使用
-IGCv5 线性化、Gamut v4.3 的 17³ 色域及面板校准、GCv2 原厂曲线，
-同一批 REGDMA 命令广播到两路 DSPP。转换生效时，空或恒等 `GAMMA_LUT` 不改变像素，仍可接受。
-`CTM`、非恒等 `GAMMA_LUT` 和 `DEGAMMA_LUT` 与输出转换共用硬件，原子检查
-拒绝这些组合，合成器需要在 GPU 完成相应调整；提交失败不会自动产生 GPU 回退。
-这兼容 GNOME 默认白点下提交的恒等 Gamma 表，夜灯和 ICC VCGT 等非恒等调整
-仍需要合成器提供对应的处理路径。普通 SDR 的标准 LUT 和夜灯接口不变。
-驱动退出或 DMA 出错继续遵守[REGDMA 的资源保留规则](gcv2-night-light.md)。
+When switching SDR wide color gamut on the internal panel without changing timing, only the two color tables are updated without turning off the panel or backlight. Across two consecutive round-trips on Debian hardware, both color DMA transfers completed and neither the display controller nor either backlight chip powered down. HDR toggling, refresh-rate switching, and resume after display-off still follow the existing path.
 
-内屏在时序不变时切换 SDR 广色域，仅更新两路色彩表，不关闭面板或背光。
-Debian 实机连续往返两次，两路色彩 DMA 均完成，显示控制器与两颗背光芯片
-都没有关停。HDR 开关、刷新率切换以及息屏后的恢复仍走原有路径。
+On SteamOS, KWin completes HDR/wide-color-gamut toggling, DPMS screen-off recovery, and one RTC wake after `deep` suspend through standard properties. The boot ID stays identical before and after resume, the suspend success count increments by one, ADSP/CDSP remain running, and front camera capture and microphone recording recover. In PQ mode, the Gamut, IGC, and GC control words on both pipes read back `0x1`, `0x10114`, and `0x5` respectively; once disabled, all enter bypass, with REGDMA completion status `0x8` and zero error status. Backlight rises to 2047 in HDR; a generic KWin 6.6.5 fix invalidates the brightness cache when exiting HDR, and hardware backlight completes the `1535 → 2047 → 1535` transition. The patch lives in `patches/kwin/6.6.5/` and does not alter HDR capability detection or color processing interfaces. The four-level PQ test pattern shows visible brightness steps. This verification does not mean per-unit peak luminance, black level, or color accuracy has been measured, nor does it mean 12-bit FRC is implemented. BOE data has been generated from the corresponding stock config, with no on-device test results on that panel yet.
 
-SteamOS KWin 通过标准属性完成 HDR／广色域启闭、DPMS 关屏恢复和一次
-`deep` 挂起后的 RTC 唤醒。恢复前后启动 ID 一致，挂起成功计数加一，
-ADSP／CDSP 保持运行，前摄采集和麦克风录音恢复。PQ 模式下两路
-Gamut、IGC、GC 控制字分别读回 `0x1`、`0x10114`、`0x5`；关闭后全部旁路，
-REGDMA 完成状态为 `0x8`、错误状态为零。背光在 HDR 时升到 2047；
-KWin 6.6.5 的通用修正在退出 HDR 时使亮度缓存失效，
-实机背光完成 `1535 → 2047 → 1535` 切换。补丁放在
-`patches/kwin/6.6.5/`，不改动 HDR 能力判断或色彩处理接口。
-PQ 四级图样有可见亮度差异。该验证不代表逐台峰值、黑位或色准完成测量，
-也不代表十二位 FRC 已实现。BOE 的数据已按对应原厂配置生成，尚无该面板的实机结果。
-
-[`tools/android/piano_drm_snapshot.c`](../../../tools/android/piano_drm_snapshot.c)可在 Android 和 Linux 中只读导出 DRM 属性及 LUT blob。将同一画面设置下的 SDR 与 HDR 播放状态对照，同时确认活动 CRTC、HDR 图层和电源状态；blob 存在或 DMA 完成不能单独证明物理 HDR 输出。
+[`tools/android/piano_drm_snapshot.c`](../../../tools/android/piano_drm_snapshot.c) exports DRM properties and LUT blobs read-only on both Android and Linux. Compare SDR and HDR playback state under the same scene settings while confirming the active CRTC, HDR layer, and power state; blob presence or DMA completion alone does not prove physical HDR output.

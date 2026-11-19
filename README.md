@@ -1,190 +1,190 @@
 # Project SunUEFI
 
 > [!IMPORTANT]
-> **引用与署名**：引用、移植或基于本项目的内容（代码、数据、图片、结论）时，请在文档、说明页或发布页注明来源，并链接回 [Project SunUEFI](https://github.com/slwyts/Project-SunUEFI)。再分发代码时，请保留各文件原有的版权和许可证声明
+> **Attribution & Citation**: When referencing, porting, or building upon content from this project (code, data, images, or findings), credit the source in your documentation, description, or release page and link back to [Project SunUEFI](https://github.com/slwyts/Project-SunUEFI). When redistributing code, preserve all original copyright and license notices in each file.
 
-> **欢迎贡献**：如果你有新的设备或固件支持，欢迎提交 PR [贡献指南](CONTRIBUTING.md) 和 [AI 协作规范](AGENTS.md)。
+> **Contributions Welcome**: If you are adding support for a new device or firmware, feel free to open a PR. See the [Contributing Guide](CONTRIBUTING.md) and [AI Collaboration Guidelines](AGENTS.md).
 
-> **官方交流群**：[SunUEFI 官方交流群（骁龙 8E）](https://qm.qq.com/q/C1RkQC2yYw) 
-> 群号 **1135414849** 强烈推荐加群交流，跟进最新进展，获取帮助和反馈问题
+> **Official Community Group**: [SunUEFI Official QQ Group (Snapdragon 8 Elite)](https://qm.qq.com/q/C1RkQC2yYw)
+> Group ID: **1135414849** — Recommended for following progress, getting help, and reporting issues.
 
-面向骁龙 8E（SM8750，骁龙 8 至尊版）平台的 EDK2 UEFI 固件与多系统启动适配。首台设备小米平板 8 Pro（`piano`）的主线 Linux 内核和桌面系统已完成完整体验适配，可通过统一的 UEFI 保留原厂 Android 并启动 Linux。Linux 已经能用，Windows on ARM 还没有启动，macOS / iOS 的 UEFI 启动链（[UniXNU](https://github.com/UniXNU/UniXNU)）适配在规划中。
-平台性能不差，但只能跑原厂平庸的安卓系统。我们给它加了一套自己的 UEFI，让它能从内部存储启动 Debian、Nyarch 或 SteamOS，想回 Android 随时可以回，Android 数据和原厂 Recovery 都保留。
+EDK2 UEFI firmware and multi-OS boot support for the Snapdragon 8 Elite (SM8750) platform. On the first supported device, Xiaomi Pad 8 Pro (`piano`), the mainline Linux kernel and desktop environments are fully ported, allowing you to boot Linux through a unified UEFI while keeping stock Android intact. Linux is working today; Windows on ARM does not boot yet, and macOS / iOS UEFI boot chain support ([UniXNU](https://github.com/UniXNU/UniXNU)) is planned.
+The hardware is capable, yet out of the box it is stuck running a mediocre stock Android system. We added a custom UEFI so it can boot Debian, Nyarch, or SteamOS directly from internal storage and switch back to Android at any time, preserving all Android data and stock Recovery.
 
-## 为什么选择 SunUEFI
+## Why SunUEFI
 
-### 产品级的易用体验
+### Product-Grade Usability
 
-* **图形化引导助手**：在 Android 侧通过 WebUI 管理启动选项、分区和镜像安装，无需手动操作 Fastboot 或终端命令
-* **一键安装与切换**：下载镜像后在助手内点击安装，选择启动目标后重启即可，回到 Android 只需在 Linux 里运行一条命令
-* **开箱即用的桌面**：预配置动画、中文界面、默认浏览器和自动登录，首次启动就能直接使用
-* **保留原厂系统**：Android 数据、Recovery 和 OTA 更新能力完整保留，**开机自由选择Android或UEFI，Linux和Android互不干扰**，UEFI附带Simpleinit方便管理多系统启动
+* **Graphical Boot Helper**: Manage boot options, partitions, and image installations via a WebUI on the Android side—no manual Fastboot commands or terminal steps required
+* **One-Click Install & Switching**: Download the images, click install in the Boot Helper, pick your boot target, and reboot; returning to Android from Linux takes a single command
+* **Out-of-the-Box Desktop**: Preconfigured animations, Chinese UI locale, default browser, and auto-login so it is ready to use on first boot
+* **Stock System Preserved**: Android data, stock Recovery, and OTA update capability remain intact; **choose freely between Android and UEFI at boot with zero interference between Linux and Android**, plus bundled Simpleinit in UEFI for easy multi-OS boot management
 
-### 创新
+### Innovations
 
-* **合体 BOOT 启动链**：将选择器和 UEFI 附加在原厂内核之后，绕过小米 ABL 在 Recovery 分区自带内核时不加载 pvmfw 的限制（会导致启动完整性校验失败），同时避免替换 BOOT 内核导致 HyperOS 无法启动的问题，实现 Android 与 UEFI 的无缝共存
-* **UEFI Fastboot 服务**：UEFI 运行期间后台常驻 USB Fastboot，支持日志导出、截图、只读分区访问和启动请求，无需屏幕交互即可调试
-* **主线内核适配**：基于上游 Linux 主线开发，硬件支持通过标准内核子系统和设备树实现，无需发行版专用补丁或脚本
-* **NVRAM 变量持久化**：硬件没有SPI Flash，所以UEFI NVRAM 变量存储在persist分区独立文件中，不会修改分区表进而降低侵入式影响，支持标准多系统启动记录保存及UEFI变量持久化
-* **统一固件核心**：同一份 UEFI 镜像用于合体 BOOT、临时启动和安装器，不再维护多套测试镜像
-* **助手管理器**：在 Android 侧通过KSU或SukiSU的模块WebUI直接管理或更新UEFI/分区/系统刷写，无需额外的刷机工具，操作简单直观；Linux侧也提供一键切换启动目标工具
+* **Combined BOOT Chain**: Appends the boot selector and UEFI right after the stock kernel, bypassing Xiaomi ABL's limitation where placing a kernel in the Recovery partition skips loading `pvmfw` (causing boot integrity verification failure) while avoiding replacing the BOOT kernel (which breaks HyperOS boot), achieving seamless coexistence between Android and UEFI
+* **UEFI Fastboot Service**: Runs a persistent background USB Fastboot service while UEFI is active, supporting log export, screenshots, read-only partition access, and boot requests—debuggable without screen interaction
+* **Mainline Kernel Port**: Built on upstream mainline Linux; hardware support is implemented through standard kernel subsystems and Device Trees, without distro-specific hacks or scripts
+* **NVRAM Variable Persistence**: Because the hardware lacks SPI Flash, UEFI NVRAM variables are stored in a standalone file on the `persist` partition without altering the partition table, minimizing invasiveness while supporting standard multi-OS boot entries and persistent UEFI variables
+* **Unified Firmware Core**: One single UEFI image serves Combined BOOT, temporary boot, and the installer, eliminating multiple test image variants
+* **Boot Helper Manager**: Manage and update UEFI, partitions, and OS flashing directly from Android via a KSU or SukiSU module WebUI—no extra flashing tools needed; Linux also includes a one-command boot target switcher
 
-[快速开始](#快速开始) · [支持的硬件](#支持的硬件) · [已知问题](docs/user/known-issues.md) · [故障恢复](docs/user/recovery.md)
+[Quick Start](#quick-start) · [Supported Hardware](#supported-hardware) · [Known Issues](docs/user/known-issues.md) · [Recovery](docs/user/recovery.md)
 
-## 开机时发生什么
+## What Happens at Boot
 
-原厂 Android 内核留在原位，SunUEFI 把内核的原来入口改向自有实现的一个小选择器，再把选择器和 UEFI 接在内核后面一起加载。这个整体叫合体 BOOT：选择 Android 进入 HyperOS，选择 UEFI 启动 Linux 或进入固件菜单，小米原厂的 Recovery 照常可用。选择页停留约三秒，音量键切换，短按电源确认，没有操作就沿用保存的选择。原理见[合体 BOOT](docs/devel/boot/combined-boot.md)。
+The stock Android kernel stays in place. SunUEFI redirects the kernel's original entry point to a small custom boot selector and appends both the selector and UEFI right after the kernel so they load together. This bundle is called Combined BOOT: choosing Android boots HyperOS, choosing UEFI boots Linux or opens the firmware menu, and stock Xiaomi Recovery continues to work as normal. The selection screen stays up for about 3 seconds—use the volume keys to switch and short-press power to confirm; with no input, it follows the saved boot route. See [Combined BOOT](docs/devel/boot/combined-boot.md) for technical details.
 
 ```mermaid
 flowchart LR
-    A["原厂引导程序<br/>XBL / ABL"] --> B["合体 BOOT 中的选择页<br/>Android / UEFI · 3 秒"]
-    B -->|"Android"| C["原厂 Android 内核<br/>HyperOS"]
-    B -->|"Linux / 菜单"| D["SunUEFI (EDK2)"]
-    D --> E["ESP 中的 Linux 内核<br/>sunuefi_esp"]
-    E --> F["ext4 根文件系统<br/>sunuefi_root"]
-    F --> G["Linux 桌面"]
-    D -.->|"目标，未启动"| H["Windows"]
+    A["Stock Bootloader<br/>XBL / ABL"] --> B["Combined BOOT Selector<br/>Android / UEFI · 3 s"]
+    B -->|"Android"| C["Stock Android Kernel<br/>HyperOS"]
+    B -->|"Linux / Menu"| D["SunUEFI (EDK2)"]
+    D --> E["Linux Kernel in ESP<br/>sunuefi_esp"]
+    E --> F["ext4 Root Filesystem<br/>sunuefi_root"]
+    F --> G["Linux Desktop"]
+    D -.->|"Goal, not booting"| H["Windows"]
 ```
 
-### 启动路线会被记住
+### Boot Route Persistence
 
-在助手里保存的选择是默认启动路线，开机时用音量键临时改选不会改动它。首次安装默认进入 Android。在 Linux 里运行 `piano-next-boot android --reboot` 回到 Android，`reboot recovery` 进入原厂 Recovery 且不改动保存的路线。HyperOS 更新后，在助手的 **维护** 页点 **重新安装引导**。
+The selection saved in the Boot Helper is the default boot route; temporarily picking another entry with the volume keys at boot does not overwrite it. After initial installation, it defaults to Android. Run `piano-next-boot android --reboot` from Linux to switch back to Android, or `reboot recovery` to enter stock Recovery without altering the saved boot route. After a HyperOS update, open the Boot Helper's **Maintenance** tab and click **Reinstall Boot**.
 
 ### UEFI Fastboot
 
-UEFI 运行时，后台常驻一个 USB Fastboot 服务（设备名 `SunUEFI-piano`）。可以从电脑读日志、取截图、读写指定分区或启动系统。命令见 [UEFI Fastboot](docs/user/fastboot.md)。
+While UEFI is running, a background USB Fastboot service stays active (device name: `SunUEFI-piano`). From a computer, you can pull logs, capture screenshots, read/write designated partitions, or trigger a boot. See [UEFI Fastboot](docs/user/fastboot.md) for commands.
 
-| 名称 | 什么时候出现 | 能做什么 |
+| Name | When Available | Capabilities |
 | --- | --- | --- |
-| 原厂 Bootloader Fastboot | 开机时按键进入，或 `adb reboot bootloader` | 小米原厂功能，可刷写分区 |
-| UEFI Fastboot（本项目） | SunUEFI 运行期间 | 日志、截图、读取、刷写和擦除指定分区、请求启动 |
-| Linux 的 USB 网络 / SSH | Linux 启动之后 | 普通的 Linux 远程登录与调试 |
+| Stock Bootloader Fastboot | Key combo at boot, or `adb reboot bootloader` | Stock Xiaomi functionality; partition flashing |
+| UEFI Fastboot (this project) | While SunUEFI is running | Logs, screenshots, reading/flashing/erasing designated partitions, boot requests |
+| Linux USB Networking / SSH | After Linux boots | Standard Linux remote login and debugging |
 
-### 同一个 UEFI 核心
+### One Unified UEFI Core
 
-项目只维护一份 UEFI 核心 `PianoUEFI-product.img`。合体 BOOT、`fastboot boot` 临时启动和安装器用的都是它，不再按功能拆成多套测试镜像。只想试运行、不改动平板时，下载 `SunUEFI-UEFI-Fastboot`，见[临时启动](docs/user/temporary-boot.md)。
+The project maintains a single UEFI core image: `PianoUEFI-product.img`. Combined BOOT, `fastboot boot` temporary boot, and the installer all use it—there are no separate per-feature test builds. To try SunUEFI without modifying the tablet, download `SunUEFI-UEFI-Fastboot` and follow [Temporary Boot](docs/user/temporary-boot.md).
 
-## 实机画面
+## On-Device Showcase
 
 | | |
 | --- | --- |
-| ![Android 与 UEFI 开机选择](docs/assets/gallery/boot-selection.webp)<br>开机选择 | ![TianoCore 启动画面](docs/assets/gallery/uefi-splash.webp)<br>UEFI 启动画面 |
-| ![GNOME 系统信息与相机预览](docs/assets/gallery/gnome-camera.webp)<br>Debian / GNOME 与相机 | ![Android 引导助手界面预览](docs/assets/gallery/android-boot-helper-preview.webp)<br>Android 引导助手 |
+| ![Android and UEFI boot selection screen](docs/assets/gallery/boot-selection.webp)<br>Boot Selection | ![TianoCore boot splash screen](docs/assets/gallery/uefi-splash.webp)<br>UEFI Boot Splash |
+| ![GNOME system info and camera preview](docs/assets/gallery/gnome-camera.webp)<br>Debian / GNOME & Camera | ![Android Boot Helper UI preview](docs/assets/gallery/android-boot-helper-preview.webp)<br>Android Boot Helper |
 
 
 | Minecraft · Vulkan / Turnip | Minecraft · OpenGL / Freedreno |
 | --- | --- |
-| ![原版 Minecraft 26.3 Vulkan 实机画面](docs/assets/gallery/minecraft-vulkan.webp) | ![原版 Minecraft 26.3 OpenGL 实机画面](docs/assets/gallery/minecraft-opengl.webp) |
+| ![Vanilla Minecraft 26.3 running on Vulkan](docs/assets/gallery/minecraft-vulkan.webp) | ![Vanilla Minecraft 26.3 running on OpenGL](docs/assets/gallery/minecraft-opengl.webp) |
 
-两张均为原版 Minecraft 26.3，无优化模组，在平板 3K 屏幕上运行。照片分别显示约 446 FPS 和 174 FPS，为不同场景的瞬时读数。Vulkan 的分辨率显示差异可能与驱动 bug 或 Wayland 缩放有关。
+Both photos show vanilla Minecraft 26.3 with no optimization mods running on the tablet's 3K display. The readings of roughly 446 FPS and 174 FPS are instantaneous snapshots from different scenes. The resolution discrepancy reported under Vulkan may be related to a driver bug or Wayland scaling.
 
-### SteamOS 与游戏
+### SteamOS & Gaming
 
-| Steam 游戏模式 | 原神 · 游戏内 |
+| Steam Gaming Mode | Genshin Impact · In-Game |
 | --- | --- |
-| ![小米平板 8 Pro 上的中文 Steam 游戏模式](docs/assets/gallery/steamos-gaming-mode.webp) | ![小米平板 8 Pro 运行原神，角色已进入游戏世界](docs/assets/gallery/steamos-genshin-world.webp) |
-| **原神 · 官方启动器** | **魔法少女的魔女审判** |
-| ![SteamOS 中的原神官方启动器](docs/assets/gallery/steamos-genshin-launcher.webp) | ![小米平板 8 Pro 运行魔法少女的魔女审判剧情画面](docs/assets/gallery/steamos-witch-trial.webp) |
+| ![Chinese-locale Steam Gaming Mode on Xiaomi Pad 8 Pro](docs/assets/gallery/steamos-gaming-mode.webp) | ![Xiaomi Pad 8 Pro running Genshin Impact in-game](docs/assets/gallery/steamos-genshin-world.webp) |
+| **Genshin Impact · Official Launcher** | **Magical Girl Witch Trials** |
+| ![Official Genshin Impact launcher running in SteamOS](docs/assets/gallery/steamos-genshin-launcher.webp) | ![Xiaomi Pad 8 Pro running a story scene in Magical Girl Witch Trials](docs/assets/gallery/steamos-witch-trial.webp) |
 
-## 支持的硬件
+## Supported Hardware
 
-| 功能 | 状态 | 说明 |
+| Feature | Status | Notes |
 | --- | --- | --- |
-| 显示 | ✅ | 3200×2136，默认 120 Hz，可切换刷新率，十位输出 |
-| HDR 内容 | ✅ | 可播放 |
-| 12-bit / FRC | ❌ | 未实现 |
-| GPU | ✅ | Adreno，Vulkan（Turnip）和 OpenGL（Freedreno）。部分 GTK 窗口连续缩放时帧率偏低 |
-| 触屏 | ✅ | 点按、拖动、长按、手势，约 144 Hz |
-| 官方键盘与触控板 | ✅ | 含键盘背光，F1–F12 用右 Ctrl 加数字键，见[键盘说明](docs/user/keyboard.md) |
-| 触控笔 | ✅ | Focus Pen Pro 在 120 Hz 下支持定位与压感书写，GNOME 原生数位板设置可识别。手势与掌压范围见[已知问题](docs/user/known-issues.md#触控笔) |
-| 扬声器与麦克风 | ✅ | 四扬声器，原生单声道录音 |
-| Wi-Fi / 蓝牙 | ✅ | 蓝牙自动配置本机地址，使用 p81 板级 NVM，连接距离正常 |
-| 相机 | ✅ | 前后预览、录像、自动曝光和对焦，摄像头工作时实体绿灯亮起 |
-| 闪光灯 | ⚠️ | 已接入标准控制接口；实际发光和拍照同步还没有确认 |
-| 传感器与自动亮度 | ✅ | 自动旋转、光线、距离、罗盘 |
-| 夜灯 | ✅ | 使用通用 sRGB 配置，不是原厂校准 |
-| 电源 | ✅ | 双电池、PD 与小米快充、拓展坞充电和 OTG、合盖、挂起与唤醒；GNOME 支持节能／平衡／性能三档。不支持休眠 |
-| USB（Linux） | ✅ | Type-C 方向和角色切换，5 Gbit/s USB 网络 |
-| 外接存储（Linux） | ✅ | U 盘、移动硬盘和读卡器，FAT32／exFAT／NTFS 读写 |
-| 视频编解码 | ✅ | Iris + V4L2，带补丁的 FFmpeg |
-| SteamOS / Proton / FEX | ✅ | 游戏模式和桌面模式可用，支持常见 Windows 游戏（部分游戏需游戏自身参数，如原神） |
-| Y700 四代 UEFI 触屏 | ✅ | NT36536 单指菜单点击与滑动，见[驱动说明](docs/devel/hardware/y700-touch.md) |
-| Piano UEFI 阶段的触屏、键盘、USB Host | ❌ | 菜单用音量键和电源键操作 |
-| 指纹 | ✅ | 标准 libfprint／fprintd，Linux 独立录入、保存和认证，不使用 Android 的指纹模板 |
-| 红外发射 | ❌ | 未验证 |
-| Windows / WinPE | ❌ | 目标，未启动 |
+| Display | ✅ | 3200×2136, 120 Hz default, switchable refresh rate, 10-bit output |
+| HDR Content | ✅ | Playback supported |
+| 12-bit / FRC | ❌ | Not implemented |
+| GPU | ✅ | Adreno with Vulkan (Turnip) and OpenGL (Freedreno); some GTK windows drop frames during continuous resizing |
+| Touchscreen | ✅ | Tap, drag, long press, gestures (~144 Hz) |
+| Official Keyboard & Touchpad | ✅ | Includes keyboard backlight; F1–F12 via Right Ctrl + number keys, see [Keyboard Guide](docs/user/keyboard.md) |
+| Stylus | ✅ | Focus Pen Pro supports positioning and pressure-sensitive writing at 120 Hz, recognized natively in GNOME Tablet settings; see [Known Issues](docs/user/known-issues.md#stylus) for gestures and palm rejection scope |
+| Speakers & Microphone | ✅ | Quad speakers, native mono recording |
+| Wi-Fi / Bluetooth | ✅ | Bluetooth auto-configures local address using `p81` board-level NVM; normal connection range |
+| Cameras | ✅ | Front and rear preview, video recording, auto-exposure, and autofocus; physical green indicator LED lights up when active |
+| Flash LED | ⚠️ | Wired into standard control interface; actual illumination and capture sync not yet verified |
+| Sensors & Auto-Brightness | ✅ | Auto-rotation, ambient light, proximity, compass |
+| Night Light | ✅ | Uses a generic sRGB profile rather than stock factory calibration |
+| Power | ✅ | Dual battery, USB PD and Xiaomi fast charging, hub charging and OTG, lid close, suspend and wake; GNOME supports Power Saver / Balanced / Performance profiles; hibernate not supported |
+| USB (Linux) | ✅ | Type-C orientation and role switching, 5 Gbit/s USB networking |
+| External Storage (Linux) | ✅ | USB drives, external HDDs, and card readers; FAT32 / exFAT / NTFS read/write |
+| Video Encode / Decode | ✅ | Iris + V4L2 with patched FFmpeg |
+| SteamOS / Proton / FEX | ✅ | Gaming Mode and Desktop Mode working; runs common Windows games (some require game-specific parameters, e.g., Genshin Impact) |
+| Y700 Gen 4 UEFI Touchscreen | ✅ | NT36536 single-finger menu tap and swipe; see [Driver Notes](docs/devel/hardware/y700-touch.md) |
+| Piano UEFI-Stage Touch, Keyboard, USB Host | ❌ | Navigate menus with volume and power keys |
+| Fingerprint | ✅ | Standard libfprint / fprintd; enrolled, stored, and authenticated independently in Linux without using Android templates |
+| IR Blaster | ❌ | Unverified |
+| Windows / WinPE | ❌ | Goal, not booting yet |
 
-合体 BOOT 支持国行和国际版 Piano。各项的细节见[项目状态](docs/status.md)。
+Combined BOOT supports both CN and Global variants of `piano`. See [Project Status](docs/status.md) for detailed component status.
 
-### 尚未完成
+### Not Yet Implemented
 
 * 12-bit / FRC
-* 触控笔完整掌压、笔身滑动及应用快捷手势
-* 红外发射
-* UEFI 阶段的触屏、官方键盘与 USB Host
-* Windows / WinPE 启动
+* Full stylus palm rejection, barrel swipe, and app shortcut gestures
+* IR blaster
+* UEFI-stage touchscreen, official keyboard, and USB Host
+* Windows / WinPE boot
 
-## 快速开始
+## Quick Start
 
-### 在平板上安装
+### Install on the Tablet
 
 > [!NOTE]
-> 需要 Bootloader 已解锁、已安装 KernelSU 或 SukiSU 的小米平板 8 Pro，并提前备份数据。
+> Requires a Xiaomi Pad 8 Pro with an unlocked bootloader and KernelSU or SukiSU installed. Back up your data beforehand.
 
-1. 从 [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml) 下载三个包：引导助手模块（`SunUEFI-Module`）、启动镜像（ESP，`SunUEFI-ESP`）和系统镜像（root，`SunUEFI-Root-发行版`）。
-2. 在模块管理器里安装模块并重启，点击模块卡片上的 **打开 WebUI**，打开引导助手。
-3. 在 **存储** 页点 **创建独立分区**，选好容量后确认并重启。已有独立分区时跳过这一步。
-4. 在 **存储** 页选择下载好的启动镜像和系统镜像，点 **安装所选镜像**。
-5. 在 **启动** 页选择 **UEFI** 和 **Linux**，点 **保存并重启**。
+1. Download three packages from [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml): the Boot Helper module (`SunUEFI-Module`), the boot image (ESP, `SunUEFI-ESP`), and a system image (root, `SunUEFI-Root-<distro>`).
+2. Install the module in your module manager, reboot, and tap **Open WebUI** on the module card to open the Boot Helper.
+3. On the **Storage** tab, click **Create Dedicated Partition**, choose the capacity, confirm, and reboot. Skip this step if you already have a dedicated partition.
+4. On the **Storage** tab, select the downloaded boot image and system image, then click **Install Selected Images**.
+5. On the **Boot** tab, select **UEFI** and **Linux**, then click **Save and Reboot**.
 
 > [!WARNING]
-> 新平板的首次分区还没有在设备上验证过，见[已知问题](docs/user/known-issues.md#首次分区)。
+> First-time partitioning on a fresh tablet has not yet been verified on device; see [Known Issues](docs/user/known-issues.md#first-time-partitioning).
 
-系统镜像可选 Debian GNOME、Debian KDE、Nyarch GNOME、SteamOS，以及使用 Denial 触控桌面的 Debian 和 Arch Linux ARM。首次启动会自动把根文件系统扩展到分区大小，耗时比后续启动长。用户名 `piano`、密码 `piano123456` 登录，系统默认自动登录，锁屏解锁和 `sudo` 用同一个密码。完整步骤见[安装指南](docs/user/getting-started.md)。
+Available system images include Debian GNOME, Debian KDE, Nyarch GNOME, SteamOS, plus Debian and Arch Linux ARM with the Denial touch desktop. On first boot, the root filesystem automatically expands to fill the partition, so first boot takes longer than subsequent boots. Login credentials are username `piano` and password `piano123456`; auto-login is enabled by default, and the same password is used for lock screen unlock and `sudo`. See the [Installation Guide](docs/user/getting-started.md) for full instructions.
 
-### 软件源
+### Package Repositories
 
-SunUEFI 的内核、设备树、固件和配套软件包通过签名软件源更新，不用重刷系统镜像。
+SunUEFI's kernel, Device Trees, firmware, and companion packages are updated through signed repositories—no need to reflash the system image.
 
-| 系统 | 软件源 | 更新命令 |
+| System | Repository | Update Command |
 | --- | --- | --- |
-| Debian GNOME、Debian KDE | APT：`https://sunuefi-repo.okassets.uk/apt` · `sid main` · `arm64` | `sudo apt update && sudo apt upgrade` |
-| Nyarch | pacman：`[sunuefi]` | `sudo pacman -Syu` |
-| SteamOS | pacman：`[sunuefi-steamos]` 在 `[sunuefi]` 前面 | `sudo pacman -Syu` |
+| Debian GNOME, Debian KDE | APT: `https://sunuefi-repo.okassets.uk/apt` · `sid main` · `arm64` | `sudo apt update && sudo apt upgrade` |
+| Nyarch | pacman: `[sunuefi]` | `sudo pacman -Syu` |
+| SteamOS | pacman: `[sunuefi-steamos]` placed before `[sunuefi]` | `sudo pacman -Syu` |
 
-两个 pacman 仓库共用地址 `https://sunuefi-repo.okassets.uk/pacman/$repo/os/$arch`。SteamOS 专用仓只提供适配 Valve 用户空间的覆盖包，其余从 `sunuefi` 获取。手动配置见[软件源与更新](docs/user/getting-started.md#软件源与更新)。
+Both pacman repositories share the URL `https://sunuefi-repo.okassets.uk/pacman/$repo/os/$arch`. The SteamOS-specific repo only ships override packages adapted for Valve's userspace; everything else comes from `sunuefi`. See [Package Repositories and Updates](docs/user/getting-started.md#repositories-and-updates) for manual setup.
 
-### 自己构建
+### Build from Source
 
-需要 x86_64 或 ARM64 的 Linux 加 Docker，完整系统镜像需要 ARM64 构建机和特权容器。
+Requires an x86_64 or ARM64 Linux host with Docker. Building full system images requires an ARM64 build host and a privileged container.
 
 ```sh
-./build.sh sources   # 取固定版本的上游源码
-./build.sh check     # 主机检查
-./build.sh uefi      # 产物在 artifacts/product/PianoUEFI-product.img
+./build.sh sources   # Fetch pinned upstream sources
+./build.sh check     # Run host checks
+./build.sh uefi      # Output artifact: artifacts/product/PianoUEFI-product.img
 ```
 
-容器用法、各发行版的构建命令和产物位置见[构建手册](docs/devel/building.md)。
+See the [Build Manual](docs/devel/building.md) for container usage, per-distro build commands, and artifact paths.
 
-## 仓库结构
+## Repository Structure
 
 ```
-uefi/        EDK2 平台、产品核心、启动交接代码
-linux/       内核配置、设备树、BSP、桌面和发行版配方、用户空间程序
-android/     引导助手模块（WebUI）和 Android 侧原生工具
-patches/     对 Linux、固件、Gamescope 等上游的补丁
-tools/       构建、打包、检查脚本，入口是 ./build.sh
-config/      发布配置（内核版本、固件、发行版）
-upstream/    固定提交的上游源码（子模块），不直接修改
-vendor/      板级输入文件
-tests/       主机端测试
-docs/        文档
+uefi/        EDK2 platform, product core, and boot handoff code
+linux/       Kernel configs, Device Trees, BSP, desktop/distro recipes, and userspace tools
+android/     Boot Helper module (WebUI) and native Android-side tools
+patches/     Patches for upstream Linux, firmware, Gamescope, and related components
+tools/       Build, packaging, and validation scripts (entry point: ./build.sh)
+config/      Release configuration (kernel version, firmware, distros)
+upstream/    Pinned upstream source submodules (never modified directly)
+vendor/      Board-level input files
+tests/       Host-side tests
+docs/        Documentation
 ```
 
-## 文档
+## Documentation
 
-[用户文档](docs/user/getting-started.md) · [开发文档](docs/README.md) · [项目状态](docs/status.md) · [第三方来源](THIRD_PARTY.md) · [许可](LICENSE.md) · [贡献指南](CONTRIBUTING.md) · [AI 协作规范](AGENTS.md)
+[User Docs](docs/user/getting-started.md) · [Developer Docs](docs/README.md) · [Project Status](docs/status.md) · [Third-Party Sources](THIRD_PARTY.md) · [License](LICENSE.md) · [Contributing Guide](CONTRIBUTING.md) · [AI Collaboration Guidelines](AGENTS.md)
 
-## 站在谁的肩膀上
+## Standing on the Shoulders of Giants
 
-上游源码固定在 `upstream/`，我们的修改放在 `patches/`、`uefi/`、`linux/` 和构建工具里。UEFI 部分基于 [EDK2](https://github.com/tianocore/edk2) 和 [Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium)，启动菜单来自 [simple-init](https://github.com/BigfootACA/simple-init)。内核从 [linux-piano](https://github.com/blu-sharky/linux-piano) 起步，Debian 根系统来自 [debian-piano](https://github.com/blu-sharky/debian-piano)，设备固件取自官方 OTA，按组件存放在 `vendor/firmware`，图形用户空间使用 [Mesa](https://mesa3d.org/)。完整列表和各项目承担的部分见[上游项目](docs/devel/upstreams.md)。
+Upstream sources are pinned under `upstream/`, while our modifications live in `patches/`, `uefi/`, `linux/`, and the build tooling. The UEFI stack builds on [EDK2](https://github.com/tianocore/edk2) and [Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium), with the boot menu from [simple-init](https://github.com/BigfootACA/simple-init). The kernel started from [linux-piano](https://github.com/blu-sharky/linux-piano), the Debian rootfs from [debian-piano](https://github.com/blu-sharky/debian-piano), device firmware is extracted from official OTAs and organized by component under `vendor/firmware`, and graphics userspace uses [Mesa](https://mesa3d.org/). See [Upstream Projects](docs/devel/upstreams.md) for the complete list and each project's role.

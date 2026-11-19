@@ -1,135 +1,135 @@
-# P81C 手写笔固件与原厂升级协议
+# P81C Stylus Firmware and Stock OTA Protocol
 
-P81C 是 Xiaomi Focus Pen Pro 的笔端固件。它运行在笔内的微控制器上，与平板的 Novatek 触控固件、Linux 内核和 Android 蓝牙服务分别属于不同层次。保存这份固件可以帮助分析笔的压力、轻捏、振动、蓝牙和充电行为；把它放进 Linux 的 `/lib/firmware` 不会自动改善这些功能。
+P81C is the stylus-side firmware for the Xiaomi Focus Pen Pro. It runs on the microcontroller inside the stylus and sits in a different layer from the tablet's Novatek touch firmware, the Linux kernel, and the Android Bluetooth service. Archiving this firmware helps analyze the stylus's pressure, squeeze, haptic vibration, Bluetooth, and charging behavior; placing it into Linux's `/lib/firmware` will not automatically improve any of these features.
 
-本文记录 `P81C_0.0.32` 和同机原厂 Android 的实现。没有向笔发送升级、擦除或重启命令，也没有修改原厂升级过程。原始 ZIP、IMG 和校验信息保存在 [`vendor/piano-pen/p81c/0.0.32/`](../../../vendor/piano-pen/p81c/0.0.32/)。笔的坐标与压力处理见 [Piano 手写笔协议](pen-protocol.md)。
+This document records `P81C_0.0.32` and the stock Android implementation on the same device. No upgrade, erase, or reboot commands were sent to the stylus, and the stock upgrade process was not modified. The original ZIP, IMG, and checksum information are archived in [`vendor/piano-pen/p81c/0.0.32/`](../../../vendor/piano-pen/p81c/0.0.32/). For stylus coordinate and pressure handling, see [Piano Stylus Protocol](pen-protocol.md).
 
-## 样本与分析来源
+## Samples and Analysis Sources
 
-| 来源 | 用途 |
+| Source | Purpose |
 | --- | --- |
-| Android 缓存中的 `20Kf_XW_P81C_Pen_FW_User_V0.0.32.zip` | 原厂下载包，MD5 为 `25fc9fc49b0b333ef5c28852d237bb97` |
-| ZIP 内的 `XW_P81C_Pen_FW_User_V0.0.32.img` | 笔端升级镜像，710,312 字节 |
-| 同机 `BluetoothExtension.apk` | 原厂下载、型号选择、GATT 分片与日常控制实现；SHA-256 为 `3b1cae2a9f6226701584982d33a5b46065d2a5cbbf3d63b44e3d0fade337f3bf` |
-| `StylusOtaService` 日志 | 远端版本为 `0.0.32`，ZIP 校验通过并完成解包 |
-| Renesas DA1469x 官方 SDK 文档 | 对照 SUOTA 服务、镜像头和启动流程，不能代替同机记录 |
+| `20Kf_XW_P81C_Pen_FW_User_V0.0.32.zip` from Android cache | Stock download package; MD5 is `25fc9fc49b0b333ef5c28852d237bb97` |
+| `XW_P81C_Pen_FW_User_V0.0.32.img` inside the ZIP | Stylus upgrade image, 710,312 bytes |
+| `BluetoothExtension.apk` from the same device | Stock download, model selection, GATT chunking, and daily control implementation; SHA-256 is `3b1cae2a9f6226701584982d33a5b46065d2a5cbbf3d63b44e3d0fade337f3bf` |
+| `StylusOtaService` logs | Remote version is `0.0.32`; ZIP verification passed and extraction completed |
+| Renesas DA1469x official SDK documentation | Reference for the SUOTA service, image header, and boot flow; does not replace on-device records |
 
-APK 反编译输出位于本地 `内部记录目录 APK 的输出。混淆类名只作为定位标记，不应当成稳定 API；重新反编译其他 ROM 时应按方法、UUID 和调用关系查找。
+Decompiled APK output is stored in the local internal notes directory. Obfuscated class names serve only as reference markers and must not be treated as stable APIs; when decompiling other ROMs, locate code by method signatures, UUIDs, and call graphs.
 
-## 型号选择与下载
+## Model Selection and Download
 
-P81C 的 PnP ID 为 VID `0x0022`、PID `0x5081`。`oobhelper/a.java:116` 从 Device Information 的 PnP ID 特征 `2A50` 读取 VID、PID，`oobhelper/h.java:126` 的升级分支明确将 PID 20609（`0x5081`）交给 `MiuiMippOtaManager`，即混淆类 `p085y0.h`。该类读取 `.img`，使用 SUOTA 服务。
+P81C has a PnP ID of VID `0x0022` and PID `0x5081`. `oobhelper/a.java:116` reads the VID and PID from the Device Information PnP ID characteristic `2A50`, and the upgrade branch at `oobhelper/h.java:126` explicitly routes PID 20609 (`0x5081`) to `MiuiMippOtaManager`, i.e., obfuscated class `p085y0.h`. This class reads `.img` files and uses the SUOTA service.
 
-同一 APK 还有 `MiuiMippOtaManagerV2`（`p085y0.l`），使用 `FED0/FED1/FED2` 和 `A5` 包头，其文件选择器读取 `.bin`。这是其他 PID 的路径。**不能因为它名字带 V2，就把这套协议用于 P81C。** APK 内另一个 `8EC90001` 控制特征的 DFU 分支也不能混用。
+The same APK also contains `MiuiMippOtaManagerV2` (`p085y0.l`), which uses `FED0/FED1/FED2` and an `A5` packet header, with its file selector reading `.bin`. That path is for other PIDs. **Do not use this protocol for P81C just because its name includes V2.** Another DFU branch in the APK using the `8EC90001` control characteristic must not be mixed with it either.
 
-下载由 `com/android/bluetooth/ble/app/mipencil/ota/StylusOtaService.java` 完成：
+Downloads are handled by `com/android/bluetooth/ble/app/mipencil/ota/StylusOtaService.java`:
 
-1. 当前版本来自 Device Information 的 Firmware Revision `2A28`，解析点为 `oobhelper/a.java:114`。
-2. `p076v0/c.java:348` 将产品写为 `p81c`、设备写为 `p81c.pen`；`:421` 使用模块 `p81c.pen.full` 请求更新元数据。
-3. `StylusOtaService.java:41` 的缓存目录是 `/data/user_de/0/com.xiaomi.bluetooth/files/`。回调 `mipencil/ota/a.java:30` 计算 ZIP 的 MD5，只将十六进制结果前十位与服务器的 `md5` 比较，然后解包。
-4. 解包目录通过 IPC 返回给升级管理器。该下载校验与笔端接收完成后的检查是不同阶段，不能把 ZIP 下载成功当成升级成功。
+1. The current version comes from the Device Information Firmware Revision characteristic `2A28`, parsed at `oobhelper/a.java:114`.
+2. `p076v0/c.java:348` sets the product to `p81c` and the device to `p81c.pen`; `:421` requests update metadata using module `p81c.pen.full`.
+3. The cache directory in `StylusOtaService.java:41` is `/data/user_de/0/com.xiaomi.bluetooth/files/`. The callback at `mipencil/ota/a.java:30` computes the ZIP's MD5, compares only the first 10 hex characters against the server's `md5` field, and then extracts the archive.
+4. The extraction directory is returned to the upgrade manager via IPC. This download check and the stylus's post-transfer verification are separate stages; a successful ZIP download must not be treated as a successful upgrade.
 
-公开下载源为 [小米 OTA CDN 上的原厂 ZIP](https://cdn.cnbj1.fds.api.mi-img.com/ota-packages/20Kf_XW_P81C_Pen_FW_User_V0.0.32.zip)。研究记录不保存账户标识、设备地址、令牌或蓝牙配对密钥。
+The public download source is the [stock ZIP on Xiaomi's OTA CDN](https://cdn.cnbj1.fds.api.mi-img.com/ota-packages/20Kf_XW_P81C_Pen_FW_User_V0.0.32.zip). Research records do not store account identifiers, device addresses, tokens, or Bluetooth pairing keys.
 
-## P81C 的 SUOTA 端点
+## P81C SUOTA Endpoints
 
-以下 UUID 全部来自 `p085y0/h.java:106` 的常量表，并由它的读写方法和 `oobhelper/a.java` 回调确认用途。
+All UUIDs below come from the constant table at `p085y0/h.java:106`, with their roles confirmed by its read/write methods and the callbacks in `oobhelper/a.java`.
 
-| 用途 | UUID | 数据 |
+| Purpose | UUID | Data |
 | --- | --- | --- |
-| SUOTA 服务 | `0000fef5-0000-1000-8000-00805f9b34fb` | GATT 服务 |
-| `MEM_DEV` | `8082caa8-41a6-4021-91c6-56f9b954cc34` | 4 字节，小端整数；启动传输、结束、重启 |
-| `GPIO_MAP` | `724249f0-5ec3-4b5f-8804-42345af08651` | 4 字节，小端整数 |
-| `PATCH_LEN` | `9d84b9a3-000c-49d8-9183-855b673fda31` | 2 字节，小端块长度 |
-| `PATCH_DATA` | `457871e8-d516-4ca1-9116-57d0b17b9cb2` | 升级文件数据，Write Without Response |
-| `STATUS` | `5f78df94-798c-46f5-990a-b3eb6a065c88` | 单字节通知，控制传输进度 |
-| `PATCH_DATA_CHAR_SIZE` | `42c3dfdd-77be-4d9c-8454-8f875267fb3b` | 2 字节，小端特征容量 |
-| `STATUS` 的 CCCD | `00002902-0000-1000-8000-00805f9b34fb` | 写 `01 00` 开启通知 |
+| SUOTA service | `0000fef5-0000-1000-8000-00805f9b34fb` | GATT service |
+| `MEM_DEV` | `8082caa8-41a6-4021-91c6-56f9b954cc34` | 4-byte little-endian integer; starts transfer, finalizes, and reboots |
+| `GPIO_MAP` | `724249f0-5ec3-4b5f-8804-42345af08651` | 4-byte little-endian integer |
+| `PATCH_LEN` | `9d84b9a3-000c-49d8-9183-855b673fda31` | 2-byte little-endian block length |
+| `PATCH_DATA` | `457871e8-d516-4ca1-9116-57d0b17b9cb2` | Upgrade image data, Write Without Response |
+| `STATUS` | `5f78df94-798c-46f5-990a-b3eb6a065c88` | Single-byte notification controlling transfer progress |
+| `PATCH_DATA_CHAR_SIZE` | `42c3dfdd-77be-4d9c-8454-8f875267fb3b` | 2-byte little-endian characteristic capacity |
+| `STATUS` CCCD | `00002902-0000-1000-8000-00805f9b34fb` | Write `01 00` to enable notifications |
 
-原厂客户端采用 GATT 分块传输。没有记录表明这次 P81C 升级使用 L2CAP CoC，不能直接照搬其他 Renesas SDK 的可选传输路径。
+The stock client uses GATT chunked transfers. There is no record of this P81C upgrade using L2CAP CoC; optional transport paths from other Renesas SDKs cannot be copied over directly.
 
-## 分片、流控与结束
+## Chunking, Flow Control, and Finalization
 
-`p085y0/h.java:438` 将完整 IMG 读入数组，再在末尾追加一个字节：原始 IMG 全部字节的异或值。函数 `:141` 虽然把日志标签叫作 `crc`，实现上是 **XOR-8**，不是 CRC32。该样本的异或值为 `0x7C`，空中数据总长度是 **710,313 字节**。它与 IMG 头中的正文 CRC32 是两层独立校验。
+`p085y0/h.java:438` reads the entire IMG into an array and appends one trailing byte: the XOR of all bytes in the original IMG. Although the method at `:141` labels its log tag `crc`, the implementation is **XOR-8**, not CRC32. For this sample, the XOR value is `0x7C`, making the total over-the-air payload **710,313 bytes**. This is a separate layer of verification independent of the payload CRC32 in the IMG header.
 
-`PATCH_DATA_CHAR_SIZE` 读取完成后，客户端请求 `capacity + 3` 的 ATT MTU；收到 MTU 回调后，分片长度为 `min(capacity, MTU - 3)`，见 `p085y0/h.java:333`。起始逻辑把八个分片组成一个块，最后一块按余量缩短。数据特征写完成的回调只驱动块内下一片，笔的 `STATUS` 通知才驱动下一块；两种回调都需要记录。
+After reading `PATCH_DATA_CHAR_SIZE`, the client requests an ATT MTU of `capacity + 3`; once the MTU callback arrives, the chunk size is `min(capacity, MTU - 3)` (`p085y0/h.java:333`). The initial logic groups eight chunks into one block, with the final block shortened to the remaining bytes. The write-complete callback on the data characteristic only advances to the next chunk within a block, while the stylus's `STATUS` notification advances to the next block; both callbacks must be tracked.
 
-| 阶段 | 原厂行为 | 源码位置 |
+| Stage | Stock Behavior | Source Location |
 | --- | --- | --- |
-| 准备 | 设置高连接优先级、启用 `STATUS` 通知 | `p085y0/h.java:272`、`:245` |
-| 开始 | 向 `MEM_DEV` 写 `0x13000000`，线上的字节为 `00 00 00 13` | `p085y0/h.java:525` |
-| 初始握手 | 等待 `MEM_DEV` 写回调和 `STATUS=0x10` 两个条件，再写 `GPIO_MAP=0x05060500` | `p085y0/h.java:290`、`:518`；`oobhelper/a.java:50`、`:209` |
-| 块长度 | 向 `PATCH_LEN` 写当前块长；末块缩短 | `p085y0/h.java:507` |
-| 数据 | 分片写入 `PATCH_DATA`；块内由写回调推进，块间等待 `STATUS=0x02` | `p085y0/h.java:361`；`oobhelper/a.java:64`、`:227` |
-| 结束 | 向 `MEM_DEV` 写 `0xFE000000`，即 `00 00 00 FE`，等待后续通知 | `p085y0/h.java:418` |
-| 完成 | 恢复均衡连接优先级、关闭输入流、向 Android 界面报完成 | `p085y0/h.java:261`；`MiuiBleOobHelperService.java:3411` |
-| 重启入口 | 可向 `MEM_DEV` 写 `0xFD000000`，即 `00 00 00 FD` | `p085y0/h.java:426` |
+| Prepare | Set high connection priority and enable `STATUS` notifications | `p085y0/h.java:272`, `:245` |
+| Start | Write `0x13000000` to `MEM_DEV` (`00 00 00 13` on the wire) | `p085y0/h.java:525` |
+| Initial handshake | Wait for both the `MEM_DEV` write callback and `STATUS=0x10`, then write `GPIO_MAP=0x05060500` | `p085y0/h.java:290`, `:518`; `oobhelper/a.java:50`, `:209` |
+| Block length | Write the current block length to `PATCH_LEN`; shortened for the final block | `p085y0/h.java:507` |
+| Data | Write chunks to `PATCH_DATA`; write callbacks advance within a block, and `STATUS=0x02` is awaited between blocks | `p085y0/h.java:361`; `oobhelper/a.java:64`, `:227` |
+| Finalize | Write `0xFE000000` (`00 00 00 FE`) to `MEM_DEV` and wait for follow-up notifications | `p085y0/h.java:418` |
+| Complete | Restore balanced connection priority, close the input stream, and report completion to the Android UI | `p085y0/h.java:261`; `MiuiBleOobHelperService.java:3411` |
+| Reboot trigger | Can write `0xFD000000` (`00 00 00 FD`) to `MEM_DEV` | `p085y0/h.java:426` |
 
-`oobhelper/a.java` 明确只把 `0x10` 转为握手步骤 3，把 `0x02` 转为传输步骤 5。其他状态未在该回调里详细解码。后续 Linux 工具应保留未知状态原值，不能将任何通知都当作成功。
+`oobhelper/a.java` explicitly maps only `0x10` to handshake step 3 and `0x02` to transfer step 5. Other status codes are not decoded in detail inside that callback. Future Linux tooling should preserve raw values for unknown status codes rather than treating every notification as success.
 
-原厂 `H3()` 完成路径还会根据已发现的服务决定是否排队重启笔。存在 `sendRebootSignal()` 并不代表当前这次升级已经发出过重启；最后仍应重新读取 `2A28`，确认笔的运行版本。
+The stock `H3()` completion path also decides whether to queue a stylus reboot based on discovered services. The presence of `sendRebootSignal()` does not mean a reboot was issued during this upgrade; always re-read `2A28` afterward to verify the stylus's running version.
 
-这些端点及 `0x13`／`0xFE`／`0xFD` 的用途也与 [Renesas DA1469x 的 SUOTA 服务说明](https://lpccs-docs.renesas.com/um-b-092-da1469x_software_platform_reference/User_guides/User_guides.html#suota-service-description) 对应。该文档说明，块长用于流控，整图发送结束后还要检查镜像，下一次重启的引导程序负责最终验证与启用。P81C 是否启用了该 SDK 的所有安全选项，必须另看笔的配置。
+These endpoints and the roles of `0x13` / `0xFE` / `0xFD` also match the [Renesas DA1469x SUOTA Service Description](https://lpccs-docs.renesas.com/um-b-092-da1469x_software_platform_reference/User_guides/User_guides.html#suota-service-description). According to that documentation, block length provides flow control, the image is checked after the entire transfer finishes, and the bootloader handles final verification and activation on the next reboot. Whether P81C enables all security options from that SDK must be verified separately against the stylus's configuration.
 
-## 镜像头与笔内实现
+## Image Header and On-Stylus Implementation
 
-本样本采用 `Qq` 镜像头，IMG 前 `0x400` 字节为头部，正文长 `709,288` 字节。正文 CRC32 为 `0xDCD50A1C`，对 `IMG[0x400:]` 计算得到相同结果。头中版本是 `P81C_0.0.32`，时间字段对应 `2025-12-16 10:00 UTC`，向量表偏移为 `0x400`。
+This sample uses a `Qq` image header: the first `0x400` bytes of the IMG form the header, followed by a `709,288`-byte payload. The payload CRC32 is `0xDCD50A1C`, which matches computing CRC32 over `IMG[0x400:]`. The header version is `P81C_0.0.32`, the timestamp corresponds to `2025-12-16 10:00 UTC`, and the vector table offset is `0x400`.
 
-头部、Cortex-M 向量表、Dialog/Renesas BLE 字符串和寄存器访问共同指向 **DA1469x 家族**。目前不把日志中的 `DA14697` 名称当成芯片料号的最终证明，也不把样本中的所有驱动都当成这支笔的物料清单。镜像头形式和启动流程可以对照 [Renesas DA1469x 镜像与引导说明](https://lpccs-docs.renesas.com/um-b-092-da1469x_software_platform_reference/User_guides/User_guides.html#booting)。
+The header, Cortex-M vector table, Dialog/Renesas BLE strings, and register accesses all point to the **DA1469x family**. At this stage, the `DA14697` string in logs is not treated as definitive proof of the exact silicon part number, nor are all drivers present in the image assumed to reflect this stylus's bill of materials. The image header format and boot flow can be cross-referenced with the [Renesas DA1469x Image and Booting Guide](https://lpccs-docs.renesas.com/um-b-092-da1469x_software_platform_reference/User_guides/User_guides.html#booting).
 
-已找到的字符串与 Thumb 代码引用提供了以下分析入口。这里的“文件偏移”是 IMG 中的位置，“代码地址”按去掉 `0x400` 头部后的映射计算；没有符号表时仍需逐函数确认参数与调用者。
+Located strings and Thumb code references provide the following analysis entry points. Here, "file offset" is the position within the IMG, and "code address" is calculated from the mapping after stripping the `0x400` header; without a symbol table, parameters and callers still need to be verified function by function.
 
-| 线索 | IMG 文件偏移 | 引用代码地址 | 对 Linux 调试的意义 |
+| Clue | IMG File Offset | Referenced Code Address | Relevance to Linux Debugging |
 | --- | --- | --- | --- |
-| `AW86224` 振动驱动日志 | `0x9A498` | `0x34980` | 追踪电机初始化、增益和播放，与 FE11 的振动请求对应 |
-| `CDV2624` 驱动日志 | `0x99B50` | `0x32898` | 同镜像存在另一种振动驱动；需确认运行时选择，不能断言两者同时工作 |
-| Touch double-tap | `0xA5058` | `0x3E8CC` | 区分笔身触摸检测、双击配置和发送给主机的按键 |
-| MIPP haptic gain | `0xA5CA4` | `0x41C44` | 轻捏反馈强度与笔内波形／增益的后续入口 |
-| 默认 MIPP 60 Hz | `0xA4458` | `0x3AD1C` | 表示笔内默认参数，不能直接解释平板 144 Hz 下为何收不到坐标 |
-| 压力处理库 | `0xA4350` | `0x3AD2C` | 与蓝牙 Report 5 的原始压力和校准路径对照 |
+| `AW86224` haptic driver logs | `0x9A498` | `0x34980` | Trace motor initialization, gain, and playback; corresponds to FE11 haptic requests |
+| `CDV2624` driver logs | `0x99B50` | `0x32898` | Another haptic driver exists in the same image; runtime selection must be verified instead of assuming both are active |
+| Touch double-tap | `0xA5058` | `0x3E8CC` | Distinguish barrel touch detection, double-tap configuration, and key events sent to the host |
+| MIPP haptic gain | `0xA5CA4` | `0x41C44` | Entry point for tracing squeeze feedback intensity and on-stylus waveforms/gain |
+| Default MIPP 60 Hz | `0xA4458` | `0x3AD1C` | Indicates an on-stylus default parameter; does not directly explain why the tablet receives no coordinates at 144 Hz |
+| Pressure processing library | `0xA4350` | `0x3AD2C` | Cross-reference with raw pressure in Bluetooth Report 5 and its calibration path |
 
-## 日常控制与升级协议要分开
+## Keep Daily Control Separate from the Upgrade Protocol
 
-日常控制使用 **FE10 服务、FE11 写入、FE12 通知**，后缀都是 `aa6c-462a-964a-7f2ed5b3e512`。命令通常是 `opcode, payload_length, payload`。下表来自同机 `MiuiBleOobHelperService` 的构包和回复解析，而非按 Renesas SDK 猜测。
+Daily control uses the **FE10 service, FE11 write characteristic, and FE12 notify characteristic**, all sharing the suffix `aa6c-462a-964a-7f2ed5b3e512`. Commands generally follow `opcode, payload_length, payload`. The table below is derived from packet construction and response parsing in `MiuiBleOobHelperService` on the same device, not guessed from the Renesas SDK.
 
-| 请求 | 含义 | 回复 | 固定 APK 的定位点 |
+| Request | Meaning | Response | Reference in Pinned APK |
 | --- | --- | --- | --- |
-| `01 00` | 查询笔功能位 | `81 02 feature0 feature1` | `MiuiBleOobHelperService.java:1074` |
-| `02 00` | 查询各芯片工作状态 | `82 02 state0 state1` | 同文件 `:1191` |
-| `51 01 state` | 告知磁吸状态；附着 0、分离 1 | `D1 00` | 同文件 `:3273`、`:1383` |
-| `52 00` | 查询活动／静止状态 | `D2 01 state` | 同文件 `:1420` |
-| `5A 01 level` | 设置轻捏反馈强度，级别 0–5 | `DA 01 status`，1 成功、0 失败 | 同文件 `:2613`、`:1580` |
-| `5C 04 down_hi down_lo up_hi up_lo` | 设置轻捏按下、松开的两个阈值；大端 u16。原厂构包限制 down 为 1–900、up 为 0–900，单位尚未确认 | `DC 01 status` | 同文件 `:2661`、`:1482` |
-| `5E 02 type value` | 振动控制类型与控制值，不是轻捏事件 | `DE 00` | 同文件 `:2894`、`:1522` |
-| `5F 01 enabled` | 开关双击 | `DF 01 status` | 同文件 `:637`、`:1502` |
-| `59 02 pen_type level` | 设置书写反馈，类型与强度分别编码 | `D9 01 status` | 同文件 `:2923`、`:1562` |
-| `5B 01 enabled` | 开关加速度计／陀螺仪通道 | `DB 01 status` | 同文件 `:644`、`:1547` |
-| `61 01 enabled` | 通知屏幕状态 | `E1 00` | 同文件 `:654`、`:1603` |
-| `62 01 state` | 通知报点／抬起移动状态 | `E2 00` | 同文件 `:656`、`:1608` |
-| `63 01 enabled` | 开关笔身滑动；笔开机默认开 | `E3 01 status`，1 成功 | `SET_SLIDE_STATE_ENABLE_CMD`、`STYLUS_SLIDE_REPORT`；笔固件处理函数 VA `0x41600` |
-| `64 01 enabled` | 笔身手势总开关；笔开机默认开 | 笔固件回复 `E4 01 01` | 笔固件处理函数 VA `0x415C4`，原厂客户端未见发送 |
-| `6F 01 x` | 复位笔 | 回复 `EF 00` 后延时复位 | 笔固件处理函数 VA `0x413B0`；不能发送 |
+| `01 00` | Query stylus capability bits | `81 02 feature0 feature1` | `MiuiBleOobHelperService.java:1074` |
+| `02 00` | Query operating status of each IC | `82 02 state0 state1` | Same file `:1191` |
+| `51 01 state` | Report magnetic attachment state; `0` = attached, `1` = detached | `D1 00` | Same file `:3273`, `:1383` |
+| `52 00` | Query active/idle state | `D2 01 state` | Same file `:1420` |
+| `5A 01 level` | Set squeeze feedback intensity, levels 0–5 | `DA 01 status` (`1` = success, `0` = failure) | Same file `:2613`, `:1580` |
+| `5C 04 down_hi down_lo up_hi up_lo` | Set squeeze press and release thresholds as big-endian u16 values. Stock packet builder clamps `down` to 1–900 and `up` to 0–900; unit is not yet confirmed | `DC 01 status` | Same file `:2661`, `:1482` |
+| `5E 02 type value` | Haptic control type and value; not a squeeze event | `DE 00` | Same file `:2894`, `:1522` |
+| `5F 01 enabled` | Enable/disable double-tap | `DF 01 status` | Same file `:637`, `:1502` |
+| `59 02 pen_type level` | Set writing feedback; pen type and intensity encoded separately | `D9 01 status` | Same file `:2923`, `:1562` |
+| `5B 01 enabled` | Enable/disable accelerometer/gyroscope channel | `DB 01 status` | Same file `:644`, `:1547` |
+| `61 01 enabled` | Notify screen state | `E1 00` | Same file `:654`, `:1603` |
+| `62 01 state` | Notify reporting / lift-and-move state | `E2 00` | Same file `:656`, `:1608` |
+| `63 01 enabled` | Enable/disable barrel slide gesture; enabled by default on stylus boot | `E3 01 status` (`1` = success) | `SET_SLIDE_STATE_ENABLE_CMD`, `STYLUS_SLIDE_REPORT`; stylus firmware handler VA `0x41600` |
+| `64 01 enabled` | Master switch for barrel gestures; enabled by default on stylus boot | Stylus firmware replies `E4 01 01` | Stylus firmware handler VA `0x415C4`; not observed being sent by the stock client |
+| `6F 01 x` | Reset stylus | Replies `EF 00`, then resets after a delay | Stylus firmware handler VA `0x413B0`; do not send |
 
-`feature0.bit0` 表示无线充电能力；`feature1.bit0` 表示 Haptic，`feature1.bit1` 表示高频压力能力。`state0.bit0` 是充电 IC、`.bit2` 是无线充 IC、`.bit5` 是压力 IC、`.bit6` 是触摸 IC 的工作状态。这些是笔回复的数据，不能用配置文件伪造为支持。
+`feature0.bit0` indicates wireless charging support; `feature1.bit0` indicates haptics, and `feature1.bit1` indicates high-frequency pressure support. `state0.bit0` is the charger IC, `.bit2` is the wireless charging IC, `.bit5` is the pressure IC, and `.bit6` is the touch IC operating state. These values are reported by the stylus and must not be spoofed as supported via configuration files.
 
-**`DA 01 01` 只说明强度设置被接受，不是一次轻捏，也不是电机已经振动的证明。** 原厂的 `oobhelper/h.java:40` 接收 IPC 消息 3006 后，会把 Android 用户设置中的双击、反馈强度和两个轻捏阈值排进命令队列。笔固件升级或重新连接之后，Linux 也应重新初始化这些日常参数，再分别观察轻捏输入和电机输出。
+**`DA 01 01` only confirms that the intensity setting was accepted; it is neither a squeeze event nor proof that the motor vibrated.** When stock `oobhelper/h.java:40` receives IPC message 3006, it queues the double-tap, feedback intensity, and two squeeze threshold commands from Android user settings. After a stylus firmware upgrade or reconnection, Linux should likewise reinitialize these daily parameters, and then observe squeeze input and motor output separately.
 
-[`pen-control.py`](../../../linux/bsp/common/usr/lib/piano/pen-control.py) 已做无线参数、双击、轻捏反馈和阈值初始化。没有必要为设置反馈强度刷写笔固件。若用户报告轻捏不振动，首先检查它是否完成初始化、收到哪一条 FE12 回复以及运行版本，再对照原厂同样的操作。`62` 不能用来冒充“开启压力”；其开关影响按键／报点行为时，必须与 HID 输入路径一起确认。
+[`pen-control.py`](../../../linux/bsp/common/usr/lib/piano/pen-control.py) already handles initialization for wireless parameters, double-tap, squeeze feedback, and thresholds. There is no need to flash stylus firmware just to configure feedback intensity. If a user reports that squeezing produces no vibration, first check whether initialization completed, which FE12 response was received, and what firmware version is running, then compare against the same operation on stock Android. Command `62` cannot be used to pretend to "enable pressure"; whenever toggling it affects button or reporting behavior, verify it together with the HID input path.
 
-固件升级还可能改变 HID 描述符。原厂 `oobhelper/i.java:837` 读取广播里的 HID 描述符版本，与本地常量 3 比较；版本较新时清除 `persist.bluetooth.spechid`，不再使用本地旧描述符。Linux 同样应以笔当前返回的 Report Map 为准。如果升级后笔、触摸或键盘出现多余按键，应该先确定事件来自哪个输入设备，再核对 Report ID、长度、字段和描述符，不能用全局屏蔽 `+` 键掩盖协议解析问题。
+A firmware upgrade can also change the HID descriptor. Stock `oobhelper/i.java:837` reads the HID descriptor version from advertising data and compares it against the local constant `3`; if the version is newer, it clears `persist.bluetooth.spechid` so the stale local descriptor is no longer used. Linux should similarly rely on the Report Map currently returned by the stylus. If spurious key events appear on the stylus, touchscreen, or keyboard after an upgrade, first identify which input device emitted the event, then verify the Report ID, length, fields, and descriptor—do not mask a protocol parsing bug by globally blocking the `+` key.
 
-## 各层分别负责什么
+## Responsibilities by Layer
 
-| 功能或问题 | 笔端固件 | 平板触控／Linux 驱动 | 主机用户空间 |
+| Feature or Issue | Stylus Firmware | Tablet Touch / Linux Driver | Host Userspace |
 | --- | --- | --- | --- |
-| 笔尖坐标和倾角 | 发射笔信号 | 接收 Novatek type 29 原始矩阵，解算并输出标准输入事件 | libinput／绘图程序消费输入 |
-| 压力 | 笔尖压力 IC，蓝牙 Report 5 | 与坐标时序融合，释放过期压力 | 应用处理压力曲线 |
-| 轻捏、双击 | 笔身检测及 HID／控制报告 | 按 HID 描述符解释报告 | 绑定桌面动作；通过 FE11 配置反馈 |
-| 震动 | 电机驱动和波形／增益执行 | 不应虚拟成平板电机 | 使用笔控制协议，确认物理效果 |
-| 蓝牙唤醒、重连 | 广播、连接与休眠策略 | 蓝牙控制器及标准 BlueZ/HID 支持 | 跟随磁吸／屏幕状态，不用固定地址或删除配对来强连 |
-| 磁吸无线充电 | 笔端接收、温度和电量状态 | 平板端充电发射器、霍尔检测及其电源驱动 | 通过标准电源／电池接口展示 |
-| 144 Hz 下无笔坐标 | 有可研究的发射时序 | 面板刷新与触控扫描／笔同步是主要对照点 | 正确转发原厂配置，不把桌面刷新率直接当笔扫描率 |
+| Tip coordinates and tilt | Transmits stylus signal | Receives raw Novatek type 29 matrix, computes coordinates, and emits standard input events | libinput / drawing apps consume input |
+| Pressure | Tip pressure IC; Bluetooth Report 5 | Fuses with coordinate timing and clears stale pressure | Applications process pressure curves |
+| Squeeze and double-tap | Barrel sensing and HID / control reports | Parses reports according to the HID descriptor | Binds desktop actions; configures feedback via FE11 |
+| Vibration | Motor driver and waveform/gain execution | Must not be exposed as a virtual tablet vibration motor | Uses the stylus control protocol and verifies physical feedback |
+| Bluetooth wake and reconnect | Advertising, connection, and sleep policies | Bluetooth controller and standard BlueZ/HID support | Follows magnetic attachment / screen state; avoid hardcoded addresses or deleting pairings to force reconnects |
+| Magnetic wireless charging | Stylus-side reception, temperature, and battery state | Tablet-side charging transmitter, Hall sensor, and power supply driver | Exposes status through standard power/battery interfaces |
+| No stylus coordinates at 144 Hz | Transmit timing worth investigating | Panel refresh vs. touch scan / stylus sync is the primary comparison point | Forwards stock configuration accurately; do not treat desktop refresh rate as stylus scan rate |
 
-笔内存在“默认 60 Hz”日志，不足以证明它只支持 60 Hz，也不足以证明修改这一个常数能解决 144 Hz 问题。同机 Android 的工作链需要一起对照：面板模式、笔协议时序、触控扫描模式、FE11 配置和 Report 5／type 29 是否到达。只改笔固件可能既不改变平板扫描，又引入升级风险。
+The presence of a "default 60 Hz" log inside the stylus is neither proof that it only supports 60 Hz nor proof that changing that single constant will fix the 144 Hz issue. The working chain on stock Android on the same device must be compared end to end: panel mode, stylus protocol timing, touch scan mode, FE11 configuration, and whether Report 5 / type 29 packets arrive. Modifying only the stylus firmware may fail to change tablet scanning while introducing upgrade risk.
 
-下一步有价值的调试是：保持原厂固件不变，记录新版本的 `2A28`、FE11 请求／FE12 回复及轻捏、压力输入；再把必要初始化和输入解析写入现有 BSP。确实定位到笔端算法或协议缺陷后，才研究修改笔固件，而不是先生成一个 Linux OTA 写入器。
+The most valuable next debugging step is to keep the stock firmware untouched, record the `2A28` version, FE11 requests / FE12 responses, and squeeze/pressure input on newer versions, and then fold the necessary initialization and input parsing into the existing BSP. Research modifying the stylus firmware only after pinpointing an actual stylus-side algorithm or protocol defect—not by building a Linux OTA flasher first.

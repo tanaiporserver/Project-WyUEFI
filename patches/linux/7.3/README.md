@@ -1,41 +1,31 @@
-# Linux 7.3 发布内核
+# Linux 7.3 Release Kernel
 
-整理和回移补丁时，遵守 [内核补丁维护要求](../AGENTS.md)。
+Follow the [kernel patch maintenance requirements](../AGENTS.md) when organizing and backporting patches.
 
-从稳定版 `v7.3.3` 提交开始，依次应用 `series.json` 中的主题补丁和接口修正：
+Starting from the stable `v7.3.3` commit, apply the topic patches and interface fixes in `series.json` in order:
 
-| 补丁 | 内容 |
+| Patch | Description |
 | --- | --- |
-| `0001-platform` | 板级描述、总线、存储、时钟、电源、固件通信与原有启动适配 |
-| `0002-display` | DPU、双 DSI、面板、背光、色彩曲线和无缝 VFP 更新 |
-| `0003-input-wireless` | 触摸、触控笔、键盘、蓝牙和无线网络 |
-| `0004-media` | 相机传感器、CAMSS、Iris 和闪光灯 |
-| `0005-audio` | 四扬声器、TDM 和麦克风 |
-| `0006-gunyah` | Android Gunyah 驱动及主线接口适配 |
-| `0007-bore` | CachyOS 的 BORE 6.8.0 调度改动 |
-| `0008-drm-msm-gem-api` | 适配 7.3 的显存分配接口，保持色彩校正 DMA 使用独立缓冲区 |
-| `0009-gunyah-rmap-api` | 适配内存反向映射接口，借出页面前仍检查用户映射 |
-| `0010-gunyah-dt-availability` | 尊重资源管理器节点的禁用状态，避免使用其他启动中的旧句柄，并修正设备树引用重复释放 |
-| `0023-dpu-shared-video-ctl` | 双 DSI 共用一个 CTL 时每帧只提交一次，避免从通道重复提交和待完成计数增长；超时日志附带控制器、接口和提交掩码 |
-| `0024-hid-nanosic-feature-and-release` | 触控板使用描述符声明的能力，不再查询 MCU 未实现的 HID Feature 报告；合盖释放触点时按型号发送完整报文 |
-| `0025-ucsi-clear-released-connectors` | 清空注销后的连接器指针，避免 ADSP 重启时重复释放 |
-| `0026-mca-recover-pd-input` | 修复重新连接后 PD 电源误报为 Unknown |
-| `0027-power-piano-mipps-authentication` | 小米快充认证与快速重连 |
-| `0028-power-piano-otg-configuration` | 同步原厂 OTG 配置，避免拓展坞拔出导致 ADSP 崩溃 |
-| `0029-hid-xiaomi-p81c-body-gestures` | 触控笔笔身上滑、下滑报告为 Page Up／Page Down；双击和轻捏不再变成小键盘回车和 F19，原始报告交给笔输入程序 |
+| `0001-platform` | Board description, buses, storage, clocks, power, firmware communication, and existing boot adaptation |
+| `0002-display` | DPU, dual DSI, panel, backlight, color curves, and seamless VFP updates |
+| `0003-input-wireless` | Touch, stylus, keyboard, Bluetooth, and Wi-Fi |
+| `0004-media` | Camera sensors, CAMSS, Iris, and flash |
+| `0005-audio` | Quad speakers, TDM, and microphones |
+| `0006-gunyah` | Android Gunyah driver and mainline interface adaptation |
+| `0007-bore` | BORE 6.8.0 scheduler changes from CachyOS |
+| `0008-drm-msm-gem-api` | Adapt to the 7.3 GEM allocation API while keeping dedicated buffers for color-correction DMA |
+| `0009-gunyah-rmap-api` | Adapt to the reverse-mapping (`rmap`) API while still checking user mappings before lending pages |
+| `0010-gunyah-dt-availability` | Respect the disabled status of resource manager nodes, avoid using stale handles from other boots, and fix double-put of Device Tree references |
+| `0023-dpu-shared-video-ctl` | Commit only once per frame when dual DSI shares a single CTL, avoiding duplicate commits on the slave channel and growing pending counts; include controller, interface, and commit masks in timeout logs |
+| `0024-hid-nanosic-feature-and-release` | Use touchpad capabilities declared in the descriptor instead of querying unimplemented MCU HID Feature reports; send full per-model reports when releasing contacts on lid close |
+| `0025-ucsi-clear-released-connectors` | Clear connector pointers after unregistering to avoid double-free on ADSP restart |
+| `0026-mca-recover-pd-input` | Fix PD power supply being misreported as Unknown after reconnection |
+| `0027-power-piano-mipps-authentication` | Xiaomi fast-charging authentication and fast reconnection |
+| `0028-power-piano-otg-configuration` | Sync stock OTG configuration to avoid ADSP crashes when unplugging a dock |
+| `0029-hid-xiaomi-p81c-body-gestures` | Report stylus barrel swipe-up and swipe-down as Page Up / Page Down; stop converting double-tap and squeeze into keypad Enter and F19, passing raw reports to the stylus input program |
 
-这些文件由迁移结果按子系统整理，不再把旧 stable 分支的回移修复
-重复合并到新主线。清单保留每一步的来源、SHA-256、提交父子关系和结果树；
-准备工具在独立构建副本中应用，不修改上游检出。
+These files are organized by subsystem from the migration output rather than repeatedly merging backported fixes from older stable branches into a new mainline. The manifest preserves the source, SHA-256, commit parent-child relationships, and resulting tree for every step; the preparation tool applies patches in an isolated build copy without modifying the upstream checkout.
 
-Piano 硬件基线来自 blu-sharky/linux-piano，既有本地修复来自项目的
-7.2.9 补丁。迁移保留了上游 7.3 的新增设备支持；对连接器状态创建、
-DSI 原子回调、FastRPC 响应等待、QMP 电源管理及 PCIe MSI 初始化顺序
-进行了接口适配。各源文件版权声明保留，详细第三方说明见
-[THIRD_PARTY.md](../../../THIRD_PARTY.md)。
+The Piano hardware baseline comes from blu-sharky/linux-piano, and existing local fixes come from the project's 7.2.9 patches. The migration preserves new device support added upstream in 7.3, with interface adaptations for connector state creation, DSI atomic callbacks, FastRPC response waiting, QMP power management, and PCIe MSI initialization order. Source file copyright notices are preserved; see [THIRD_PARTY.md](../../../THIRD_PARTY.md) for detailed third-party notices.
 
-默认配置启用 BORE、MGLRU、300 Hz tick 和完整抢占，继续使用
-`NO_HZ_IDLE`、`schedutil` 和 Zstd ZRAM。300 Hz 是内核时钟频率，
-不是屏幕或触控刷新率。保留 BORE 自身的运行参数默认值；
-`kernel.sched_bore=0` 可用于同一内核的对照，但不宣称它与完全未打补丁的
-EEVDF 内核等价。性能、功耗和硬件支持以对应版本的运行结果为准。
+The default configuration enables BORE, MGLRU, 300 Hz tick, and full preemption, while continuing to use `NO_HZ_IDLE`, `schedutil`, and Zstd ZRAM. 300 Hz is the kernel timer tick rate, not the display or touch refresh rate. BORE's own runtime parameter defaults are kept unchanged; `kernel.sched_bore=0` can be used for comparison on the same kernel, though it is not claimed to be equivalent to a completely unpatched EEVDF kernel. Performance, power consumption, and hardware support are determined by runtime results on the corresponding release.

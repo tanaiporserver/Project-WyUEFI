@@ -1,146 +1,81 @@
-# Piano 麦克风时钟
+# Piano Microphone Clock
 
-`linux/dts/piano-audio-dmic-clock.dtso` 在完整音频 overlay 之后应用，将 Linux 绑定的 `/soc/codec@7660000` 的 `qcom,dmic-sample-rate` 从 4800000 改为 2400000。主线驱动据此选择 divider 4。它只改变这一属性，不修改原厂 DTB；路由和增益由统一 UCM 管理，当前为 DMIC2、DEC0、Volume98（+14dB）、48 kHz/S16 和两通道 PCM。
+`linux/dts/piano-audio-dmic-clock.dtso` is applied after the full audio overlay, changing `qcom,dmic-sample-rate` on Linux-bound `/soc/codec@7660000` from `4800000` to `2400000`. The mainline driver selects divider 4 accordingly. It modifies only this property and does not alter the stock DTB; routing and gain are managed by the unified UCM, currently set to DMIC2, DEC0, Volume 98 (+14 dB), 48 kHz / S16, and 2-channel PCM.
 
-依据是同机 Android 最终 DTB（2026-10-05，SHA256 `8056ae623549f4dbefbf3c2615c134fa670cafa83387235575ab573896636fcc`）及 [MiCode piano-w-oss 音频源码](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/tree/baeb7389997a6f6074dae31ec26565d6c286986e)。原厂 TX 四组 DMIC 配置均为 divider 4；VA 的 DT 配置为 divider 16，但 [VA hw_params](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1414) 在采样率超过 16 kHz 时设置切换标志，[分频 getter](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L233) 返回 divider 4。
+This is based on the final stock Android DTB from the same device (2026-10-05, SHA256 `8056ae623549f4dbefbf3c2615c134fa670cafa83387235575ab573896636fcc`) and the [MiCode piano-w-oss audio source](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/tree/baeb7389997a6f6074dae31ec26565d6c286986e). All four stock TX DMIC configurations use divider 4. The VA DT sets divider 16, but [VA `hw_params`](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1414) sets a switching flag when the sample rate exceeds 16 kHz, causing the [divider getter](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L233) to return divider 4.
 
-原厂最终 DTB 的 TX/VA core clock provider 都声明 19.2 MHz；[原厂时钟驱动](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/audio-ext-clk-up.c#L679) 将该频率传给 PRM。当前主线也请求 19.2 MHz，旧配置却选择 divider 2。这里对齐的是驱动分频选择，不能将原厂 DT 中的 16 直接推算为“实测 600 kHz”。
+Both the TX and VA core clock providers in the final stock DTB declare 19.2 MHz; the [stock clock driver](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/audio-ext-clk-up.c#L679) passes this frequency to PRM. Current mainline also requests 19.2 MHz, whereas the previous configuration selected divider 2. What is aligned here is the driver's divider selection—the value `16` in the stock DT cannot be extrapolated directly into a "measured 600 kHz".
 
-g086 实机已读回该属性为2400000；这确认配置已应用，不代表已测量物理 DMIC clock 或验证语音质量。公开源码与本机二进制的构建提交尚未确认一致；原厂普通录音的活动 mixer/DSP 路由和寄存器也未采集。未测得改善前不宣称麦克风质量已修好。
+On the `g086` test unit, the property reads back as `2400000`; this confirms the configuration is applied, but does not mean the physical DMIC clock has been measured or voice quality verified. It is not yet confirmed that the public source matches the exact build commit of the on-device binaries, and the active mixer/DSP routing and registers during normal stock recording have not been captured. Do not claim microphone quality is fixed until improvement is measured.
 
-## 当前麦克风配置与受控比较
+## Current Microphone Configuration and Controlled Comparison
 
-2026-10-08 使用电脑的扬声器播放已知500/1000/2000Hz声源，自动在PCM开始后播放；仅保存逐秒电平、频谱和削顶计数，不保存麦克风音频。DMIC2比DMIC1的响应更强，与原厂VA路由一致。DMIC2、Volume98（+14dB）的稳定段中，三频信号相对后段环境背景约为18/27/21dB，没有削顶；声源距离与声压未标定，不能把它当完整语音质量验证。
+On 2026-10-08, known 500/1000/2000 Hz test tones were played through a computer speaker, triggered automatically after PCM capture started; only per-second levels, spectra, and clipping counts were saved—no microphone audio was stored. DMIC2 showed stronger response than DMIC1, consistent with the stock VA routing. During the steady-state segment with DMIC2 and Volume 98 (+14 dB), the three tones measured roughly 18/27/21 dB above the trailing ambient background with no clipping. Because source distance and SPL were uncalibrated, this cannot serve as a full voice quality validation.
 
-这是时钟顺序修正前的记录：开流首段有约41个满幅样本，之后没有；之前短采样的高RMS包含启动冲击，不能直接当持续底噪。当前UCM已选DMIC2/DEC0和Volume98，保留驱动要求的两通道PCM及MONO/AUX0，不添加虚拟入口。完整release和多发行版BSP使用同一份tracked HiFi.conf。随后a8内核的启动冲击和受控声源结果见下段；正常语音与原厂TX/DSP处理仍待验证。此次早期统计在内部记录目录
+These measurements predate the clock-ordering fix: the start of the stream contained roughly 41 full-scale samples, with none thereafter. The high RMS seen in earlier short captures included this startup transient and cannot be treated directly as continuous noise floor. The current UCM selects DMIC2/DEC0 and Volume 98 while keeping the driver-required 2-channel PCM and `MONO`/`AUX0`, without adding virtual entries. Both the full release and the multi-distro BSP share the same tracked `HiFi.conf`. Startup transient and controlled-source results on the subsequent `a8` kernel appear in the next section; normal speech and stock TX/DSP processing remain to be verified. These early statistics are stored in the internal logs directory.
 
-## 开流冲击的源码草案
+## Stream-Start Transient Analysis and Source Draft
 
-现有统计按一秒分块：DMIC2/gain84 的首块 peak=13362、RMS=310，而稳定背景
-RMS 约3.8；gain98 首块有41个削顶样本、均值约62，后续没有削顶。这说明低增益
-时也有启动大峰值，但不能从分块数据确定发生在第几个样本或全归因于 codec。
-Root 随后已输出前100ms的小窗统计，见下段；硬件启用／period时序仍待
-关联。不保存 PCM，不先裁掉首包或加入软件滤波。
+The initial statistics were bucketed in 1-second chunks: with DMIC2 / gain 84, the first chunk had `peak=13362` and `RMS=310`, versus a steady ambient RMS of ~3.8; with gain 98, the first chunk had 41 clipped samples and a mean of ~62, with no clipping afterward. This confirms a large startup spike even at low gain, though chunked data alone cannot pinpoint the exact sample index or attribute it solely to the codec. Fine-grained windowed statistics for the first 100 ms were subsequently collected as root (see below); correlation with hardware enablement and period timing is still pending. No PCM is saved, and no first-packet trimming or software filtering is added as a workaround.
 
-45 普通重启后的新统计在 `startup-45b.json`：75个削顶样本连续为 frame0…74，
-最后一个时间为1.5417ms（75样本总跨度1.5625ms）。首1ms的48样本全部为
-+32767；之后仍为正DC，2/3/4ms峰值分别21241/8241/3197，约12ms降至量化
-底部。对3…7ms的小窗DC均值取log线性拟合，时间常数约1.055ms，等效
-单极点约150.8Hz，与驱动开流强制的150Hz HPF吻合。这支持“正阶跃经HPF
-衰减”的解释，不像随机首包的无规则噪声；但首个DSP/DMA包也可能装着这段
-已有的codec/filter过渡，缺硬件时间戳和period边界，仍不能排除首包因素。
+New statistics collected after a normal reboot on build 45 (`startup-45b.json`) show 75 consecutive clipped samples at frames 0–74, with the last occurring at 1.5417 ms (total span of 75 samples: 1.5625 ms). All 48 samples in the first 1 ms are `+32767`; the signal then stays positive DC, with peaks at 2/3/4 ms of 21241/8241/3197, settling to the quantization floor at roughly 12 ms. A log-linear fit to the windowed DC mean across 3–7 ms yields a time constant of ~1.055 ms, corresponding to a single-pole cutoff of ~150.8 Hz—matching the 150 Hz HPF forced by the driver at stream start. This supports the "positive step decaying through the HPF" explanation rather than random garbage in the first packet; however, the first DSP/DMA packet may also carry this pre-existing codec/filter transient, and without hardware timestamps and period boundaries, first-packet effects cannot yet be ruled out.
 
-原RFC不能据此认定足够：关流reset不会初始化首次冷开，PRE mute之后仍由
-DAI立即解除；它没有新增DMIC启动后的有效mute窗口。优先最小正常方案是
-将DMIC clock事件放到正确DAPM supply顺序，早于DEC/filter初始化，保留
-已有HPF等待和信号路径，再配合PRE mute。若还需unmute/reset稳定动作，应在
-完整DAPM之后、仅对刚上电DEC处理，依据OEM时序；不能在seq7盲等或软件丢帧。
-仅更新分析/文档，`startup-45b-analysis.json` 记录拟合与上述边界，未改RFC
-或当前内核实现。
+Based on this, the original RFC cannot be considered sufficient: a stream-close reset does not initialize a cold first open, and PRE mute is immediately cleared by the DAI, adding no effective mute window after DMIC startup. The preferred minimal proper fix is to place the DMIC clock event in the correct DAPM supply order—ahead of DEC/filter initialization—while preserving the existing HPF wait and signal path, combined with PRE mute. If additional unmute/reset settling is still needed, it should run after full DAPM completion and target only newly powered-up DECs according to OEM timing—not via blind waits at seq 7 or dropping frames in software. Only analysis and documentation were updated at that stage; `startup-45b-analysis.json` records the curve fit and these boundaries without altering the RFC or current kernel implementation.
 
-随后默认 release 已接入
-[音频补丁](../../../patches/linux/7.3/0005-audio.patch)中的 DMIC clock 顺序修正：
-八个原 ADC 保留， clock event 改为各自的 DAPM supply，并显式依赖
-`VA_MCLK`；supply 在 DEC MUX 前上电、后断电。补齐 PRE_PMU/PRE_PMD 的
-硬件 PGA mute，保留共享 clock 计数、原信号路线和现有 HPF 等待，不加 reset
-或新延时。准备器已复现 tree `7d2ad26d416bec0d052059727491a37ac7536f0b`，
-commit `a8c9650eb32038c40a5f5934bb64a813dff0044f`。新内核已经完整构建并
-随匹配模块、默认ESP启动文件部署，通过普通BOOT重启进入Linux。
-之前 RFC 仍只保留为分析草案。
+Subsequently, the default release integrated the DMIC clock ordering fix in the [audio patch](../../../patches/linux/7.3/0005-audio.patch): the eight original ADCs are kept, clock events are converted into their own DAPM supplies explicitly depending on `VA_MCLK`, and each supply powers up before and powers down after the DEC MUX. Hardware PGA mute on `PRE_PMU`/`PRE_PMD` is completed while keeping the shared clock reference count, original signal path, and existing HPF wait, with no added reset or extra delays. The preparer reproduced tree `7d2ad26d416bec0d052059727491a37ac7536f0b` at commit `a8c9650eb32038c40a5f5934bb64a813dff0044f`. The new kernel was built in full and deployed along with matching modules and default ESP boot files, rebooting into Linux via normal BOOT. The earlier RFC remains only as an analysis draft.
 
-实机同一DMIC2/gain98配置的前100ms采样，原来的75个连续满幅样本变为0；
-首1ms峰值33，另一次20秒受控声源采样也没有削顶。电脑扬声器的
-500/1000/2000Hz响应仍分别约155/476/219 S16 RMS，1000Hz与修正前约478
-接近，因此没有用静音消除启动峰值。测试后段环境背景RMS约8.04，未校准
-声压或环境，不能把前后背景差直接归因全部硬件降噪；正常语音及原厂TX/DSP
-处理仍待验证。仅保存电平/频谱统计，PCM在内存中处理后丢弃，记录在本机
-`内部记录目录 与 `RESULT-a8.json`。
+On-device captures of the first 100 ms under the same DMIC2 / gain 98 configuration reduced the 75 consecutive full-scale samples to 0, with a first-1 ms peak of 33; a separate 20-second controlled-source capture also showed no clipping. The 500/1000/2000 Hz responses from the computer speaker remained at approximately 155/476/219 S16 RMS—with 1000 Hz close to the pre-fix ~478—confirming that the startup spike was not hidden by muting the signal. The trailing ambient background RMS was ~8.04; because SPL and ambient conditions were uncalibrated, before/after background differences cannot be attributed solely to hardware noise reduction. Normal speech and stock TX/DSP processing remain to be verified. Only level/spectrum statistics were saved, with PCM processed in memory and discarded, recorded locally in the internal logs directory and `RESULT-a8.json`.
 
-修正前 `sound/soc/codecs/lpass-va-macro.c:va_macro_enable_dec()` 的 PRE_PMU
-只留“Enable TX PGA Mute”注释，未写 `TX_PATH_CTL` 的 PGA mute BIT4；widget
-注册了 PRE_PMD，但函数也未处理。POST_PMU 已使能 TX clock BIT5，并执行
-1/1/6ms 的 HPF gate 稳定流程；`va_macro_digital_mute()` 随后直接清 BIT4。
-`TX_PATH_CTL=0x400+0x80*DEC`；HPF cutoff 位在 `TX_PATH_CFG0`，gate 位在
-`TX_PATH_SEC2`。这与路线编号、增益和额外 TLMM 供电无关。
+Before the fix, `PRE_PMU` in `sound/soc/codecs/lpass-va-macro.c:va_macro_enable_dec()` had only an `"Enable TX PGA Mute"` comment without writing PGA mute `BIT4` in `TX_PATH_CTL`; the widget also registered `PRE_PMD`, which the handler did not implement. `POST_PMU` already enabled TX clock `BIT5` and ran the 1/1/6 ms HPF gate settling sequence; `va_macro_digital_mute()` then cleared `BIT4` directly. Here `TX_PATH_CTL = 0x400 + 0x80 * DEC`, HPF cutoff bits live in `TX_PATH_CFG0`, and the gate bit lives in `TX_PATH_SEC2`. This is independent of route index, gain, or extra TLMM power rails.
 
-固定原厂 [VA enable_dec](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1031)
-会在 PRE_PMU/PRE_PMD 写 BIT4 mute，关 TX clock 后脉冲 BIT6 reset；
-[DAI mute_stream](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1491)
-另有开流 BIT6 reset/2ms、延后10ms解除 mute。原厂 dec path 还设 DMIC 40ms
-解除 mute、300ms 恢复原 HPF cutoff；这些不等于本机实测的冲击时长。
+By contrast, the stock [VA `enable_dec`](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1031) writes `BIT4` mute on `PRE_PMU`/`PRE_PMD` and pulses `BIT6` reset after disabling the TX clock; [DAI `mute_stream`](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1491) additionally performs a stream-start `BIT6` reset with a 2 ms wait and delays unmute by 10 ms. The stock dec path also configures a 40 ms DMIC unmute delay and a 300 ms delay before restoring the original HPF cutoff; these values do not equal the transient duration measured on this device.
 
-还需注意正常 DAPM 顺序：主线 DEC 是 MUX_E（`soc-dapm.c` up seq7），DMIC
-clock event 在 ADC_E（seq11），所以 DEC POST_PMU 的等待早于 DMIC clock
-PRE_PMU；原厂则在 enable_dec 中先启用 DMIC。`soc-pcm.c:__soc_pcm_prepare`
-在完整 DAPM STREAM_START 后才调用 DAI unmute。盲目在 DEC POST 再加等待不能
-证明已经等待了 DMIC，延迟与 reset 应按这个顺序和前100ms记录定位。
+Normal DAPM ordering also matters: in mainline, DEC is a `MUX_E` (`soc-dapm.c` power-up seq 7) while the DMIC clock event was on `ADC_E` (seq 11), so DEC `POST_PMU` waits ran before DMIC clock `PRE_PMU`; stock enables DMIC first inside `enable_dec`. `soc-pcm.c:__soc_pcm_prepare` invokes DAI unmute only after the complete DAPM `STREAM_START`. Blindly adding delays to DEC `POST_PMU` does not prove DMIC settling was waited on; delays and resets must be placed according to this sequence and the first-100 ms measurements.
 
-私有 `codec-candidate.patch` 是供复核的最小 RFC：补 PRE_PMU/PRE_PMD 硬件
-mute，并匹配原厂 POST_PMD reset。它未应用／编译／实机运行，没有新增延迟、
-改 HPF、gain、路由或 PCM，也不声称已解决全部41个削顶样本。
+The private `codec-candidate.patch` is a minimal RFC for review: it adds `PRE_PMU`/`PRE_PMD` hardware mute and matches the stock `POST_PMD` reset. It was never applied, compiled, or run on hardware; it adds no delays and makes no changes to HPF, gain, routing, or PCM, nor does it claim to eliminate all 41 clipped samples.
 
-以下保留之前DMIC1/0dB与时钟、原厂路由的定位记录。
+Below are the preserved diagnostic notes from earlier DMIC1/0 dB, clock, and stock routing investigations.
 
-## 原厂路由与之前配置
+## Stock Routing and Previous Configuration
 
-2026-10-08 的原厂空闲采集位于 `内部记录目录 的声卡是 `sun-mtp-snd-card`，TX/VA 的 CAP 全部关闭、DMIC mux 全为 ZERO，VA Volume 为 84；这些是空闲状态，不是录音活动路由。同目录提取的 `extracted/vendor/etc/audio/sku_sun/mixer_paths_sun_mtp.xml` 和 `resourcemanager_sun_mtp.xml` 提供以下静态配置：
+The 2026-10-08 stock idle dump (stored in the internal logs directory) shows sound card `sun-mtp-snd-card`, with all TX/VA CAP controls off, all DMIC muxes set to `ZERO`, and VA Volume at 84; these reflect the idle state, not an active recording route. `extracted/vendor/etc/audio/sku_sun/mixer_paths_sun_mtp.xml` and `resourcemanager_sun_mtp.xml` extracted into the same directory provide the following static configurations:
 
-| 路径 | 输入与增益 | 后端 |
+| Route | Input & Gain | Backend |
 | --- | --- | --- |
-| `va-mic` / `va-mic-mono` / `va-mic-mono-lpi` | VA DEC0 → DMIC2；初始 VA Volume=84 | `CODEC_DMA-LPAIF_VA-TX-0` |
-| `va-mic-dmic` / `va-mic-dmic-lpi` | VA DEC0 → DMIC2，DEC1 → DMIC3；各初始 Volume=84 | VA |
-| `handset-mic` / `voice-rec-mic` | TX DEC2 → DMIC2，Volume=98 | `CODEC_DMA-LPAIF_RXTX-TX-3` |
-| `speaker-mic` | TX DEC2 → DMIC0，Volume=85 | TX |
-| `handset-mic-unprocessed` | TX DEC2 → DMIC1，Volume=85 | TX |
+| `va-mic` / `va-mic-mono` / `va-mic-mono-lpi` | VA DEC0 → DMIC2; initial VA Volume=84 | `CODEC_DMA-LPAIF_VA-TX-0` |
+| `va-mic-dmic` / `va-mic-dmic-lpi` | VA DEC0 → DMIC2, DEC1 → DMIC3; initial Volume=84 each | VA |
+| `handset-mic` / `voice-rec-mic` | TX DEC2 → DMIC2, Volume=98 | `CODEC_DMA-LPAIF_RXTX-TX-3` |
+| `speaker-mic` | TX DEC2 → DMIC0, Volume=85 | TX |
+| `handset-mic-unprocessed` | TX DEC2 → DMIC1, Volume=85 | TX |
 
-原厂 VA 的 `MSM_DMIC` 与主线的 `VA_DMIC` 都是 DEC mux 的值 0。[原厂 DMIC 枚举](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1614) 与本地内核源码 `sound/soc/codecs/lpass-va-macro.c` 同为 ZERO、DMIC0…DMIC7，并在 CFG0 的 shift 4 选择输入；DMIC2/3 可以直接对应，不存在编号偏移。
+Both stock VA's `MSM_DMIC` and mainline's `VA_DMIC` correspond to DEC mux value 0. The [stock DMIC enum](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/lpass-cdc/lpass-cdc-va-macro.c#L1614) and local kernel source `sound/soc/codecs/lpass-va-macro.c` share the exact same sequence `ZERO`, `DMIC0`…`DMIC7`, selecting the input at shift 4 in `CFG0`; DMIC2/3 map directly with no numbering offset.
 
-之前 UCM 只开 VA DEC0/DMIC1，Volume=84。主线 Volume 的每格为 1 dB，84 对应 0 dB；98 对应 +14 dB，但原厂98属于 TX handset 路径，不能据此直接给当前 VA 加14 dB。增益增加也会放大底噪。当前 WirePlumber 将两通道 PCM 标为 `[ MONO AUX0 ]`，第二个通道没有路由是既有单麦设计，默认全零本身不说明缺少双麦。
+Previously, UCM enabled only VA DEC0/DMIC1 with `Volume=84`. Each mainline Volume step is 1 dB: 84 is 0 dB and 98 is +14 dB, but stock's 98 belongs to the TX handset path and cannot by itself justify adding +14 dB to the VA path. Increasing gain also amplifies the noise floor. WirePlumber currently labels the 2-channel PCM as `[ MONO AUX0 ]`; leaving the second channel unrouted is the existing single-mic design, so an all-zero second channel does not by itself indicate missing dual-mic support.
 
-2026-10-08 g086 的 PipeWire 默认源为既有 `HiFi__Mic__source`，PCM 是
-`hw:Pro,2`；空闲时 suspended，EnumFormat 为 S16LE/48 kHz/两通道 MONO、AUX0，
-硬件未开流时 Format 为空。volume、softVolumes、channelVolumes 都是1.0，
-dither 关闭，没有观察到额外软件 boost。 q6apm capture frontend 的
-`channels_min=2`，不能仅把 UCM CaptureChannels 改成1；VA codec 本身支持mono
-不等于整个 PCM 支持mono。
+On 2026-10-08, the default PipeWire source on `g086` was the existing `HiFi__Mic__source` on PCM `hw:Pro,2`, suspended when idle, with `EnumFormat` set to S16LE / 48 kHz / 2-channel `MONO`, `AUX0`, and `Format` empty when hardware is not streaming. `volume`, `softVolumes`, and `channelVolumes` were all `1.0`, dithering was off, and no extra software boost was observed. Because the `q6apm` capture frontend enforces `channels_min=2`, UCM `CaptureChannels` cannot simply be changed to 1; mono support in the VA codec itself does not mean the full PCM supports mono.
 
-保持 gain84 和同一 PCM/格式，各做了一次两秒环境幅度统计，只在内存处理并输出
-峰值/RMS，没有保存音频。DMIC1 的通道0 RMS为−32.33 dBFS，DMIC2为−32.18 dBFS，
-两者 peak=32767，通道1均全零。DMIC2 在统计前后 mux 读回均为enum3；结束已恢复
-DMIC1 enum2、gain84。环境未确认静音且含满幅峰值，0.14 dB差异不能证明底噪或
-SNR改善，也没有验证正常说话响应。DMIC2返回非零 PCM，仍是下一次受控声源
-比较的优先草案；未改UCM、默认源或加入虚拟入口。统计与参数记录在本地
-`内部记录目录
+Keeping gain 84 and the same PCM/format, one 2-second ambient amplitude measurement was run on each input, processed in memory to report only peak/RMS without saving audio. Channel 0 RMS was −32.33 dBFS on DMIC1 and −32.18 dBFS on DMIC2, both with `peak=32767` and channel 1 all zeros. DMIC2 mux readback was `enum3` before and after the measurement; DMIC1 (`enum2`) and gain 84 were restored afterward. Because ambient silence was unverified and full-scale peaks were present, a 0.14 dB difference proves neither noise-floor nor SNR improvement, nor does it validate normal speech response. Because DMIC2 returned non-zero PCM, it remained the top candidate for the next controlled-source comparison; neither UCM nor the default source was modified and no virtual entries were added. Statistics and parameters are recorded in the local internal logs directory.
 
-原厂最终 DTB 的 `cdc_dmic01_pinctrl` / `cdc_dmic23_pinctrl` 选 LPI gpio6/7、gpio8/9 的 p81 active states，drive-strength=4；上游音频 overlay 对这四个引脚使用8。原厂节点中的 `qcom,tlmm-pins=<171 172>` / `<174>` 由 [msm-cdc-pinctrl](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/msm-cdc-pinctrl.c#L317) 保存为唤醒引脚，[唤醒操作](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/msm-cdc-pinctrl.c#L197) 调用 `msm_gpio_mpm_wake_set`；active 操作仅切 LPI pinctrl。这些 TLMM 属性不是麦克风供电开关，不应按供电猜测新增 GPIO 输出。
+In the final stock DTB, `cdc_dmic01_pinctrl` / `cdc_dmic23_pinctrl` select the `p81` active states on LPI `gpio6`/`7` and `gpio8`/`9` with `drive-strength=4`, whereas the upstream audio overlay uses `8` for these four pins. The `qcom,tlmm-pins=<171 172>` / `<174>` properties in the stock nodes are stored as wakeup pins by [msm-cdc-pinctrl](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/msm-cdc-pinctrl.c#L317), and the [wakeup handler](https://github.com/MiCode/vendor_qcom_opensource_audio-kernel/blob/baeb7389997a6f6074dae31ec26565d6c286986e/asoc/codecs/msm-cdc-pinctrl.c#L197) calls `msm_gpio_mpm_wake_set`; the active state switches only LPI pinctrl. These TLMM properties are not microphone power switches and should not be assumed to require adding GPIO outputs for power.
 
-## 之前 DMIC1/DMIC2 比较步骤
+## Previous DMIC1/DMIC2 Comparison Procedure
 
-以下为路由选择前的历史步骤，不能作为当前设置的恢复指令。当前默认为
-DMIC2、Volume98，后续测量应恢复这组配置；电脑受控声源比较已经完成，
-无需为同一个问题重复采样。
+The following are historical steps from before routing selection and must not be used to restore the current settings. The current default is DMIC2 and Volume 98, which future measurements should restore to; the controlled computer-speaker comparison is already complete and does not need to be repeated for the same question.
 
-先安排明确的测试窗口和声源，不自行开始正常说话采样。保持 DEC0、gain84、
-48 kHz/S16 和两通道 PCM，只输出分阶段峰值/RMS，不保存 PCM 或音频文件。
-在确认环境静音及同一距离的受控声源后，才比较 DMIC1 与 DMIC2 的语音幅度和
-本底；两秒环境数据不能代替它。
+First establish a clear test window and sound source; do not start normal speech capture unprompted. Keep DEC0, gain 84, 48 kHz / S16, and 2-channel PCM, outputting only per-phase peak/RMS without saving PCM or audio files. Compare speech level and noise floor between DMIC1 and DMIC2 only after confirming ambient silence and a controlled source at the same distance; 2-second ambient samples cannot substitute for this.
 
-若用直接 ALSA 读取，先核对 capture PCM 是否空闲、既有 HiFi/Mic UCM 已启用。
-现有 UCM EnableSequence 会写回DMIC1，所以不能改mux后重新启用Mic。只切
-VA mux，保持其他参数，结束恢复DMIC1和gain84：
+If reading directly via ALSA, first verify that the capture PCM is idle and that the existing HiFi/Mic UCM is enabled. The current UCM `EnableSequence` writes back DMIC1, so do not re-enable Mic after changing the mux. Switch only the VA mux while keeping all other parameters, then restore DMIC1 and gain 84 when done:
 
 ```sh
 amixer -c 0 cset "name='VA DMIC MUX0'" DMIC2
 amixer -c 0 cget "name='VA DMIC MUX0'"
-# 在已确认的窗口用level-only工具读取hw:0,2，输出峰值/RMS；不写音频文件。
+# Read hw:0,2 with a level-only tool during the confirmed window, printing peak/RMS without writing audio files.
 amixer -c 0 cset "name='VA DMIC MUX0'" DMIC1
 ```
 
-只有 DMIC2 的受控声源响应确实正常并优于当前输入，才将路由写回 UCM 与 BSP。
-TX98属于不同后端及处理链，不能先把当前VA加14dB当作改善。
+Write the route back to UCM and the BSP only if DMIC2's controlled-source response is verified normal and better than the current input. TX 98 belongs to a different backend and processing chain, so raising the current VA gain by +14 dB upfront cannot be treated as an improvement.
 
-后续原厂动态采集应在用户明确打开原厂录音应用、选定 AudioSource 的同一窗口
-进行，只读取路由/格式/效果元数据，不自行开启录音或收集音频：
+Future dynamic captures on stock Android should run in the same window where the user explicitly opens the stock recorder app and selects an `AudioSource`, reading only routing/format/effect metadata without starting recording or collecting audio:
 
 ```sh
 tinymix -D 0
@@ -150,6 +85,4 @@ dumpsys media.audio_flinger
 dumpsys media.audio_policy
 ```
 
-完整tinymix确认最终TX/VA、DMIC和gain，活动hw_params确认rate/format/channels；
-AudioFlinger/AudioPolicy用于关联录音source、后端、AGC/NS/AEC效果。XML中有某条
-路由不等于应用启用了它。
+Full `tinymix` output confirms the final TX/VA path, DMIC, and gain, while active `hw_params` confirms sample rate, format, and channel count; `AudioFlinger`/`AudioPolicy` correlate the recording `AudioSource`, backend, and AGC/NS/AEC effects. Having a route defined in XML does not mean the app actually enables it.

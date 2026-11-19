@@ -1,140 +1,116 @@
-# 发布要求
+# Release Requirements
 
-源码公开和二进制发布是两件事。当前仓库提供源码和 CI 构建产物，正式发布前需要完成以下核对。当前支持情况见[项目状态](../status.md)。
+Publishing source code and distributing binaries are separate milestones. This repository currently provides source code and CI build artifacts; the following checks must be completed before an official release. For current hardware and feature support, see [Project Status](../status.md).
 
-## 公开源码前
+## Before Publishing Source Code
 
-* 检查要提交的文件和 Git 历史中是否有个人信息、凭据、设备标识和无权分发的内容。
-* 完成原创代码、第三方库、字体、固件和生成内容的许可与署名清单，见[第三方来源](../../THIRD_PARTY.md)。
-* 确认公开的依赖仓库和提交都能取到，并在全新克隆下运行主机检查，见[测试与检查](testing.md)。
-* 说明完整构建需要哪些本地输入，见[本地输入](local-inputs.md)。
+* Audit staged files and Git history for personal information, credentials, device identifiers, and content without redistribution rights.
+* Complete the license and attribution inventory for original code, third-party libraries, fonts, firmware, and generated content; see [Third-Party Sources](../../THIRD_PARTY.md).
+* Verify that all public dependency repositories and commits are fetchable, and run host checks on a fresh clone; see [Testing and Checks](testing.md).
+* Document all local inputs required for a full build; see [Local Inputs](local-inputs.md).
 
-## 发布二进制前
+## Before Publishing Binaries
 
-每个发布版本要对应明确的源码提交、配置清单和 SHA256 哈希，主机检查需要全部通过（`./build.sh check`）。发布说明中逐项写明：
+Every release must map to an exact source commit, configuration manifest, and SHA256 checksums, with all host checks passing (`./build.sh check`). Release notes must explicitly document:
 
-* 哪些功能可用，哪些不可用；
-* 适用的设备型号和系统版本；
-* 明确的回到 Android 的方法；
-* 各启动路径的核对结果：
+* Which features work and which do not;
+* Supported device models and OS versions;
+* Clear instructions for returning to Android;
+* Verification results for each boot path:
 
-| 启动路径 | 发布前需核对 |
+| Boot Path | Pre-Release Verification |
 | --- | --- |
-| 临时 `fastboot boot` | 实际发送的镜像、菜单显示、后台服务、退出并回到 Android |
-| 合体 BOOT 启动 Linux | 内核与模块版本匹配、ESP 读取、系统交接、桌面正常启动、返回 Android |
-| Recovery 模式 | 不使用独立的 Recovery 镜像，原厂 Recovery 不受影响，见[故障恢复](../user/recovery.md) |
-| 标准 EFI 引导 | ExitBootServices 安全退出、运行时服务，与现有 ARM64 原始交接是不同路径 |
+| Temporary `fastboot boot` | Actual image sent, menu display, background services, clean exit and return to Android |
+| Combined BOOT to Linux | Matching kernel and module versions, ESP read, OS handoff, normal desktop boot, return to Android |
+| Recovery mode | No standalone Recovery image is used; stock Recovery remains unaffected — see [Recovery](../user/recovery.md) |
+| Standard EFI boot | Clean `ExitBootServices` teardown and runtime services (a separate path from the existing raw ARM64 handoff) |
 
-原厂已有的硬件功能用同一台设备对照，核对耗时、输入响应和故障后的恢复。
-例如 Fastboot 使用同一接口、线材和镜像，分别记录上传、写盘和读回；
-长操作期间检查键盘、触控板和触屏。原厂不提供的功能按相应标准验收：
-UEFI 用标准引导程序和变量工具，系统更新用发行版的包管理器实际安装、升级和回退。
+Hardware features already present in stock firmware must be benchmarked against stock on the same device, checking latency, input responsiveness, and recovery after faults. For example, test Fastboot using the same port, cable, and image, recording upload, write, and readback separately, while verifying keyboard, touchpad, and touchscreen responsiveness during long transfers. Features not provided by stock firmware are validated against their respective standards: test UEFI with standard bootloaders and variable tools, and verify OS updates with real installs, upgrades, and rollbacks via the distribution's package manager.
 
-## 未完成的开发工作
+## Remaining Development Work
 
-目标是让 Piano 像普通 Linux 笔记本。常见发行版从签名源装上匹配的内核、
-设备树、固件和原生软件包，原有桌面和应用即可使用硬件。成品镜像用同一套包，
-不靠定制 rootfs、专用守护进程、虚拟设备或平行控制接口提供硬件功能。
-优先核对同机原厂和第三方实现，再按适用的上游接口、来源和依赖选择做法。
-分别记录上游状态、构建和装包结果、实机行为；功能完成后从清单删除，对应实现保留在技术页。
+The goal is for Xiaomi Pad 8 Pro (`piano`) to behave like a standard Linux laptop. Mainstream distributions should install matching kernels, Device Trees, firmware, and native packages from signed repositories so stock desktops and applications can use the hardware directly. Prebuilt images consume the same packages rather than relying on custom rootfs hacks, proprietary daemons, virtual devices, or parallel control interfaces to expose hardware. Cross-check same-device stock and third-party implementations first, then choose the design based on applicable upstream interfaces, provenance, and dependencies. Record upstream status, build/packaging results, and on-device behavior separately; remove items from this list once completed and retain the implementation details on the corresponding technical pages.
 
-### 内核、固件和用户空间包
+### Kernel, Firmware, and Userspace Packages
 
-| 工作 | 现在的实现 | 下一步 |
+| Work Item | Current State | Next Steps |
 | --- | --- | --- |
-| Linux 7.4 主线迁移 | 产品仍使用 7.3.3；主线处于 7.4-rc 阶段 | 跟进正式标签，逐项 rebase 平台补丁；以主线实现替换重复驱动和接口，删除被替代的补丁、配置与引用，完成内核、模块、DTB、原生包及实机回归后切换产品 |
-| 原生内核及 headers 包 | SteamOS 实机用 pacman 安装并启动；Debian KDE 实机从签名 APT 安装 `b1795022727-gbc53c083a141` 并冷启动。升级引导配置后，ADSP、CDSP 与 USB 网络从原生 initramfs 自动恢复，旧入口文件不变 | 实测 Debian 回退、外部模块及 Nyarch 更新；普通 USB 功能与可选的 USB 调试网络分别检查 |
-| 匹配的设备树 | 完整板级 DTB 按内核 release 独立打包，`kernel-install` 选择同版文件 | 将完整板级描述收敛进内核 DTS，减少外部转换 |
-| initramfs／UKI 更新与回退 | 初装用共用 bootstrap；SteamOS 实机已从 mkinitcpio 生成的分离式启动项冷启动并回退到旧 UKI；Debian KDE 已通过 systemd-boot 和 APT 生成的分离式 initramfs 启动并挂载内部存储 | 实测 Debian 的可选 UKI、旧内核回退和包管理器更新失败后的恢复 |
-| 设备固件与硬件配置包 | 四产品从签名源安装 `piano-device-config`；显示校准由两种原生包安装；AudioReach 拓扑包已在 SteamOS 重启后通过四路播放和麦克风采集 | 实测显示包装卸后的 HDR／SDR，从公网安装音频拓扑包；继续归集其他固件 |
-| runtime 与诊断工具 | 相机服务已在 SteamOS 装包后驱动前后摄出图；笔的 BlueZ 程序归设备配置包，Nyarch 和 SteamOS 共用原生传感器包 | 实测从软件源更新后的笔重连、照度和姿态；继续归集指纹和诊断工具，消除包外覆盖和 `/usr/local` 的产品文件 |
-| 签名软件源 | 三系均已从签名公网源升级、回退设备配置包并保留本地配置；SteamOS 成品的隔离副本用 `pacman -Syu` 升级 22 个包，另装 4 个内核配套包，新旧版本均有启动项和 initramfs | 在平板上启动两版内核，检查更新后的硬件和桌面，并实测回退 |
-| 分阶段 CI 与缓存 | 同轮归档交接已通过签名发布、公网回读和四镜像构建；ARM64 runner 的发布前检查已通过 | 核对远端按阶段取源，并在真实依赖变更后确认各层重新构建范围 |
-| Denial 触控桌面 | Debian sid 与 Arch Linux ARM 共用现有硬件包，安装 Denial 的签名 ARM64 包并使用触控布局 | 在 Piano 上检查首次启动、锁屏、触控输入和外屏；把自动旋转接到标准 SensorProxy |
-| Droidloom | 共用内核提供 BinderFS、压缩 EROFS 和 IPv4／IPv6 策略路由 | 验证两个发行版的本机 ARM64 应用、GPU、网络与容器启停，用可审计的原生包单独交付 |
+| Linux 7.4 mainline migration | Products still run 7.3.3; mainline is at 7.4-rc | Track the final release tag and rebase platform patches one by one; replace duplicate drivers and interfaces with mainline equivalents, remove superseded patches, configs, and references, and switch products after completing kernel, module, DTB, native package, and on-device regression checks |
+| Native kernel and headers packages | Installed and booted via `pacman` on SteamOS on-device; installed `b1795022727-gbc53c083a141` from signed APT and cold-booted on Debian KDE on-device. After updating boot configuration, ADSP, CDSP, and USB networking recover automatically from the native initramfs while keeping legacy entry files untouched | Test Debian rollback, out-of-tree modules, and Nyarch updates on-device; verify standard USB functionality separately from optional USB debug networking |
+| Matching Device Tree | Full board DTB is packaged per kernel release, and `kernel-install` selects the matching version | Consolidate the full board description into the kernel DTS to reduce external post-processing |
+| initramfs / UKI updates and rollback | Initial install uses a shared bootstrap; SteamOS on-device cold-booted from a split boot entry generated by `mkinitcpio` and rolled back to the previous UKI; Debian KDE booted via `systemd-boot` and an APT-generated split initramfs and mounted internal storage | Test optional UKIs on Debian, fallback to older kernels, and recovery after failed package manager updates |
+| Device firmware and hardware config packages | All four products install `piano-device-config` from signed repos; display calibration is installed via both native package formats; the AudioReach topology package passed 4-channel playback and microphone capture after reboot on SteamOS | Test HDR/SDR across display package install/removal, install the audio topology package from the public repo, and continue consolidating remaining firmware |
+| Runtime and diagnostic tools | Camera service drives both front and rear camera output on SteamOS after package installation; the stylus BlueZ daemon lives in the device config package; Nyarch and SteamOS share the native sensor package | Test stylus reconnection, ambient light, and orientation after repo updates; continue packaging fingerprint and diagnostic tools to eliminate out-of-package overrides and product files under `/usr/local` |
+| Signed package repositories | All three distro families upgraded and rolled back the device config package from the signed public repo while preserving local config; an isolated copy of the SteamOS image upgraded 22 packages via `pacman -Syu` and installed 4 companion kernel packages, leaving boot entries and initramfs intact for both old and new versions | Boot both kernel versions on the tablet, check hardware and desktop behavior post-update, and test rollback on-device |
+| Staged CI and caching | Same-run artifact handoff passed signed publishing, public repo readback, and building all four images; pre-release checks on the ARM64 runner passed | Verify remote per-stage source fetching and confirm rebuild scope across layers after real dependency changes |
+| Denial touch desktop | Debian sid and Arch Linux ARM share the existing hardware packages, install Denial's signed ARM64 packages, and use the touch layout | Check first boot, lock screen, touch input, and external displays on `piano`; wire auto-rotation to standard SensorProxy |
+| Droidloom | The shared kernel provides BinderFS, compressed EROFS, and IPv4/IPv6 policy routing | Verify native ARM64 apps, GPU, networking, and container start/stop on both distributions, and deliver via separate auditable native packages |
 
-包清单、安装职责及标准工具选择见[软件包与更新标准化](building.md#软件包与更新标准化)。
-默认中文、动画、Chromium、账号及蓝牙体验属于产品配置，
-不应成为更换 rootfs 后硬件失效的原因。
+For the package inventory, installation responsibilities, and standard tooling choices, see [Package and Update Standardization](building.md#package-and-update-standardization). Defaults such as Chinese locale, animations, Chromium, accounts, and Bluetooth UX belong to product configuration and must not cause hardware to break when switching rootfs.
 
-### 标准 UEFI 启动与存储
+### Standard UEFI Boot and Storage
 
-ESP（EFI 系统分区）内已有官方 `ukify` 和 ARM64 systemd-stub 生成的标准 UKI。
-产品默认安装 systemd-boot；固件按 `BootNext`、`BootOrder` 和 `Boot####`
-选择 EFI 应用，设备后备路径复用上游库。SimpleInit 作为普通启动项注册；
-其“启动 Linux”按系统启动顺序执行。Linux 运行时的变量持久化另行处理。
+The ESP (EFI System Partition) already contains standard UKIs built with official `ukify` and ARM64 `systemd-stub`. Products install `systemd-boot` by default; firmware selects EFI applications via `BootNext`, `BootOrder`, and `Boot####`, reusing upstream libraries for fallback device paths. SimpleInit is registered as a normal boot entry, and its "Boot Linux" action follows the system boot order. Runtime EFI variable persistence from Linux is tracked separately.
 
-| 工作 | 现在的实现 | 下一步 |
+| Work Item | Current State | Next Steps |
 | --- | --- | --- |
-| 固件启动顺序 | 实机确认 `BootNext` 在运行前删除；一次性 EFI 程序返回错误后按 `BootOrder` 进入 systemd-boot，重启没有重复执行 | 核对从固件设置重新排序、取消选择后仍按用户顺序启动 |
-| SimpleInit 与一次性选择 | 平板已注册置顶的 SimpleInit `Boot####`，菜单可继续启动现有 SteamOS | 用实体键盘和侧键核对 Esc 选择、取消与顺序恢复 |
-| 系统发现与直接启动 | 固件不再限定 OS 文件名、分区标签或 UFS LUN；启动项路径和后备发现复用 UEFI 库 | 实测其他卷、多个 ESP、直接 UKI 及其他系统加载器的资源退出 |
-| 引导程序 | 官方 systemd-boot 已在现有 SteamOS 实机启动分离文件与旧 UKI，已设置三秒菜单 | 检查用户排序、首次安装及两种布局升级 |
-| 标准存储写入和 Fastboot 刷写 | 扫描不改 GPT，刷写只卸载目标。平板上已完成 512 MiB sparse 写入、全量读回与取消读取后的自动恢复 | 对照同机原厂继续优化传输和连续写入速度；实测长操作中的触屏、键盘和触控板 |
-| 系统运行时 EFI 变量 | 固件在 Boot Services 阶段把变量保存到 `persist/sunuefi/`；Linux 的 `efivarfs` 可读，固件运行时不支持写和删除 | 为固件 `SetVariable()` 接入与系统 UFS 有明确仲裁的持久化服务；用标准 `efibootmgr` 核对创建、排序、一次启动、删除和断电保存 |
-| EFI 层分区管理 | 未实现 | 先完成标准块读写和 GPT 安全检查；“伪动态分区”只有需求方向，未实现，不改变现有分区布局 |
+| Firmware boot order | Confirmed on-device that `BootNext` is cleared before execution; when a one-shot EFI binary returns an error, boot falls through via `BootOrder` into `systemd-boot` without repeating on reboot | Verify reordering from firmware setup and confirm user boot order is preserved after canceling selection |
+| SimpleInit and one-shot selection | A pinned top-priority SimpleInit `Boot####` entry is registered on the tablet and can chain-boot the existing SteamOS install | Test Esc selection, cancellation, and boot-order restoration with both the physical keyboard and side buttons |
+| OS discovery and direct boot | Firmware no longer hardcodes OS filenames, partition labels, or UFS LUNs; boot-entry paths and fallback discovery reuse UEFI libraries | Test additional volumes, multiple ESPs, direct UKI boot, and resource teardown across other OS loaders |
+| Bootloader | Official `systemd-boot` boots both split-file entries and legacy UKIs on the existing SteamOS tablet with a 3-second menu timeout | Check user-defined ordering, fresh installs, and upgrades across both boot layouts |
+| Standard storage writes and Fastboot flashing | Disk scanning never modifies GPT, and flashing unmounts only the target partition. Completed 512 MiB sparse write, full readback, and automatic recovery after aborted reads on-device | Continue optimizing transfer and sustained write speeds against stock on the same device; test touchscreen, keyboard, and touchpad responsiveness during long operations |
+| OS runtime EFI variables | Firmware persists variables to `persist/sunuefi/` during Boot Services; Linux `efivarfs` can read them, but runtime writes and deletes are unsupported | Connect firmware `SetVariable()` to a persistence service with explicit UFS arbitration against the OS; verify entry creation, reordering, one-shot boot, deletion, and power-loss persistence via standard `efibootmgr` |
+| EFI-layer partition management | Not implemented | Complete standard block I/O and GPT safety checks first; "pseudo-dynamic partitions" are only a requirement direction, unimplemented, and do not alter the current partition layout |
 
-默认 UKI 名称应描述 Linux，而不是固件 SunUEFI；最终由标准安装工具按安装标识
-和内核版本管理，不能把另一固定名字变成固件前提。SimpleInit 仍随产品提供
-默认设置，其他系统可以自行命名、安装和更新 EFI 文件。
+Default UKI filenames should describe Linux rather than the SunUEFI firmware; standard install tooling should manage them by machine/install ID and kernel version without turning another fixed filename into a firmware requirement. SimpleInit continues to ship as the default product setup while allowing other operating systems to name, install, and update their own EFI binaries.
 
-### UEFI 输入、USB 与失败恢复
+### UEFI Input, USB, and Failure Recovery
 
-| 工作 | 已有结果 | 下一步 |
+| Work Item | Current Results | Next Steps |
 | --- | --- | --- |
-| 错误页 Fastboot | 实机已完成 `getvar all`、日志、截图和错误页软件重启；重启只保存设置、同步存储，不经过外设恢复或 ExitBootServices | 继续检查存储同步失败提示和外接 USB 设备的退出；触屏或键盘清理失败不应阻止整机复位 |
-| 启动与 UKI 加载故障 | 已补齐 GENI 数据通路的 SMMU 映射及通道退出处理，经官方 systemd-boot 启动现有 SteamOS；SSH 和 bootctl 已确认实际引导程序 | 检查完整产品安装、输入恢复和 Android／Linux 往返；`OKAY` 不作为重启完成结果 |
-| Piano 触屏 | GPI 配置、SMMU 域及五份 DMA 缓冲已初始化，BOE 固件解析通过 | 验证 SPI 传输、芯片 ID、固件下载、整帧校验、菜单点按及安全退出，再检查 Android／Linux 往返 |
-| 官方键盘与触控板 | 固件设置曾确认实体键盘可用；新版在默认启动前识别键盘套，实测 MCU 初始化约 1.57 秒，进入 SteamOS 时正确释放输入与硬件资源 | 实测开机 Esc／F12、取消、触控板移动和点击、拔插及输入恢复 |
-| UEFI USB 3.x | 实现已接入产品，缺 SuperSpeed 实机结果 | 使用 USB 3.x 线检查 5 Gbit/s 协商、长传输校验、正反插、主机／设备角色、OTG、Hub、热插拔及恢复；PD 和视频输出分别检查 |
+| Error-screen Fastboot | Verified `getvar all`, log capture, screenshots, and software reboot from the error screen on-device; reboot only saves settings and flushes storage without running peripheral restore or `ExitBootServices` | Continue checking storage-sync failure prompts and teardown with external USB devices; touchscreen or keyboard cleanup failures must not block full system reset |
+| Boot and UKI load failures | Completed GENI data-path SMMU mappings and channel teardown, booting the existing SteamOS install via official `systemd-boot`; confirmed the active bootloader via SSH and `bootctl` | Verify full product installation, input recovery, and Android/Linux round-trips; do not treat `OKAY` alone as confirmation that a reboot completed |
+| Piano touchscreen | GPI configuration, SMMU domain, and five DMA buffers initialize cleanly; BOE firmware parsing passes | Verify SPI transfers, chip ID readback, firmware download, full-frame validation, menu taps, and clean teardown, then verify Android/Linux round-trips |
+| Official keyboard and touchpad | Physical keyboard previously verified in firmware setup; newer build detects the keyboard folio before default boot, with measured MCU init around 1.57 s, and cleanly releases input and hardware resources when handing off to SteamOS | Test boot-time Esc/F12, cancellation, touchpad movement and clicks, attach/detach, and input recovery on-device |
+| UEFI USB 3.x | Implementation integrated into products; SuperSpeed on-device verification is still pending | Test 5 Gbit/s negotiation with a USB 3.x cable, long-transfer verification, cable orientation, host/device role switching, OTG, hubs, hotplug, and recovery; validate PD and video output separately |
 
-当前使用维护者提供的 USB 3.x 线，最近一次 Linux 连接协商为 480 Mbit/s；
-不能据此归因线材，仍需分别检查控制器、PHY、方向与协商日志。
-驱动退出时继续保留不能确认停止的 DMA 资源，但不能把
-输入驱动的失败当成健康 USB 必须停止的理由。
+With the maintainer's USB 3.x cable, the most recent Linux link negotiated at 480 Mbit/s; do not attribute this to the cable alone — inspect controller, PHY, orientation, and link negotiation logs separately. During driver teardown, continue retaining DMA resources that cannot be confirmed stopped, but do not treat an input driver failure as a reason to halt a healthy USB stack.
 
-### Linux 硬件接口与实机检查
+### Linux Hardware Interfaces and On-Device Verification
 
-| 工作 | 已有结果 | 下一步 |
+| Work Item | Current Results | Next Steps |
 | --- | --- | --- |
-| 镜头对焦 | 平板已验证 GT9764BA 的标准镜头关联、两档手动位置和运行时休眠；已安装的 `piano-camera` 实机完成后摄 AF 扫描，前摄保持固定焦距 | 用有纹理的远近目标核对成像、归位、重开和睡眠恢复 |
-| [手电筒与闪光灯](hardware/camera-flash.md) | 标准设备树使用 1＋4、2＋3 两组，平板后摄验证单开、同开和关灯。标准 V4L2 短闪光实际出光，修正安全定时器后一档偏差消失 | 接入 libcamera 的拍照闪光和曝光同步，补齐故障报告 |
-| 标准相机栈 | Debian 从签名 APT 装包后，GStreamer 可让真实后摄在 4K／720p 按请求输出 30 或 60 fps；前摄只选择支持的 30 fps。Plasma Camera 能拍照、录有声视频和关窗重开 | 让 PipeWire 把所选帧率传给 libcamera；补齐 TFE 参数与统计队列及逐帧控件；验证发行版安装与升级后移除旧服务、虚拟摄像头和控制 socket |
-| 相机原厂统计对照 | HAF 逻辑配置与部分数据布局已追踪，AF 使用的最终视图尚未追清 | 获取同机原厂运行图、统计 DMA 样本、缓冲池配置、完成顺序、控件延迟和逐帧关联，核清 ROI、网格、BG／BHIST 语义；不恢复无依据的 HBLANK／VBLANK |
-| 相机自动与手动控件 | 现有服务提供自动曝光、白平衡、后摄对焦和底层快门／增益控制；缺标准逐帧控件和 ISO 标定 | 通过标准 V4L2 和 libcamera 支持自动／手动切换、单次／连续 AF、快门时间和模拟增益；按实际标定提供 ISO，核对控件作用帧、EXIF、镜头稳定时间和故障恢复 |
-| 高清拍照与高帧率录像 | Debian 安装原生 Qt 和 FFmpeg 后，Plasma Camera 用 Iris 录制 65 秒后摄 4K60 有声视频，读回 H.264 Level 5.2 和 3921 帧，最长帧间隔约 16.67 ms；前摄通过 1080p30 有声录像 | 用同一声光事件核对音画同步；检查前后摄全分辨率照片、硬件 remosaic 和画质 |
-| 新指纹传输路径 | Debian KDE 已用 fprintd 录入，并由维护者在 Plasma 锁屏实测解锁；旧 MinkIPC 路径完成过模板重开和匹配对照 | 复测重启后的模板、错误指纹及取消超时；区分锁屏和 SDDM 登录，后者没有独立的指纹流程 |
-| 触控笔 | Focus Pen Pro 定位、压感及 GNOME／KDE 原生设置已检查；磁吸笔座能报告吸合和满电。Debian 从本地签名源装入修复后，无缓存型号的笔重连能直接识别为 `0022:5081`；触屏 SPI 重新绑定后输入设备恢复，正常重启能回到 Android | 检查新版实际落笔、磁吸重连，以及普通 Focus Pen、掌压、弱悬停、四边、倾角和压力曲线。日常保持 3200×2136／120 Hz。用低电量的笔确认电量上升、取下即停，以及睡眠中吸合后的回读 |
-| 触屏拖拽偶发卡住 | Debian KDE 桌面选框松手后可能保留。现场读到触屏仍在报告一个固定位置的触点，触控板已释放，Konsole 还能点击 | 核对无接触时的原始矩阵，修复假触点；分开复测单指拖拽、触控板按住拖动、桌面编辑及睡眠恢复 |
-| 红外和显示位深 | LIRC 已用单次 SPI 传输发送 1 秒报文；12-bit／FRC 未完成 | 测量红外载波、包络与距离；显示区分原生、传输和等效位深，完成实际转换与恢复后再声明能力 |
-| 电源模式 | SteamOS 用 pacman 装包后，KDE 与 Gamescope 游戏会话在实机共用三档，切档确实改变 CPU／GPU 上限；电源服务重启后，游戏会话仍能切档 | 核对从签名源普通升级后冷启动和挂起恢复，实测 Debian KDE、Nyarch 切档 |
-| 日常功耗、游戏性能与深睡 | Linux 的 RTC 和电源键能唤醒深度挂起；三档上限能切换。这些结果不说明日常能耗、游戏表现或待机时长已达到原厂水平 | 同机对照原厂的空闲功耗、滑动响应、CPU／GPU 调频、长时间游戏的帧时间与温度；拔掉 USB 测隔夜深睡、电量变化、唤醒和外设恢复 |
-| 充电保护与停充 | 普通 PD 下实测停充、输入保持在线、切回自动后重新充电；双路接口测温和隔离已接入板级设备树 | 对照原厂充电器检查暖区、接近满电时的停充和回充、接口保护触发与拔线恢复；再验证快充和 OTG 不受影响 |
+| Lens focus | Verified standard GT9764BA lens binding, two manual focus positions, and runtime PM on-device; installed `piano-camera` completed rear AF sweep while front camera stays fixed-focus | Check image sharpness, homing, reopen, and suspend/resume using textured near and far targets |
+| [Torch and Camera Flash](hardware/camera-flash.md) | Standard Device Tree defines 1+4 and 2+3 channel groups; verified single-group, dual-group, and off states on the rear camera. Standard V4L2 strobe fires cleanly, and fixing the safety timer eliminated the one-step offset | Integrate still-capture flash and exposure sync into `libcamera`, and complete fault reporting |
+| Standard camera stack | After installing packages from signed APT on Debian, GStreamer drives the real rear camera at requested 30 or 60 fps in 4K/720p, while the front camera selects only its supported 30 fps. Plasma Camera takes photos, records video with audio, and survives window close/reopen | Propagate PipeWire-selected frame rates to `libcamera`; complete TFE parameter/statistics queues and per-frame controls; remove the legacy daemon, virtual camera, and control socket once distro install/upgrade is verified |
+| Stock camera statistics comparison | Traced HAF logic config and partial data layout; the final view consumed by AF is not yet fully resolved | Capture same-device stock runtime graphs, statistics DMA samples, buffer-pool configs, completion order, control latency, and per-frame correlation to verify ROI, grid, and BG/BHIST semantics; do not restore unsupported HBLANK/VBLANK values |
+| Automatic and manual camera controls | Current service provides AE, AWB, rear AF, and low-level shutter/gain controls, but lacks standard per-frame controls and ISO calibration | Expose auto/manual modes, single/continuous AF, exposure time, and analog gain via standard V4L2 and `libcamera`; calibrate ISO from real measurements and verify applied frame timing, EXIF metadata, lens settling time, and fault recovery |
+| High-res stills and high-fps video | With native Qt and FFmpeg on Debian, Plasma Camera recorded 65 s of rear 4K60 video with audio via Iris, reading back H.264 Level 5.2 and 3921 frames with max frame interval ~16.67 ms; front camera passed 1080p30 recording with audio | Check A/V sync against a shared audio-visual event; verify full-resolution stills on both cameras, hardware remosaic, and image quality |
+| New fingerprint transport path | Enrolled via `fprintd` on Debian KDE and unlocked the Plasma lock screen in maintainer testing; legacy MinkIPC path completed template reopen and match comparisons | Retest templates across reboots, rejected prints, and cancel/timeout paths; distinguish lock screen from SDDM login, as SDDM has no separate fingerprint flow |
+| Stylus | Verified Focus Pen Pro positioning, pressure, and native GNOME/KDE settings; magnetic dock reports attachment and full charge. After installing the fix from the local signed repo on Debian, an uncached stylus reconnecting is immediately identified as `0022:5081`; input devices recover after touchscreen SPI rebind, and normal reboot returns to Android | Test actual writing, magnetic reconnection, standard Focus Pen, palm rejection, low hover, screen edges, tilt, and pressure curves on the new build. Keep daily mode at 3200×2136 @ 120 Hz. Use a low-battery stylus to verify charging progress, immediate stop on detach, and status readback when docked during suspend |
+| Intermittent stuck touchscreen drag | Selection marquee on Debian KDE desktop can stay active after finger lift. Live inspection showed the touchscreen still reporting a stuck contact while the touchpad had released and Konsole still accepted clicks | Inspect raw touch matrix with no contact and fix ghost touches; retest single-finger drag, touchpad click-and-drag, desktop edit mode, and suspend/resume separately |
+| IR blaster and display bit depth | LIRC transmitted a 1-second frame in a single SPI transfer; 12-bit / FRC is not complete | Measure IR carrier frequency, envelope, and range; distinguish native, transport, and effective display bit depth, and only advertise capability after verifying real mode transitions and recovery |
+| Power profiles | After installing packages via `pacman` on SteamOS, KDE and Gamescope gaming sessions share all three profiles on-device, switching profiles changes CPU/GPU caps, and switching continues working in Gamescope after restarting the power daemon | Verify cold boot and suspend/resume after normal upgrades from the signed repo, and test profile switching on Debian KDE and Nyarch |
+| Daily power draw, gaming performance, and deep sleep | Linux wakes from deep suspend via RTC and power button, and the three power-cap profiles switch cleanly. These results do not yet mean daily efficiency, gaming performance, or standby battery life match stock | Benchmark idle power, scroll responsiveness, CPU/GPU frequency scaling, sustained gaming frame times, and thermals against stock on the same device; unplug USB to measure overnight deep sleep, battery drain, wake behavior, and peripheral recovery |
+| Charge protection and charge limit | Verified charge stop, keeping USB input online, and resuming charge when returning to auto mode under standard PD; dual port temperature sensing and isolation are wired in the board Device Tree | Test warm-zone behavior, near-full stop/resume thresholds, port-protection trip and unplug recovery against the stock charger; verify fast charging and OTG remain unaffected |
 
-实现与来源见[相机控制](hardware/camera-controls.md)、
-[侧指纹](hardware/led-ir-fingerprint.md#侧指纹)、[笔协议](hardware/pen-protocol.md)
-和[显示位深](hardware/display-depth.md)。
+For implementation details and sources, see [Camera Controls](hardware/camera-controls.md), [Side Fingerprint Sensor](hardware/led-ir-fingerprint.md#side-fingerprint-sensor), [Stylus Protocol](hardware/pen-protocol.md), and [Display Bit Depth](hardware/display-depth.md).
 
-### 安装与产品交付
+### Installation and Product Delivery
 
-| 工作 | 已有结果 | 下一步 |
+| Work Item | Current Results | Next Steps |
 | --- | --- | --- |
-| 自定义 GKI 安装 | 保留内核的重打包／还原、缺失或失配 AVB 的离线选择、模块安装和本机 Android 重启通过；实体确认超时取消通过 | 实测三次音量下确认和音量上取消，取得反馈者日志或真实第三方 GKI 镜像并检查启动；不加原厂指纹、版本、构建者白名单 |
-| 开发内核部署 | SteamOS 可用 `pacman` 并存安装内核、模块和 DTB；平板已通过 systemd-boot 启动新内核并回退至旧内核 | 继续以同机新旧版本对照硬件改动，保留现有用户系统和游戏 |
-| 首次安装和容量调整 | 已有分区的镜像更新与用户数据保留已有结果 | 新设备首次分区、root 容量调整，以及 Debian KDE 完整桌面和硬件体验的设备检查 |
-| 最终产品一致性 | 现有 CI 有四产品成功基线，后续硬件修改尚未完成同一代交付 | 重建同一 UEFI 核心及 Android 模块、共用内核和各发行版的 root；检查产物、首次启动、恢复与远端 CI |
+| Custom GKI installation | Kernel-preserving repack/restore, offline selection for missing or mismatched AVB, module installation, and local Android reboot passed; hardware-confirmation timeout cancellation passed | Test three-press Volume Down confirmation and Volume Up cancellation on-device, collect reporter logs or real third-party GKI images and verify boot; do not add allowlists for stock fingerprints, versions, or builders |
+| Development kernel deployment | SteamOS supports side-by-side installation of kernels, modules, and DTBs via `pacman`; the tablet booted the new kernel via `systemd-boot` and rolled back to the previous kernel | Continue A/B-comparing hardware changes across old and new builds on the same device while preserving the user's OS and games |
+| First-time install and resizing | Image updates and user-data preservation on existing partitions are verified | Verify initial partitioning on a clean device, root partition resizing, and full Debian KDE desktop and hardware checks on-device |
+| Final product consistency | CI has a passing four-product baseline, but subsequent hardware changes have not yet been rebuilt into a single unified generation | Rebuild the same UEFI core and Android modules, shared kernel, and all distro root images together; verify artifacts, first boot, recovery, and remote CI |
 
-保留 Android 数据、现有 Linux 用户文件、机器身份、配对和游戏；不重新安装
-用户系统，不重建分区。新启动路径失败后仍须能长按电源，并在早期选择器选择
-Android。过程日志与采集留在本地构建目录，已确认的实现结论写入对应技术页。
+Preserve Android data, existing Linux user files, machine identity, pairings, and games; do not reinstall the user's OS or recreate partitions. If a new boot path fails, holding the power button must still allow selecting Android in the early boot selector. Keep working logs and captures in local build directories, and record confirmed findings on the corresponding technical pages.
 
-### Linux 主线工作完成后：ACPI 和 Windows
+### After Linux Mainline Work: ACPI and Windows
 
-以同机 [Mu 平台移植](../../THIRD_PARTY.md)和原厂初始化记录为参考，先补齐
-ACPI 硬件描述及资源和电源管理，再用 ARM64 WinPE 检查设备枚举、存储和显示，
-逐项补 Windows 驱动。先用临时启动验证，不改变 Android 和 Linux 的分区布局；
-Linux 仍沿用已验证的设备树启动，并单独做启动与休眠回归。
+Using the same-device [Mu platform port](../../THIRD_PARTY.md) and stock initialization records as reference, first complete ACPI hardware descriptions along with resource and power management, then use ARM64 WinPE to verify device enumeration, storage, and display, adding Windows drivers item by item. Validate via temporary boot first without altering the Android or Linux partition layout; Linux continues using its verified Device Tree boot path and undergoes separate boot and suspend regression checks.
 
-## 二进制分发说明
+## Binary Distribution Notes
 
-原厂固件、原生 PE 和派生模块的再分发条件需要分别核对。哈希只能证明文件来源，不构成发布许可。正式发布前按实际内容核对来源与许可，并完成端到端设备验证。在此之前，不扩大首页写出的功能声明。
+Redistribution terms for stock firmware, native PE binaries, and derived modules must each be verified individually. Checksums prove file provenance only and do not grant redistribution rights. Before an official release, audit provenance and licensing against actual contents and complete end-to-end on-device verification. Do not expand the feature claims on the homepage until then.

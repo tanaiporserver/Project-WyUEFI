@@ -1,86 +1,86 @@
-# Android 引导助手
+# Android Boot Helper
 
-SunUEFI 引导助手在 Android 中安装和维护合体 BOOT，提供 Android／UEFI 启动选择及独立存储管理。模块从设备当前 BOOT 安装或更新 SunUEFI，保留原厂内核或格式兼容的自定义 GKI；安装引导不自动分区。
+The SunUEFI Boot Helper installs and maintains the Combined BOOT from Android, providing Android/UEFI boot selection and dedicated storage management. The module installs or updates SunUEFI from the device's current BOOT, preserving the stock kernel or a format-compatible custom GKI; installing boot does not automatically partition storage.
 
-普通安装步骤见[安装指南](../../user/install-from-artifact.md)。本页说明引导助手的行为和实现。
+For standard installation steps, see the [Installation Guide](../../user/install-from-artifact.md). This page describes the behavior and implementation of the Boot Helper.
 
-## 使用
+## Usage
 
-1. 从 **Build products** 的 `SunUEFI-Module` 下载并解压模块包，将里面的 `SunUEFI-Piano-版本.zip` 传到平板。
-2. 在正常运行的 Android 中，用 SukiSU 的模块页面安装 ZIP。相同核心只读取、不重写 BOOT；其余情况提示音量＋安装或更新引导，音量－只安装助手。30 秒未选择时只安装助手，可稍后在维护页安装引导。
-3. 正常重启，点击模块卡片上的 **打开 WebUI**。
+1. Download and extract the `SunUEFI-Module` package from **Build products**, then transfer `SunUEFI-Piano-<version>.zip` inside it to the tablet.
+2. In a running Android session, install the ZIP from SukiSU's Modules tab. If the same core is already installed, the installer only reads BOOT without rewriting it; otherwise, it prompts for Volume Up to install or update boot, or Volume Down to install only the Boot Helper. If no selection is made within 30 seconds, only the Boot Helper is installed, and boot can be installed later from the Maintenance tab.
+3. Reboot normally, then tap **Open WebUI** on the module card.
 
-页面分为 **启动、存储、维护** 三页，横屏使用侧边导航，竖屏使用底部导航。启动页提供 Android、UEFI 两条路线。选择 UEFI 后，已安装的 Linux 会默认选中并直接启动；启动菜单作为另一入口保留。没有 Linux 启动文件时，仅显示启动菜单。选择目标后点击 **保存并重启**，以后普通开机和重启沿用该选择，直到再次更改。
+The WebUI is split into three tabs: **Boot**, **Storage**, and **Maintenance**, using side navigation in landscape and bottom navigation in portrait. The Boot tab offers two boot routes: Android and UEFI. When UEFI is selected, an installed Linux system is selected by default and boots directly; the boot menu remains available as an alternate entry. If no Linux boot files are present, only the boot menu is shown. After choosing a target, tap **Save and restart**; subsequent normal power-ons and reboots follow that choice until changed again.
 
-新合体 BOOT 在开机时显示 Android／UEFI 选择页，倒计时约三秒后沿用保存的路线。音量上选择 Android，音量下选择 UEFI 并直接启动 Linux，短按并松开电源键确认；这次临时选择不改变模块中保存的路线。画面、音量键的选中反馈、默认 Android 启动，以及临时选择 UEFI 后从 ESP 启动 Linux 均已在设备上使用。原厂 `reboot recovery` 的优先规则保留，固件设置的独立入口尚未开放。
+The new Combined BOOT displays an Android/UEFI chooser screen at power-on and follows the saved boot route after a roughly three-second countdown. Press Volume Up to select Android, Volume Down to select UEFI and boot Linux directly, and press and release the Power key briefly to confirm; this temporary choice does not change the boot route saved in the module. The display output, volume-key selection feedback, default Android boot, and booting Linux from ESP via temporary UEFI selection have all been verified in use on the device. Stock `reboot recovery` precedence is preserved; a standalone entry for firmware settings is not yet exposed.
 
-存储页显示独立存储分区的容量，并通过 Android 的本地文件选择器选择 ESP／root 镜像，不要求把文件放进固定目录。0.5.2 起同时接受原始镜像与 Android 稀疏镜像，按展开后的大小检查容量，流式写入并读回校验。分区的名称仍为 `sunuefi_esp` 和 `sunuefi_root`。页面提供镜像安装、创建分区、调整 root 容量和删除并归还 Android 空间的操作入口；执行前展示计划。新设备上的首次分区尚未完成实机验证。空间归还通过 SukiSU 的早期 init 接口，在下次启动时离线扩大 F2FS，完成后继续 Android；缺少早期入口时在删除前拒绝。机制和容量检查见 [Android 存储扩容](android-storage.md)。
+The Storage tab shows the capacities of the dedicated storage partitions and uses Android's local file picker to select ESP/root images without requiring files to be placed in a fixed directory. Starting with 0.5.2, both raw images and Android sparse images are accepted; capacity is checked against the expanded size, and images are streamed to the partition and read back for verification. The partition names remain `sunuefi_esp` and `sunuefi_root`. The tab provides actions to install images, create partitions, resize root, and delete partitions to return space to Android, presenting an execution plan before proceeding. First-time partitioning on a fresh device has not yet completed on-device verification. Space reclamation uses SukiSU's early init hook to expand F2FS offline on the next boot before continuing into Android; if the early hook is unavailable, deletion is refused beforehand. For the underlying mechanism and capacity checks, see [Android Storage Resizing](android-storage.md).
 
-更新镜像时，勾选对应的 **本次更新**，再点击 **安装所选镜像**。只勾选启动镜像（ESP）会保留现有系统和数据；只勾选系统镜像（root）会覆盖系统分区，保留启动文件；同时勾选则写入两者。确认页列出将写入的镜像。重新打开页面时，两项默认都不勾选，之前选择的文件不会自动加入新的更新。
+When updating images, check **Update this image** for the images you want to flash, then tap **Install selected images**. Checking only the boot image (ESP) keeps the existing system and data; checking only the system image (root) overwrites the system partition while keeping boot files; checking both writes both. The confirmation dialog lists the images that will be written. When reopening the page, neither checkbox is checked by default, so previously selected files are not automatically included in a new update.
 
-页面支持中文和英文。打开页面只读取轻量状态，通常约 0.2 秒；维护页的 **检查引导** 才进行完整的只读 BOOT 检查，当前设备约两秒。管理器的 **执行** 按钮只显示当前选择和使用提示，不重启，也不输出原生工具的 JSON。
+The UI supports both Chinese and English. Opening the page reads only lightweight status, typically taking around 0.2 seconds; a full read-only BOOT inspection runs only when tapping **Check boot** on the Maintenance tab, taking about two seconds on the current device. The manager's **Action** button only displays the current selection and usage hints; it does not reboot or print raw JSON from the native tools.
 
-**重新安装引导** 用于 HyperOS 更新后的恢复。若当前 BOOT 仍是匹配的 SunUEFI 合体镜像，操作只重新识别现有引导；若核心版本不同，则保留当前 Android 内核和启动选择后更新；若 OTA 已换回受支持的原厂 BOOT，则从当前活动槽提取新内核，嵌入模块携带的同一套 SunUEFI 核心，并恢复先前选择。它不会自动接管 OTA，也不会预先修改非活动槽。卸载这个助手仅删除模块，现有 BOOT 和启动选择保留；需要返回 Android 时，应先在页面中选择 Android。
+**Reinstall boot** is intended for recovery after a HyperOS update. If the current BOOT is still a matching SunUEFI Combined BOOT image, the action only re-adopts the existing boot setup; if the core version differs, it updates the core while keeping the current Android kernel and boot selection; if an OTA replaced BOOT with a supported stock BOOT, it extracts the new kernel from the active slot, embeds the same SunUEFI core bundled in the module, and restores the previous boot selection. It does not automatically hook into OTA updates or pre-modify the inactive slot. Uninstalling the Boot Helper removes only the module while leaving the existing BOOT and boot selection intact; if you need to return to Android, select Android in the WebUI first.
 
-SukiSU 安装、模块激活和 WebUI 状态读取已在设备上使用。KernelSU 提供同类 [WebUI 接口](https://kernelsu.org/guide/module-webui.html)；官方 Magisk 的模块 Action 可显示提示，图形页面需要 [MMRL](https://mmrl.dev/) 等宿主，其他宿主尚未做兼容验证。
+Installation, module activation, and WebUI status reads under SukiSU have been verified in use on the device. KernelSU provides an equivalent [WebUI interface](https://kernelsu.org/guide/module-webui.html); official Magisk can display hints via the module Action button, while the graphical UI requires a host such as [MMRL](https://mmrl.dev/). Other hosts have not yet been verified for compatibility.
 
-## BOOT 识别与写入
+## BOOT Detection and Writing
 
-安装和维护使用同一个通用模块，根据当前 BOOT 选择操作：
+Installation and maintenance use the same universal module, choosing the operation based on the current BOOT:
 
-| 当前 BOOT | 操作 |
+| Current BOOT | Action |
 | --- | --- |
-| 格式兼容的当前 BOOT（原厂或自定义 GKI） | `probe` 读取当前内核和头部信息，`repack` 加入开机选择器及当前 UEFI 核心；首次安装默认选择 Android |
-| 与模块匹配的合体 BOOT | `adopt` 只读识别并保存管理状态，不重写 BOOT |
-| 已知格式的旧合体 BOOT | `upgrade` 完整重建原始 BOOT 并校验包装，再更新核心；保留 Android 内核、原头部和尾部、已有 Root 内容及启动选择 |
-| 不受支持或损坏的 BOOT | 停止安装并说明原因，不猜测格式后继续刷写 |
+| Format-compatible current BOOT (stock or custom GKI) | `probe` reads the current kernel and header metadata; `repack` adds the boot chooser and current UEFI core; first-time installation defaults to Android |
+| Combined BOOT matching the module | `adopt` identifies it read-only and saves management state without rewriting BOOT |
+| Older Combined BOOT in a known format | `upgrade` fully reconstructs the original BOOT and verifies the wrapper before updating the core; preserves the Android kernel, original header and trailer, existing Root contents, and boot selection |
+| Unsupported or corrupted BOOT | Aborts installation and reports the reason instead of guessing the format and flashing anyway |
 
-支持 Android Boot Header v3／v4，保留已有 ramdisk 和 v4 GKI 签名段，并随扩大的内核段调整它们的位置。ARM64 内核使用未压缩 Image，入口第一条是 EFI 标志指令或标准 NOP，第二条是指向内核内部的直接分支。选择器据此返回原内核；压缩内核和需要执行其他入口指令的私有包装仍会停止安装。`image_size` 必须覆盖内核文件并留出可确定的运行空间，加载偏移必须保持 2 MiB 对齐，避免选择器栈、设备树或 initrd 与内核重叠。旧合体 BOOT 使用 `SPLITv1+RSTRv1` 保存原镜像重建信息；更新核心时重新计算启动记录的 generation 和 CRC，保留记录中的目标。
+Android Boot Header v3 and v4 are supported; existing ramdisk and v4 GKI signature sections are preserved and relocated to match the expanded kernel section. The ARM64 kernel must be an uncompressed Image whose first entry instruction is an EFI magic instruction or a standard NOP, and whose second instruction is a direct branch into the kernel. The chooser uses this to return to the original kernel; compressed kernels and proprietary wrappers that require executing other entry instructions still abort installation. `image_size` must cover the kernel image and leave a deterministic runtime region, and load offsets must remain 2 MiB-aligned so that the chooser stack, Device Tree, or initrd do not overlap the kernel. Older Combined BOOT images store original-image reconstruction metadata using `SPLITv1+RSTRv1`; when updating the core, the boot record's generation and CRC are recomputed while keeping the recorded target.
 
-内核版本、构建者和 AVB 指纹不作为兼容性白名单，指纹缺失也不阻止安装。AVB 支持 SHA256、SHA512 数据摘要；当前 BOOT 没有摘要、摘要与数据不一致或仍只覆盖较短的旧内核时，先完成内存中的逐字节还原检查，再请求实体音量键确认。按下并松开三次音量下继续，音量上或 30 秒超时取消；该确认只接受当前操作，不保存开关。`--confirm-modified-boot` 仅允许显示该提示，不代替按键。机型、活动槽、入口、空间、完整还原及写入读回检查始终保留。
+Kernel version, builder identity, and AVB fingerprints are not used as a compatibility allowlist, nor does a missing fingerprint block installation. AVB verification supports SHA256 and SHA512 data digests; when the current BOOT has no digest, its digest does not match the payload, or the digest only covers a shorter older kernel, an in-memory byte-for-byte restoration check is performed first, followed by a physical volume-key confirmation prompt. Press and release Volume Down three times to continue, or press Volume Up or let the 30-second timeout expire to cancel; this confirmation applies only to the current operation and is not persisted. `--confirm-modified-boot` only enables showing this prompt and does not replace key presses. Checks for device model, active slot, entry instructions, available space, full restoration, and write read-back verification always remain enforced.
 
-引导写入前核对当前活动槽、ROM、BOOT 内容及源镜像摘要，写入后同步并完整读回。引导操作不写 Recovery、vbmeta、GPT 或 userdata；存储操作由独立工具负责，只在确认具体计划后调整对应文件系统和分区表。旧核心升级已用 96 MiB BOOT 文件验证原镜像重建完全一致；这一结果不代表已经完成所有 HyperOS OTA 场景的实机验证。
+Before writing boot, the tool verifies the active slot, ROM, BOOT contents, and source image digest; after writing, it syncs and performs a full read-back check. Boot operations never write to Recovery, vbmeta, GPT, or userdata; storage operations are handled by dedicated tools and modify the corresponding filesystems and partition table only after an explicit plan is confirmed. Core upgrades from older builds have been verified against a 96 MiB BOOT file to confirm bit-for-bit reconstruction of the original image; this result does not imply that all HyperOS OTA scenarios have been verified on hardware.
 
-只有首次将当前 BOOT 安装为合体 BOOT 的 `repack` 路径检查 BL 属性；属性未报告解锁时，按[安装指南中的实体音量键提示](../../user/install-from-artifact.md#1-安装引导助手)确认。`piano-boot-repack confirm-bootloader` 只从平台设备下的 `gpio-keys`／`pmic_resin` 读取三次完整按下和松开，临时独占按键，忽略长按重复和预先按住的键。确认通过后，Shell 只向本次安装的子进程传递 `PIANO_CONFIRMED_UNVERIFIED_BOOTLOADER=1`，公共入口会清除外部继承值，不保存永久设置。原生 `repack` 写入前再次检查属性或本次确认，型号、活动槽、源摘要、格式、范围、同步及读回检查不变。已有合体 BOOT 的请求更新、核心升级和原样还原仍完整验证当前包装，不再检查 BL 属性；独立存储不在 AVB 校验范围内，也不增加 BL 检查。
+Only the `repack` path that converts the current BOOT into a Combined BOOT for the first time checks bootloader properties; if the properties do not report an unlocked bootloader, confirm using the [physical volume-key prompt in the Installation Guide](../../user/install-from-artifact.md#1-install-the-boot-helper). `piano-boot-repack confirm-bootloader` reads three complete press-and-release cycles exclusively from `gpio-keys`/`pmic_resin` under platform devices, temporarily grabbing input devices while ignoring key-repeat events and pre-held keys. Once confirmed, the shell passes `PIANO_CONFIRMED_UNVERIFIED_BOOTLOADER=1` only to the child process of the current installation; public entry points strip any externally inherited value, and no permanent setting is saved. Before writing, native `repack` rechecks either the bootloader properties or this per-run confirmation, while keeping all model, active slot, source digest, format, bounds, sync, and read-back checks unchanged. Request updates, core upgrades, and exact restoration on an existing Combined BOOT still fully verify the current wrapper without rechecking bootloader properties; dedicated storage is outside AVB verification scope and does not add a bootloader check.
 
-源码位于 `android/module/`，引导原生工具位于 `android/native/`，在线 F2FS 调整工具位于 `tools/android/`。`manager.sh` 连接 WebUI 与原生工具：轻量读取使用 `piano-boot-request`；完整检查、识别已有引导、更新、重新打包和改选使用 `piano-boot-repack`。
+The module source lives in `android/module/`, the native boot tools in `android/native/`, and the online F2FS resizing tool in `tools/android/`. `manager.sh` bridges the WebUI and the native tools: lightweight reads use `piano-boot-request`, while full checks, adopting an existing boot image, upgrades, repacking, and changing boot targets use `piano-boot-repack`.
 
-助手不再向 ESP 写入槽位配置。Linux 切换工具直接读取高通 GPT 的 A/B 属性，校验活动 BOOT，再更新其中的 SunUEFI 请求页；不依赖 Android 与 ESP 同步额外文件。
+The Boot Helper no longer writes slot configuration to the ESP. The Linux boot-switch tool directly reads the Qualcomm GPT A/B attributes, validates the active BOOT, and updates the SunUEFI request page inside it, without relying on Android synchronizing extra files to the ESP.
 
-## 构建
+## Building
 
-在构建容器中先生成 UEFI 产品，再生成模块：
+Inside the build container, build the UEFI product first, then build the module:
 
 ```sh
 ./build.sh uefi
 ./build.sh module
 ```
 
-`tools/build_android_product_module.py` 从 `artifacts/product/` 提取同一份 `fd.bin`、`app.bin` 和 `shim.bin`，编译前置选择器，并生成以下静态 ARM64 工具：
+`tools/build_android_product_module.py` extracts the same `fd.bin`, `app.bin`, and `shim.bin` from `artifacts/product/`, compiles the pre-boot chooser, and builds the following static ARM64 tools:
 
-* `piano-boot-repack`：BOOT 识别、包装、更新和还原。
-* `piano-boot-request`：读取和修改启动记录。
-* `piano-storage`：分区状态、计划及镜像写入。
-* `piano-resize-f2fs`：Android F2FS 容量检查、在线缩容和早期扩容协调。
-* `fsck.f2fs`、`resize.f2fs`：早期只读检查和保留布局的离线扩容。
-* `e2fsck`、`resize2fs`：独立 ext4 分区的检查与调整。
+* `piano-boot-repack`: BOOT detection, wrapping, upgrading, and restoration.
+* `piano-boot-request`: Reading and modifying the boot record.
+* `piano-storage`: Partition status, planning, and image flashing.
+* `piano-resize-f2fs`: Android F2FS capacity checks, online shrinking, and early-expansion coordination.
+* `fsck.f2fs`, `resize.f2fs`: Early read-only filesystem checks and layout-preserving offline expansion.
+* `e2fsck`, `resize2fs`: Checking and resizing the dedicated ext4 partition.
 
-默认编译 sysroot 从签名校验后的公共 Debian ARM64 软件包解包，不执行外来架构代码；可通过 `--sysroot` 使用已有 ARM64 开发目录。e2fsprogs 从固定的官方源码构建，ZIP 包含对应许可、来源 URL 和本项目工具源码。无需提供原厂 BOOT、旧 Android 内核或设备私有路径，ZIP 不包含原厂内核。
+The default build sysroot is unpacked from signature-verified public Debian ARM64 packages without executing foreign-architecture code; an existing ARM64 development sysroot can be supplied via `--sysroot`. e2fsprogs is built from pinned upstream source, and the ZIP includes the corresponding licenses, source URLs, and this project's tool source code. No stock BOOT, old Android kernel, or device-private paths are required, and the ZIP does not contain a stock kernel.
 
-产物位于 `artifacts/android/`：
+Build outputs are placed in `artifacts/android/`:
 
-* `SunUEFI-Piano-版本.zip`：可安装的模块。
-* `manifest.json`：模块、原生工具和同一份 UEFI 产品的构建记录。
-* `SHA256SUMS`：ZIP 摘要。
+* `SunUEFI-Piano-<version>.zip`: Installable module archive.
+* `manifest.json`: Build manifest for the module, native tools, and the corresponding UEFI product.
+* `SHA256SUMS`: ZIP checksums.
 
-重复构建会复用已下载的工具链目录、重新生成载荷，并在 ZIP 完整生成后替换产物；可通过 `--work`／`--output` 使用其他目录。低层工具保留给已经准备好载荷及原生工具的维护者，检查输入时运行：
+Incremental rebuilds reuse the downloaded toolchain directory, regenerate payloads, and replace output artifacts only after the ZIP is completely generated; custom directories can be specified with `--work` and `--output`. The low-level packaging tool is retained for maintainers who already have prepared payloads and native binaries; to inspect inputs, run:
 
 ```sh
 ./build.sh module-package --inspect
 ```
 
-GitHub Actions 的 `uefi` 和 `debian-gnome` 目标同一轮构建模块，独立上传 ZIP、构建清单和摘要。它们使用相同的构建入口，无需先从设备导出已有核心。模块安装合体 BOOT 与首次分区是两件事：安装引导不会创建 ESP／root；存储页的新分区流程仍需实机验证。
+In GitHub Actions, both the `uefi` and `debian-gnome` targets build the module in the same run and separately upload the ZIP, build manifest, and checksums. They use the same build entry point and do not require dumping an existing core from a device first. Installing the Combined BOOT via the module and performing first-time partitioning are separate operations: installing boot does not create ESP/root, and the new-partition workflow on the Storage tab still requires on-device verification.
 
-不能用离线工具直接调整已挂载的 Android 数据分区，也不能只因原厂库含有扩容代码就假定当前路径可用。存储细节见 [Android 存储扩容](android-storage.md)，BOOT 包装和无损重建见 [原生重打包工具](combined-boot.md)，启动路线与原厂 Recovery 优先规则见 [重启请求](reboot-request.md)。
+Offline tools must not be used directly on a mounted Android data partition, nor should the current resize path be assumed usable simply because stock libraries include expansion code. For storage details, see [Android Storage Resizing](android-storage.md); for BOOT wrapping and lossless reconstruction, see [Native Repacking Tool](combined-boot.md); for boot routes and stock Recovery precedence, see [Reboot Requests](reboot-request.md).
 
-ESP／root 刷写不再要求模块预先写入蓝牙地址。当前 Linux BSP 在无线初始化时自动读取原厂 persist；原厂地址缺失时可从硬件标识派生稳定地址。公开镜像保持通用，手工刷写也使用同一条初始化路径，见[蓝牙地址](../hardware/bluetooth.md)。
+Flashing ESP/root no longer requires the module to pre-populate a Bluetooth address. The current Linux BSP automatically reads the stock `persist` partition during wireless initialization, falling back to a deterministic address derived from hardware identifiers if the stock address is absent. Public images remain generic, and manual flashing uses the same initialization path; see [Bluetooth Address](../hardware/bluetooth.md).

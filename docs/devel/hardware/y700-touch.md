@@ -1,51 +1,51 @@
-# Y700 四代 UEFI 触摸
+# Y700 Gen 4 UEFI Touch
 
-Y700 四代（TB322FC，CSOT 3K 面板，联想拯救者 Y700 四代平板）在 UEFI 阶段用 GPIO 模拟 SPI 读取 Novatek NT36536 触摸控制器，发布 Absolute Pointer 协议供内置菜单使用。这套代码只覆盖 UEFI 菜单的单指输入；Windows 和 Linux 的触摸由各自系统的驱动负责，不复用这里的固件下载和报文读取。
+The Y700 Gen 4 (TB322FC, CSOT 3K panel, Lenovo Legion Y700 Gen 4 tablet) bit-bangs SPI over GPIO during UEFI to read the Novatek NT36536 touch controller and publishes the Absolute Pointer protocol for the built-in menu. This implementation covers single-finger input in the UEFI menu only; Windows and Linux touch input are handled by their respective OS drivers and do not reuse this firmware download or packet-reading path.
 
-## 构建依赖
+## Build Dependencies
 
-本页列出的文件不能单独编译。`Y700Touch.c` 包含构建期生成的 `Y700TouchConfig.h`，后者由 `tools/y700/prepare_touch.py` 写入，内容来自 `vendor/y700/dtb/y700-live.dtb` 和 `vendor/y700/touch/novatek_ts_csot_3k_fw.bin`。同一个脚本还负责把 `Y700Touch.c` 加入 `ProductCore.inf` 的 `[Sources]`。Y700 平台包（DSC/FDF、`SUNUEFI_Y700` 开关、`PianoProductCore.c` 里 `Y700TouchStart`/`Y700TouchStop`/`Y700TouchReplay` 的调用）和这两个 vendor 文件尚未合并到本仓库；在它们就位前，检出本页文件不会得到可构建的固件。
+The files listed on this page cannot be compiled standalone. `Y700Touch.c` includes the build-time-generated `Y700TouchConfig.h`, which `tools/y700/prepare_touch.py` generates from `vendor/y700/dtb/y700-live.dtb` and `vendor/y700/touch/novatek_ts_csot_3k_fw.bin`. The same script also adds `Y700Touch.c` to `[Sources]` in `ProductCore.inf`. The Y700 platform package (DSC/FDF, the `SUNUEFI_Y700` flag, and the `Y700TouchStart`/`Y700TouchStop`/`Y700TouchReplay` calls in `PianoProductCore.c`) and these two vendor files have not yet been merged into this repository; until they are in place, checking out the files mentioned here will not produce a buildable firmware image.
 
-`prepare_touch.py` 生成配置前会核对设备树里的 SPI 控制器 `0xA90000`、CS0、Mode 0、最高 10 MHz、GPIO 48/49/50/51 的引脚复用和 GPIO 162 的中断描述，并核对完整固件的 SHA256 `31382287ce3c5842f6df299589233459056043878deb1d27f7ef6b7f104ce271`（253952 字节）。任一处与本机采集不一致就停止构建，不生成配置。
+Before generating the config, `prepare_touch.py` verifies the Device Tree entries for SPI controller `0xA90000`, CS0, Mode 0, max 10 MHz, pin multiplexing for GPIO 48/49/50/51, and the interrupt descriptor for GPIO 162, as well as the full firmware SHA256 `31382287ce3c5842f6df299589233459056043878deb1d27f7ef6b7f104ce271` (253952 bytes). Any mismatch against the on-device capture halts the build without generating the config.
 
-## 硬件与协议来源
+## Hardware and Protocol Sources
 
-原厂 Android 的最终设备树指定 SPI 控制器 `0xA90000`。MISO、MOSI、CLK、CS 分别是 GPIO 48、49、50、51，中断是 GPIO 162。当前实现不申请主机 DMA（直接内存访问），不调用其他设备的 GENI/GPI 二进制接口，只驱动这四个 SPI 引脚和一个中断引脚。
+The stock Android final Device Tree specifies SPI controller `0xA90000`. MISO, MOSI, CLK, and CS are GPIO 48, 49, 50, and 51 respectively, and the interrupt is GPIO 162. The current implementation does not request host DMA (Direct Memory Access) and does not call GENI/GPI binary interfaces from other devices; it drives only these four SPI pins and one interrupt pin.
 
-驱动协议依据联想公开的 Novatek `NT36XXX_SPI` 源码；本机实际寄存器地址和版本差异取自同机原厂 `nvt_36xxx.ko` 的 ELF 符号和反汇编。公开源码里的旧 NT36523、NT36532 内存表与本机不一致，不能直接替换：本机事件缓冲区是 `0x130900`，不是旧表的 `0x125800`。
+The driver protocol is based on Lenovo's public Novatek `NT36XXX_SPI` source code; the actual register addresses and revision differences for this device were extracted from the ELF symbols and disassembly of the stock `nvt_36xxx.ko` module from the same unit. The older NT36523 and NT36532 memory maps in the public source do not match this device and cannot be substituted directly: this device's event buffer is at `0x130900`, not `0x125800` as in the older tables.
 
-## 初始化
+## Initialization
 
-`Y700Touch.c` 在 `Y700TouchStart` 中按以下顺序初始化，任一步失败都会调用 `Y700TouchStop` 还原已经占用的资源：
+`Y700Touch.c` initializes in `Y700TouchStart` in the following order; if any step fails, `Y700TouchStop` is called to restore any already-acquired resources:
 
-1. 读取串行引擎状态，确认对应引擎空闲；保存四个 SPI 引脚的复用、输出和控制权状态，切换为 GPIO mode 0。
-2. 配置 GPIO 162 的上升沿硬件锁存：保留 raw status 的捕获位，关闭 TLMM（Top Level Mode Multiplexer，高通 GPIO 控制块）summary 输出和 PDC 唤醒输出，不使能 CPU 中断。sun 的 `intr_ack_high` 默认为 false，因此向 status 写 0 清除，而不是写 1 清除。
-3. 核对完整的芯片 trim（`15 0e 00 23 65 03`）与级联配置，读取固件信息头和 PID `0x6097`；有效的其他型号 PID 一律拒绝。
-4. 按原厂流程把四段固件写入触摸芯片 SRAM，保留原厂每次片选 0x3c00 字节的分段边界，等待内部级联复制完成，读回两段信息头，再核对 GCM CRC 状态的 byte1 bit3、ILM/DLM 结果 CRC 和最终 PID。固定固件每次启动都重新加载，避免继承 Android 挂起后芯片的深度睡眠状态。这条路径不写触摸 flash。
-5. 单独发送普通上报命令 `76 00` 并记录 ACK，ACK 不为 0 不阻止后续输入。启动后校准阶段可能尚未应答，把它当作硬条件会误停输入。
+1. Read the serial engine status to confirm the corresponding engine is idle; save the mux, output, and ownership state of the four SPI pins, then switch them to GPIO mode 0.
+2. Configure rising-edge hardware latching on GPIO 162: retain raw status capture, disable the TLMM (Top Level Mode Multiplexer, Qualcomm GPIO control block) summary output and PDC wake output, and leave CPU interrupts disabled. On `sun`, `intr_ack_high` defaults to false, so status is cleared by writing 0 rather than writing 1.
+3. Verify the full chip trim (`15 0e 00 23 65 03`) and cascade configuration, then read the firmware info header and PID `0x6097`; any other valid model PID is rejected.
+4. Follow the stock sequence to write the four firmware sections into the touch controller SRAM while preserving the stock 0x3c00-byte per-chip-select transfer boundary, wait for internal cascade copy completion, read back both info headers, and verify GCM CRC status byte1 bit3, ILM/DLM result CRCs, and the final PID. The fixed firmware is reloaded on every boot to avoid inheriting the controller's deep-sleep state after Android suspend. This path never writes to touch flash.
+5. Send the normal report command `76 00` separately and log its ACK; a non-zero ACK does not block subsequent input. During post-boot calibration, the controller may not yet acknowledge this command, so treating it as a hard requirement would falsely disable input.
 
-成功后发布 Absolute Pointer 协议、ConsoleIn 设备路径和一个 20 ms 周期定时器。定时器只检查上升沿锁存位，有新边沿才读 108 字节事件缓冲区；空闲时不读 SRAM，也不以瞬时 GPIO 高电平作为读包条件。
+On success, it publishes the Absolute Pointer protocol, a ConsoleIn device path, and a 20 ms periodic timer. The timer checks only the rising-edge latch bit and reads the 108-byte event buffer only when a new edge is observed; it does not read SRAM while idle and does not use instantaneous GPIO high level as a read trigger.
 
-## 报文与菜单输入
+## Packets and Menu Input
 
-触摸报文长 108 字节：前 65 字节的累加和必须为 0，之后是十个 6 字节槽。槽里 id 是首字节高 5 位（1..10），状态是低 3 位（1 或 2 为按下），X/Y 是 16 位大端坐标，最大 `19040 × 30400`。校验失败、恢复标记（`FD`/`FE`）或坐标越界都整帧判坏，不用坏帧合成抬手。
+Each touch packet is 108 bytes long: the byte sum of the first 65 bytes must equal 0, followed by ten 6-byte slots. Within a slot, the contact ID is the upper 5 bits of the first byte (1..10), the status is the lower 3 bits (1 or 2 indicates touch down), and X/Y are 16-bit big-endian coordinates up to `19040 × 30400`. Checksum failures, recovery markers (`FD`/`FE`), or out-of-range coordinates invalidate the entire frame; bad frames are not used to synthesize lift-up events.
 
-`Y700TouchDecode.h` 只跟踪一个主触点并保持到它抬起；主触点抬起时先入队一次释放，下一帧才把另一个触点作为新的按下，避免第二根手指被解释成跨屏拖动。按下和抬手都单独入队，抬手保留最后坐标，不因坐标没变化而丢失。`Push` 按当前 GOP（Graphics Output Protocol）分辨率判断横竖屏，把原生坐标做一次旋转映射；这是 UEFI 菜单自己的显示变换，与 Windows 侧的显示旋转是两条独立路径。
+`Y700TouchDecode.h` tracks only a single primary contact until it lifts; when the primary contact lifts, a release event is queued first, and another contact is only treated as a new press on the next frame so a second finger is not interpreted as a drag across the screen. Both press and release events are queued individually, and release retains the last coordinates so it is not dropped when coordinates have not changed. `Push` determines portrait versus landscape from the current GOP (Graphics Output Protocol) resolution and applies a rotation mapping to the native coordinates; this is the UEFI menu's own display transform and is independent of Windows display rotation.
 
-坏帧连续三次会强制入队一次抬手，防止菜单停在按下状态。连续看到看门狗标记时，`GetState` 只在应用级 TPL（Task Priority Level，UEFI 任务优先级）触发有界次数的固件重载，不在定时器回调里下载固件。
+Three consecutive bad frames force a release event to be queued so the menu cannot get stuck in a pressed state. When watchdog markers appear repeatedly, `GetState` triggers a bounded number of firmware reloads only at application-level TPL (Task Priority Level), never downloading firmware inside the timer callback.
 
-## 退出与恢复
+## Teardown and Restoration
 
-正常移交系统或重启前，`Y700TouchStop` 先停定时器、断开并卸载协议、恢复 GPIO 162 的控制与中断配置、按读回核对四个 SPI 引脚的原值，最后释放时钟。任一步失败就设置 `Y700TouchRetained` 并拒绝继续移交。ExitBootServices 的通知只设置生命周期标记，不做清理。
+Before normal OS handoff or reboot, `Y700TouchStop` stops the timer, disconnects and uninstalls the protocols, restores GPIO 162 control and interrupt configuration, verifies the restored values of all four SPI pins by readback, and finally releases the clocks. If any step fails, it sets `Y700TouchRetained` and refuses to proceed with handoff. The ExitBootServices notification only sets a lifecycle flag and performs no cleanup.
 
-## 验证
+## Verification
 
-`tests/native/test_y700_touch_decode.c` 用手写报文核对 65 字节校验和、坐标边界（0 与 `19040 × 30400`）、同一触点移动、主触点切换时的抬手、空帧、坏帧和长度错误；`tests/native/test_usb_debug.sh` 会编译并运行它。这些是主机上的解码检查，不涉及设备，也不能证明队列和定时器路径正常。
+`tests/native/test_y700_touch_decode.c` uses hand-crafted packets to verify the 65-byte checksum, coordinate bounds (0 and `19040 × 30400`), single-contact movement, release on primary contact switch, empty frames, bad frames, and invalid lengths; `tests/native/test_usb_debug.sh` compiles and runs it. These are host-side decoder checks that do not involve hardware and do not verify the queue or timer paths.
 
-在设备上确认菜单输入要读 RAM 日志：`SUNUEFI_Y700_TOUCH_RESULT` 记录初始化阶段、固件版本、报文与错误帧计数，`SUNUEFI_Y700_TOUCH_EVENT` 记录按下与抬手，`SUNUEFI_Y700_TOUCH_IRQ` 记录边沿与空闲计数。协议发布成功和收到真实触摸事件是两件事。静置后仍能使用，应表现为空闲期间 `edges` 与 `transfers` 不变、`idle` 持续增长，恢复操作后 `edges` 和 `events` 增长且 `bad`、看门狗、`recoveries` 都为 0。在 TB322FC 上已确认静置后菜单可继续点击和滑动；设备采集日志不在本仓库。GPIO SPI 的吞吐和初始化耗时需实机测量，不能按原厂硬件 SPI 的 10 MHz 推算。
+Verifying menu input on-device requires reading the RAM logs: `SUNUEFI_Y700_TOUCH_RESULT` records initialization stage, firmware version, and packet/error-frame counters; `SUNUEFI_Y700_TOUCH_EVENT` records presses and releases; `SUNUEFI_Y700_TOUCH_IRQ` records edge and idle counters. Publishing the protocol successfully and receiving real touch events are separate things. Remaining usable after an idle period should show `edges` and `transfers` staying flat while `idle` keeps increasing during inactivity, followed by `edges` and `events` increasing with `bad`, watchdog, and `recoveries` all at 0 once touch resumes. Continued tapping and swiping in the menu after an idle period has been confirmed on TB322FC; the device capture logs are not in this repository. GPIO SPI throughput and initialization latency must be measured on hardware and cannot be extrapolated from the stock 10 MHz hardware SPI.
 
-## 审核里留下的限制
+## Known Limitations from Review
 
-- UEFI 侧只有一个主触点，多点输入未实现；Windows 的多点由独立驱动负责。
-- 横屏坐标映射只按 `HorizontalResolution > VerticalResolution` 判断，需要在设备上按实际渲染核对方向，这里不写成已验证。
-- `PianoTouchInput.h` 在 UEFI 头里用 `double` 做坐标比例换算，ARM64 DXE 依赖软浮点；这是既有代码，不在本次改动里调整。
+- UEFI tracks only a single primary contact; multi-touch is not implemented. Multi-touch on Windows is handled by a separate driver.
+- Landscape coordinate mapping checks only `HorizontalResolution > VerticalResolution`; orientation must be verified against actual on-device rendering and is not claimed as verified here.
+- `PianoTouchInput.h` uses `double` for coordinate scaling inside a UEFI header, which relies on soft-float in ARM64 DXE; this is pre-existing code and was not modified in this change.

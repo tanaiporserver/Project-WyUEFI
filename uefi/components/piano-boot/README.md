@@ -1,17 +1,17 @@
-# Piano Stable / Next EFI 文件树
+# Piano Stable / Next EFI File Tree
 
-这套文件由电脑端准备，不连接设备、不修改 GPT、不向 UFS 写文件。模板中的 Stable/Next、Android、Recovery、Shell 初始均为 inactive；产物通过检查后才生成可选择的 Linux/Shell 项。`BootManifest.json` 始终明确 `HOST_ONLY_NOT_DEPLOYED` 和 `storage_location=UNASSIGNED`，不能把目录生成视作 UFS 部署或启动成功。
+This file tree is prepared on the host computer without connecting to the device, modifying GPT, or writing files to UFS. In the template, Stable/Next, Android, Recovery, and Shell all start as inactive; selectable Linux/Shell entries are generated only after build artifacts pass validation. `BootManifest.json` always sets `HOST_ONLY_NOT_DEPLOYED` and `storage_location=UNASSIGNED` explicitly—generating this directory must not be treated as UFS deployment or a successful boot.
 
-## 先生成无产物的配置计划
+## Generate a Configuration Plan Without Artifacts
 
 ```bash
 python3 tools/prepare_boot_files.py --plan-only --output artifacts/piano-boot-plan
 python3 tools/prepare_boot_files.py --check-tree artifacts/piano-boot-plan
 ```
 
-计划含有效的原生 SimpleInit JSON、BootManifest 和两个空目录，没有伪造 Image/DTB/initramfs。
+The plan contains valid native SimpleInit JSON, `BootManifest.json`, and two empty directories, with no fake Image/DTB/initramfs.
 
-## 从两条独立内核产物准备草案树
+## Prepare a Draft Tree from Two Independent Kernel Artifacts
 
 ```bash
 python3 tools/prepare_boot_files.py \
@@ -22,43 +22,43 @@ python3 tools/prepare_boot_files.py \
 python3 tools/prepare_boot_files.py --check-tree artifacts/piano-boot-candidate
 ```
 
-只准备某一项时只传该项 manifest，另一项保持 inactive。`--stable-initramfs`、`--next-initramfs` 可以分别指定；`--mode userspace-debug` 使用另一套准确配置。`--shell-efi` 只接受 AARCH64 EFI application，将其复制为 `/EFI/Piano/Shell.efi`；没有提供时 Shell 文件菜单保持 inactive，已经在 FV 中的 Shell 不会被假定成磁盘文件。
+To prepare only one entry, pass only its manifest; the other entry remains inactive. `--stable-initramfs` and `--next-initramfs` can be specified separately, and `--mode userspace-debug` selects another exact configuration set. `--shell-efi` accepts only an AARCH64 EFI application and copies it to `/EFI/Piano/Shell.efi`; when omitted, the Shell file menu entry remains inactive, and any Shell already present in the FV is not assumed to exist as a file on disk.
 
-工具拒绝：未完成构建、提交/base_commit 与当前 `linux/kernel-profiles.json` 不符、canonical patch commits 与本地固定源码 Git 范围不符、source_dirty 不是明确 false、config/fragment/Image/DTB 哈希或镜像长度不符、缺显式 DTB、不完整或拼接 FDT、缺可执行 `/init`、强制/非空内置下游命令行。每个输入文件受固定 SimpleInit 的 `<128 MiB` 加载边界约束，DTB 还受 ARM64 的 2 MiB 边界约束。检查 EFI Image 的 ARM64 magic、AARCH64 PE32+ 和 EFI application subsystem。initramfs 输入可为 raw newc 或 gzip newc，输出统一为 gzip，要求内核启用 gzip 解包。
+The tool rejects: incomplete builds; commits/`base_commit` that do not match the current `linux/kernel-profiles.json`; canonical patch commits that do not match the local pinned source Git range; `source_dirty` not explicitly `false`; mismatched config/fragment/Image/DTB hashes or image sizes; missing explicit DTB; incomplete or concatenated FDTs; missing executable `/init`; and forced or non-empty built-in downstream command lines. Every input file is constrained by the pinned SimpleInit `<128 MiB` load limit, and the DTB is additionally constrained by the ARM64 2 MiB limit. The tool verifies the EFI Image's ARM64 magic, AARCH64 PE32+ header, and EFI application subsystem. The initramfs input may be raw `newc` or gzip `newc`, and the output is always gzip, requiring gzip decompression support in the kernel.
 
-默认拒绝硬件未验证的 kernel manifest；`--allow-unverified` 明确允许制作草案树，但不会把它标为 rescue 或把 Stable 设为默认。只有 manifest 明确 `hardware_verified=true` 的 Stable 产物才成为 rescue 首选；Next 始终是独立实验项，不会自动成为 rescue default。构建工具目前输出的两个 baseline 都未实机验证，正常结果应是 `UNVERIFIED_HOST_STAGED`。该标记不证明 board DT 拓扑、UFS/SMMU EBS 启动交接或其他硬件功能已经正确。
+Hardware-unverified kernel manifests are rejected by default. `--allow-unverified` explicitly permits staging a draft tree, without marking it as rescue or setting Stable as the default. Only a Stable artifact whose manifest explicitly sets `hardware_verified=true` becomes the preferred rescue entry; Next is always an independent experimental entry and never automatically becomes the rescue default. Both baselines currently produced by the build tooling have not been verified on hardware, so the expected status is `UNVERIFIED_HOST_STAGED`. This status does not prove that the board Device Tree topology, UFS/SMMU EBS boot handoff, or other hardware features are correct.
 
-## 文件布局
+## File Layout
 
 ```text
-simpleinit.static.uefi.json          # 固定 PCD 的自动加载入口
-EFI/Piano/BootManifest.json          # 显式 locate marker，记录所有文件 SHA256
-EFI/Piano/simpleinit.static.uefi.json # 同内容副本，供手动导入/检查
+simpleinit.static.uefi.json          # Auto-loaded entry point for the pinned PCD
+EFI/Piano/BootManifest.json          # Explicit locate marker recording SHA256 for all files
+EFI/Piano/simpleinit.static.uefi.json # Identical copy for manual import/inspection
 EFI/Piano/Stable/Image.efi
 EFI/Piano/Stable/piano.dtb
 EFI/Piano/Stable/initramfs.cpio.gz
 EFI/Piano/Stable/config
 EFI/Piano/Stable/BuildManifest.json
-EFI/Piano/Next/...                   # 完全独立的同类文件
-EFI/Piano/Shell.efi                  # 仅 --shell-efi 时存在
+EFI/Piano/Next/...                   # Completely independent parallel set of files
+EFI/Piano/Shell.efi                  # Present only when --shell-efi is passed
 ```
 
-没有给 Stable/Next 指派固定 `fs0:`。`locates.piano.by_file` 只匹配 `\EFI\Piano\BootManifest.json`，Linux 路径采用 `locate://piano/EFI/Piano/Stable/...` 或 `Next/...`。不存在查找 userdata root、MTP DTB、Android boot partition 或任意目录的后备路径；文件缺失即无法载入。以后部署应选择专门拥有的 FAT 卷，只保留一个该 marker，避免多个卷含同名树导致 SimpleInit 的“首个匹配卷”算法歧义。
+Neither Stable nor Next is assigned a hardcoded `fs0:`. `locates.piano.by_file` matches only `\EFI\Piano\BootManifest.json`, and Linux boot paths use `locate://piano/EFI/Piano/Stable/...` or `Next/...`. There are no fallback search paths for userdata root, MTP DTB, Android boot partitions, or arbitrary directories; if a file is missing, loading fails. Future deployments should use a dedicated FAT volume containing only a single copy of this marker to avoid ambiguity in SimpleInit's "first matching volume" algorithm when multiple volumes contain trees with the same paths.
 
-## 已核对的固定源码约定
+## Verified Pinned Source Conventions
 
-- `src/confd/json_conf.c:19`：原生 JSON 对象递归对应配置 key；当前构建启用 JSONC。
-- `src/confd/uefi.c:84` 与 `SimpleInit.dec:46`：每卷根读取 `\simpleinit.static.uefi.json`，即使该卷只读也可作为静态配置 include。生成文件树不会改变这一代码。
-- `src/filesystem/layer/uefi.c:150`、`src/linux-boot/loader.c:198`：解析的是 `locate://TAG/path`。旧文档里的 `@TAG:/path` 已不对应当前通用 fs_open 路径。
-- `src/linux-boot/conf.c:153`：读取 `kernel`、`dtb`、`initrd`，布尔键为 `use_uefi`，不是旧文档 `use_efi`。禁用 inherited kernel-FDT cmdline，显式用 `rdinit=/init`，不添加 `root=`。
-- `src/linux-boot/fdt.c:149`：处理的最终 DTB 安装到 EFI FDT configuration table；`ramdisk.c:75` 安装 Linux initrd device path + LoadFile2。Linux EFI stub 通过 LoadedImage 的 UTF16 LoadOptions 获得命令行，不使用这里额外拼出的 `dtb=`/`initrd=` 文件命令行。
-- `src/boot/efi.c:92`：Shell 的配置键为 `options_widechar`；文件路径使用 `efi_file`。目前 RAM 加载的 SimpleInit 没有可靠 FV/SFS DeviceHandle，不能假定 `efi_fv_guid` 的“当前 image 所属 FV”查找可用。
-- `src/gui/interface/core/bootmenu.c:249`：`enabled=false` 的项会被隐藏；Android/Recovery 的 inactive 描述保留在配置和 BootManifest 中，但不会伪装为可点击可启动项。BOOT_NONE 没有启动处理器。
+- `src/confd/json_conf.c:19`: Native JSON objects recursively map to configuration keys; the current build enables JSONC.
+- `src/confd/uefi.c:84` and `SimpleInit.dec:46`: `\simpleinit.static.uefi.json` is read from the root of every volume and works as a static configuration include even on read-only volumes. Generating this file tree does not modify that code.
+- `src/filesystem/layer/uefi.c:150`, `src/linux-boot/loader.c:198`: Paths are resolved using `locate://TAG/path`. The `@TAG:/path` syntax from older documentation no longer matches the current generic `fs_open` path.
+- `src/linux-boot/conf.c:153`: Reads `kernel`, `dtb`, and `initrd`; the boolean key is `use_uefi`, not the legacy `use_efi` from older documentation. Inherited kernel-FDT cmdline is disabled; `rdinit=/init` is passed explicitly without adding `root=`.
+- `src/linux-boot/fdt.c:149`: Installs the final processed DTB into the EFI FDT configuration table; `ramdisk.c:75` installs the Linux initrd device path and `LoadFile2`. The Linux EFI stub receives its command line via `LoadedImage`'s UTF-16 `LoadOptions`, and does not use the extra `dtb=`/`initrd=` file command-line arguments assembled here.
+- `src/boot/efi.c:92`: The Shell configuration key is `options_widechar`, and the file path uses `efi_file`. Currently, RAM-loaded SimpleInit lacks a reliable FV/SFS `DeviceHandle`, so `efi_fv_guid` lookups targeting the "FV containing the current image" cannot be assumed to work.
+- `src/gui/interface/core/bootmenu.c:249`: Entries with `enabled=false` are hidden. The inactive Android/Recovery descriptions remain in the configuration and `BootManifest.json`, but are not presented as clickable bootable entries. `BOOT_NONE` has no boot handler.
 
-模板设置 `boot.timeout=-1` 以保留手动选择。当前 bring-up 的 `src/main/uefimain.c:43` 在 confd_init 后强制改为 150 秒，这会覆盖加载配置的 timeout；该既有源码此次没有修改。若要完全使用文件菜单的时序，应在后续 SimpleInit 集成时移除或限定该覆盖，再验证 UI。
+The template sets `boot.timeout=-1` to preserve manual selection. In the current bring-up code, `src/main/uefimain.c:43` forces this value to 150 seconds after `confd_init`, overriding the timeout from the loaded configuration; this existing source file is not modified here. To rely entirely on the file-based menu timing, remove or scope that override during future SimpleInit integration and re-verify the UI.
 
-BootManifest 保留原始 BuildManifest hash、准确 source/base/canonical commits、config/fragment hash、compiler、kernel release、DTB source/validation/model/compatible 和 initramfs 验证信息。`--check-tree` 会重新核对所有文件 hash/size、配置两份副本和当前 source pin；现有输出目录不会被覆盖。
+`BootManifest.json` preserves the original `BuildManifest.json` hash, exact source/base/canonical commits, config/fragment hashes, compiler, kernel release, DTB source/validation/model/compatible metadata, and initramfs verification details. `--check-tree` re-verifies all file hashes and sizes, both copies of the configuration file, and the current source pin; existing output directories are never overwritten.
 
-主机验证：`python3 tests/unit/test_prepare_boot_files.py`。测试在临时目录使用明确 TEST FIXTURE ONLY 的内核/FDT，完成后删除，绝不把它们作为 artifacts 发布。
+Host verification: `python3 tests/unit/test_prepare_boot_files.py`. The tests use kernels/FDTs explicitly marked `TEST FIXTURE ONLY` in a temporary directory, delete them on completion, and never publish them as artifacts.
 
-[Linux EFI stub 官方文档](https://docs.kernel.org/admin-guide/efi-stub.html) 解释 arm64 Image 的 PE/COFF 与 DTB/LoadFile2 initrd 约定；[ARM64 官方启动文档](https://docs.kernel.org/arch/arm64/booting.html) 给出 DTB 大小、内存和 DMA 静止要求。具体配置键以当前固定 SimpleInit C 源码为准。
+The [official Linux EFI stub documentation](https://docs.kernel.org/admin-guide/efi-stub.html) describes the arm64 Image PE/COFF format and DTB/`LoadFile2` initrd conventions; the [official ARM64 booting documentation](https://docs.kernel.org/arch/arm64/booting.html) specifies DTB size, memory, and DMA quiescence requirements. For exact configuration keys, refer to the currently pinned SimpleInit C source code.

@@ -1,24 +1,24 @@
-# 官方键盘的功能键
+# Function Keys on the Official Keyboard
 
-官方磁吸键盘没有独立的 F1 到 F12 键，按住右 Ctrl 再按顶排数字键代替：
+The official magnetic keyboard has no dedicated F1–F12 keys. Hold Right Ctrl and press a key on the top number row instead:
 
-| 组合键 | 功能键 |
+| Shortcut | Function Key |
 | --- | --- |
-| 右 Ctrl + `1` 到 `9` | F1 到 F9 |
-| 右 Ctrl + `0` | F10 |
-| 右 Ctrl + `-` | F11 |
-| 右 Ctrl + `=` | F12 |
+| Right Ctrl + `1`–`9` | F1–F9 |
+| Right Ctrl + `0` | F10 |
+| Right Ctrl + `-` | F11 |
+| Right Ctrl + `=` | F12 |
 
-`-` 和 `=` 是顶排 `0` 右边的两个键。左 Ctrl 可以和这些组合一起按，输入 Ctrl + F1 之类的快捷键，Shift 也可以叠加。右 Ctrl 和其他键的组合保持原样。
+`-` and `=` are the two keys to the right of `0` on the top row. Left Ctrl can be held alongside these combinations for shortcuts such as Ctrl + F1, and Shift can be combined as well. Right Ctrl paired with any other key behaves as usual.
 
-映射在 Linux 内核的键盘驱动里完成，输出标准功能键，GNOME、KDE 和游戏都不需要另外配置。例如在 Minecraft 里按右 Ctrl + `3` 就是 F3 调试界面。它只作用于官方磁吸键盘，外接的 USB 或蓝牙键盘不受影响。
+This mapping is handled in the Linux kernel keyboard driver and emits standard function key events, requiring no extra configuration in GNOME, KDE, or games. For example, pressing Right Ctrl + `3` in Minecraft opens the F3 debug screen. It applies only to the official magnetic keyboard; external USB and Bluetooth keyboards are unaffected.
 
-## 键盘背光
+## Keyboard Backlight
 
-背光默认亮度是 80%，可以在 GNOME 的“键盘”设置里调整。亮度通过标准 LED 和 UPower 接口控制，重启后恢复上次保存的值，手动关闭后保持关闭。
+The default backlight brightness is 80% and can be adjusted in GNOME's Keyboard settings. Brightness is controlled through standard LED and UPower interfaces; the last saved level is restored across reboots, and turning it off manually keeps it off.
 
-取下键盘时移除对应的背光设备，重新接上后恢复此前设置的亮度，包括手动关闭的状态。
+Detaching the keyboard removes the corresponding backlight device, and reattaching it restores the previously configured brightness, including a manually disabled state.
 
-## UEFI 里的键盘
+## Keyboard in UEFI
 
-UEFI 菜单里还不能用官方键盘，要用音量键和电源键操作，见[已知问题](known-issues.md#uefi-菜单与-usb)。
+The official keyboard cannot yet be used in the UEFI menu; use the volume and power buttons to navigate. See [Known Issues](known-issues.md#uefi-menu-and-usb).

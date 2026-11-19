@@ -1,12 +1,12 @@
-# 原始 SSC 报告与向量解码
+# Raw SSC Reports and Vector Decoding
 
-libssc 扩展复用已有 SUID 发现、QMI 传输及 open/close 流程，提供原始报告和已核对布局的向量解码。`piano-ssc-vector` 是限时诊断客户端，不作为服务自启动，也不创建 IIO 设备。
+The libssc extension reuses existing SUID discovery, QMI transport, and open/close flows to expose raw reports and vector decoding for verified layouts. `piano-ssc-vector` is a time-bounded diagnostic client; it does not autostart as a service and does not create IIO devices.
 
-共享补丁由 `config/release.json` 的 `sensors.patches` 接入 `./build.sh sensors`，经标准 Debian quilt/Meson 流程构建。`0003-libssc-raw-vector-reports.patch` 提供报告接口及客户端；sid 包版本见[传感器构建与来源](sensors.md#构建与包来源)。
+The shared patch is wired into `./build.sh sensors` via `sensors.patches` in `config/release.json` and built through the standard Debian quilt/Meson workflow. `0003-libssc-raw-vector-reports.patch` provides the reporting interface and client; see [Build and Package Sources](sensors.md#build-and-package-sources) for sid package versions.
 
-## 限时读取原始报告
+## Timed Raw Report Capture
 
-使用准确的 SSC 数据类型订阅，默认读取三秒；`--seconds` 接受 1–30 秒：
+Subscribe using the exact SSC data type; capture defaults to 3 seconds, and `--seconds` accepts 1–30 seconds:
 
 ```sh
 piano-ssc-vector --sensor cct_front --seconds 3
@@ -14,30 +14,30 @@ piano-ssc-vector --sensor ambient_light_back --seconds 3
 piano-ssc-vector --sensor flicker --seconds 3
 ```
 
-客户端使用现有 `SSCSensor` 的 open/close 流程，支持 continuous 和 on-change 订阅。其他 stream type 返回不支持错误。
+The client uses the existing `SSCSensor` open/close flow and supports continuous and on-change subscriptions. Other stream types return an unsupported error.
 
-`SSCSensor::raw-report(sensor, guint message_id, GBytes *payload)` 只转发与对象 SUID 匹配的原始报告。`GBytes` 在回调内借用，延长使用需调用 `g_bytes_ref()`。信号运行在现有 report dispatch context，GUI 应用需转交到自己的主循环。未订阅该信号时不复制载荷，原有强类型 measurement 信号和采样策略保持兼容。
+`SSCSensor::raw-report(sensor, guint message_id, GBytes *payload)` forwards only raw reports matching the object's SUID. `GBytes` is borrowed for the duration of the callback; call `g_bytes_ref()` to retain it longer. The signal runs on the existing report dispatch context, so GUI applications must marshal handling to their own main loop. When nothing is connected to this signal, the payload is not copied, preserving compatibility with existing strongly typed measurement signals and sampling policies.
 
-输出包含原始 message ID、完整 payload hex，以及已支持布局的解码结果。未知布局保留原始输出，不推测分量的物理单位。
+Output includes the raw message ID, full payload hex, and decoded fields for supported layouts. Unknown layouts are emitted in raw form without guessing physical units for their components.
 
-Ctrl-C 或期限到达后调用现有 close API，收到关闭回复才输出 `closed=true`。发现或 open 超时会取消，并等待最多五秒处理关闭；停止后晚到的发现结果不会继续 open。程序不会写入 registry 或运行校准。
+On Ctrl-C or timeout expiration, the client invokes the existing close API and prints `closed=true` only after receiving the close response. Discovery or open timeouts cancel the operation and wait up to 5 seconds for shutdown handling; late discovery results arriving after stop do not trigger an open. The tool never writes to the registry or runs calibration.
 
-## 离线向量解码
+## Offline Vector Decoding
 
-`ssc_sensor_decode_vector_report()` 返回由调用方持有的 `GVariant a{sv}`，当前解释前置色温、后置光线和防闪烁报告中已经核对的布局：
+`ssc_sensor_decode_vector_report()` returns a caller-owned `GVariant a{sv}`, currently decoding verified layouts from front color temperature, rear ambient light, and flicker reports:
 
-| 原始事件 ID | 返回字段 | 含义边界 |
+| Raw Event ID | Returned Fields | Semantic Boundary |
 | --- | --- | --- |
-| 1025 | `values: ad`、`accuracy: i` | field1 全部 float32、field2 原始 int32 |
-| 769 | `field1: i`、`field2: i`、`field3: i`、`values: ad` | 防闪烁报告的三个原始 int32、field4 全部 float32 |
+| 1025 | `values: ad`, `accuracy: i` | All float32 values from field1, raw int32 from field2 |
+| 769 | `field1: i`, `field2: i`, `field3: i`, `values: ad` | Three raw int32 values from flicker report, all float32 values from field4 |
 
-float32 转为 double 保持数值；原始位模式仍在 `GBytes`。769 的三个整数只按字段号命名，不推断频率、精度或物理单位。未知 ID 返回 `G_IO_ERROR_NOT_SUPPORTED`，损坏或不完整的已支持布局返回 `G_IO_ERROR_INVALID_DATA`，原始载荷始终可以单独保存。
+float32 values are widened to double without altering their numeric values; the original bit patterns remain in `GBytes`. The three integers in event 769 are named strictly by field number without inferring frequency, accuracy, or physical units. Unknown IDs return `G_IO_ERROR_NOT_SUPPORTED`, malformed or truncated supported layouts return `G_IO_ERROR_INVALID_DATA`, and the raw payload can always be saved independently.
 
 ```sh
 piano-ssc-vector --decode 1025 --payload-hex 0a04000000001003
 ```
 
-手动编译仓库中的同一客户端时，使用应用上述补丁的开发库：
+To compile the same client manually from the repository, link against the development library built with the patch above:
 
 ```sh
 cc -O2 -Wall -Wextra linux/userspace/piano-ssc-vector.c \

@@ -1,57 +1,54 @@
 # UEFI Fastboot
 
-UEFI Fastboot 是 SunUEFI 运行期间在后台提供的 USB Fastboot 服务，用来读日志、截图、读写分区和请求启动。屏幕白屏、没有菜单时也能用。固件把控制权交给 Linux 时，它随之退出。
+UEFI Fastboot is a background USB Fastboot service provided while SunUEFI is running. It lets you read logs, capture screenshots, read and write partitions, and request boot actions. It works even if the screen is blank or no menu is displayed, and exits once the firmware hands control over to Linux.
 
-## 和另外两个 Fastboot 的区别
+## Differences from Stock Fastboot and Linux USB
 
-| 名称 | 设备序列号 | 什么时候出现 | 刷写 |
+| Name | Device Serial | When Available | Flashing |
 | --- | --- | --- | --- |
-| 原厂 Bootloader Fastboot | 平板真实序列号 | `adb reboot bootloader` | 可以 |
-| UEFI Fastboot | `SunUEFI-piano` | SunUEFI 运行期间 | 可以，按精确分区名操作 |
-| Linux 的 USB 网络 / SSH | 无 | Linux 启动之后 | 不适用 |
+| Stock bootloader Fastboot | Tablet's real serial number | `adb reboot bootloader` | Yes |
+| UEFI Fastboot | `SunUEFI-piano` | While SunUEFI is running | Yes, by exact partition name |
+| Linux USB networking / SSH | None | After Linux boots | N/A |
 
-下面所有命令都带 `-s SunUEFI-piano`，确保操作的是 UEFI 服务，而不是原厂 Bootloader。服务在 UEFI 菜单、固件设置和 Shell 里一直保持连接，切换页面不会退出。
+All commands below include `-s SunUEFI-piano` to ensure you target the UEFI service rather than the stock bootloader. The service stays connected across the UEFI menu, firmware setup, and Shell; switching pages does not disconnect it.
 
-启动失败时，只要 USB 连接仍正常，错误提示页会保留状态、日志和截图命令。
-`reboot` 或 `continue` 请求重启，固件先保存设置、完成存储写入并安全关闭外设。
-`OKAY` 表示请求已收到。若平板停在错误页，长按电源重启，在早期选择页按音量上
-返回 Android。
+On boot failure, the error screen keeps status, log, and screenshot commands available as long as the USB connection remains active. Running `reboot` or `continue` requests a restart; the firmware saves settings, flushes storage writes, and safely shuts down peripherals first. `OKAY` confirms the request was received. If the tablet stays on the error screen, hold the Power button to reboot, then press Volume Up on the early boot selection screen to return to Android.
 
-USB 口插着 OTG 转接头和键盘、U 盘等设备时，这个口给这些设备使用，UEFI Fastboot 不在线。拔下设备、接回电脑后恢复。
+When an OTG adapter and peripherals (such as a keyboard or USB flash drive) are plugged into the USB port, the port is used by those devices and UEFI Fastboot is offline. Unplug them and reconnect the tablet to a computer to restore it.
 
-## 查看状态
+## Checking Status
 
 ```sh
-fastboot -s SunUEFI-piano oem help             # 当前可用命令与参数
+fastboot -s SunUEFI-piano oem help             # Available commands and arguments
 fastboot -s SunUEFI-piano getvar product        # piano-sunuefi
 fastboot -s SunUEFI-piano getvar version
 fastboot -s SunUEFI-piano getvar storage-policy
 fastboot -s SunUEFI-piano oem status
 ```
 
-`oem status` 还会输出最近一次设备树修正的失败阶段、冷启动内存检查结果，以及最近一次日志快照的状态和缓冲区头。日志无法导出时也可以读取这些信息；查询不会重新探测硬件或改变启动条件。
+`oem status` also reports the failure stage of the latest Device Tree fixup, cold-boot memory check results, and the status and buffer header of the latest log snapshot. This information remains readable even when logs cannot be exported; querying it does not re-probe hardware or alter boot conditions.
 
-## 日志和截图
+## Logs and Screenshots
 
 ```sh
 fastboot -s SunUEFI-piano oem ramlog
-fastboot -s SunUEFI-piano get_staged uefi-ramlog.txt      # 最多 256 KiB
+fastboot -s SunUEFI-piano get_staged uefi-ramlog.txt      # Up to 256 KiB
 
 fastboot -s SunUEFI-piano oem screenshot
-fastboot -s SunUEFI-piano get_staged uefi-screenshot.bmp  # 24 位 BMP
+fastboot -s SunUEFI-piano get_staged uefi-screenshot.bmp  # 24-bit BMP
 ```
 
-截图读取的是帧缓冲，不一定是物理屏幕此刻显示的内容。
+Screenshots are captured from the framebuffer and may not match what is currently visible on the physical display.
 
-## 读取分区
+## Reading Partitions
 
 ```sh
-fastboot -s SunUEFI-piano fetch 分区名 文件
+fastboot -s SunUEFI-piano fetch <partition> <file>
 ```
 
-只读。单次请求最多 256 KiB，fastboot 工具会自动分块。
+Read-only. Each request transfers up to 256 KiB; the `fastboot` tool handles chunking automatically.
 
-## 刷写分区
+## Flashing Partitions
 
 ```sh
 fastboot -s SunUEFI-piano flash sunuefi_esp esp.img
@@ -59,27 +56,23 @@ fastboot -s SunUEFI-piano flash sunuefi_root root.img
 fastboot -s SunUEFI-piano reboot
 ```
 
-支持原始镜像和 Android sparse 镜像；大镜像由电脑端 fastboot 按下载上限拆分。
-SunUEFI Fastboot 只允许刷写 `sunuefi_esp` 和 `sunuefi_root`。对这两个分区，
-`erase` 会清零整个分区，`flash` 写入镜像覆盖的范围，sparse 空洞保留原有数据。
+Both raw images and Android sparse images are supported; the host `fastboot` tool splits large images according to the download size limit. SunUEFI Fastboot only permits flashing `sunuefi_esp` and `sunuefi_root`. On these two partitions, `erase` zeroes the entire partition, while `flash` writes the ranges covered by the image and leaves sparse holes untouched.
 
-刷写前卸载目标分区。目标分区有文件打开时，关闭文件后再试。
-每段写入后都会读回比较，完成时同步。写入报错后先重新刷入完整镜像，
-再从该分区启动。
+Unmount the target partition before flashing. If any files are open on the target partition, close them and retry. Each written chunk is read back and verified, then synced upon completion. If a write error occurs, re-flash the complete image before booting from that partition.
 
-## 启动与退出
+## Booting and Exiting
 
-| 命令 | 作用 |
+| Command | Action |
 | --- | --- |
-| `oem boot-stable` | 按固件的启动顺序选择系统；默认进入 systemd-boot |
-| `oem setup`、`oem shell`、`oem simpleinit` | 切换到 UEFI 设置、Shell 或 SimpleInit 菜单 |
-| `reboot` | 保存设置、安全关闭外设后重启，沿用已保存的启动路线 |
-| `continue` | 同样重启，不改变启动选择，也不会直接启动 Linux |
-| `stage 文件` | 把文件下载到内存，最大 64 MiB |
-| `oem sha256`、`oem discard` | 对暂存的数据计算哈希，或丢弃它 |
+| `oem boot-stable` | Selects an OS according to firmware boot order; defaults to systemd-boot |
+| `oem setup`, `oem shell`, `oem simpleinit` | Switches to UEFI setup, Shell, or the SimpleInit menu |
+| `reboot` | Saves settings, safely shuts down peripherals, and reboots using the saved boot route |
+| `continue` | Also reboots without changing the boot selection and does not directly boot Linux |
+| `stage <file>` | Downloads a file into memory (max 64 MiB) |
+| `oem sha256`, `oem discard` | Computes the SHA-256 hash of staged data, or discards it |
 
-## 不支持的命令
+## Unsupported Commands
 
-`flashing`、切换槽位和未知的 `oem` 命令被拒绝。读日志用 `oem ramlog`，`oem log` 会失败。`boot 文件` 还不是通用的系统或 EFI 启动入口。
+`flashing`, slot switching, and unknown `oem` commands are rejected. Use `oem ramlog` to read logs; `oem log` will fail. `boot <file>` is not yet a general-purpose OS or EFI boot entry.
 
-电脑看不到 `SunUEFI-piano` 时，见[故障恢复](recovery.md)。
+If your computer does not detect `SunUEFI-piano`, see [Recovery](recovery.md).

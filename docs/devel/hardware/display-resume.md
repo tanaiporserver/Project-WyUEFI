@@ -1,36 +1,36 @@
-# SM8750 双路 DSI 与刷新率切换
+# SM8750 Dual-DSI and Refresh Rate Switching
 
-Piano 使用两路 DSI 驱动同一块面板，默认 120 Hz。30／48／50／60／120 Hz 采用无缝切换，90／144 Hz 按不同水平时序执行完整显示重设。刷新率切换及 144 Hz 显示和笔输入可用；完整重设是一条正常切换路径，不等于切换失败。
+Piano drives a single panel over two DSI links, defaulting to 120 Hz. 30/48/50/60/120 Hz use seamless switching, while 90/144 Hz perform a full display reset due to different horizontal timings. Refresh rate switching, 144 Hz display output, and stylus input all work; a full reset is a normal switching path, not a failure.
 
-## 无缝切换
+## Seamless Switching
 
-原厂 BOE、CSOT 设备树都提供基于垂直前沿空白的动态刷新率。`0035-panel-piano-low-refresh-rates.patch` 加入 30、48、50 Hz，与 60 Hz 一样沿用 120 Hz 的时钟和水平时序，通过延长每帧的空白时间降频。
+Both the stock BOE and CSOT Device Trees provide dynamic refresh rates based on the vertical front porch. `0035-panel-piano-low-refresh-rates.patch` adds 30, 48, and 50 Hz, reusing the 120 Hz clock and horizontal timings just like 60 Hz, and lowering the refresh rate by extending per-frame blanking time.
 
-`0037-drm-piano-seamless-vfp.patch` 在标准 atomic modeset 中识别同一时序族：更新 DSI 双缓冲时序和 DPU 接口的帧周期，在帧边界提交。面板电源、DSC 和触控固件保持运行；正常 Gamma 更新可以同时提交。改变水平时序、链路时钟或 CTM 路由时仍执行完整重设。
+`0037-drm-piano-seamless-vfp.patch` recognizes modes in the same timing family during a standard atomic modeset: it updates the double-buffered DSI timings and the DPU interface frame period, committing at the frame boundary. Panel power, DSC, and touch firmware remain running, and normal Gamma updates can be committed at the same time. Changing horizontal timings, link clock, or CTM routing still performs a full reset.
 
-设备已反复完成 30／48／50／60／120 Hz 固定档位之间的无缝切换，触控固件 epoch 保持不变；稳定帧中断频率与请求档位相符，没有新增 underrun。按视频帧率或内容空闲自动选择档位仍需桌面和驱动配合。
+The device has repeatedly completed seamless switches across the fixed 30/48/50/60/120 Hz modes while keeping the touch firmware epoch unchanged; steady-state frame interrupt frequency matches the requested rate with no new underruns. Automatic rate selection based on video frame rate or idle content still requires desktop and driver coordination.
 
-## 关闭和恢复显示
+## Display Off and Resume
 
-以下修正共同处理之前的黑屏、灰屏和关闭时彩色残影：
+The following fixes together address the earlier black screen, gray screen, and colored shutdown artifacts:
 
-| 补丁 | 作用 |
+| Patch | Purpose |
 | --- | --- |
-| `0024-dsi-pll-defer-unprogrammed-clock.patch` | 避免注册时钟提供者时提前启动未配置的 PLL |
-| `0025-dsi-sm8750-restore-bonded-slave.patch` | 保存并恢复主、从两路 PHY 的分频状态 |
-| `0026-dpu-video-stop-order.patch` | 在停止视频时序前清理 DPU 流水线，使清理能在帧边界完成 |
-| `0034-dsi-phy-runtime-interface-clock.patch` | 通过 runtime PM 管理 PHY 接口时钟 |
-| `0036-backlight-ktz8866-wait-disable-ramp.patch` | 等待两颗背光芯片渐灭完成，再关闭面板和视频链路 |
-| `0038-panel-piano-vendor-refresh-order.patch` | 保留 CSOT 的 B2→B3 和 BOE 的 B3→B2 原厂命令顺序 |
+| `0024-dsi-pll-defer-unprogrammed-clock.patch` | Avoids enabling an unprogrammed PLL prematurely when registering clock providers |
+| `0025-dsi-sm8750-restore-bonded-slave.patch` | Saves and restores the divider state of both master and slave PHYs |
+| `0026-dpu-video-stop-order.patch` | Flushes the DPU pipeline before stopping video timing so cleanup completes on a frame boundary |
+| `0034-dsi-phy-runtime-interface-clock.patch` | Manages the PHY interface clock through runtime PM |
+| `0036-backlight-ktz8866-wait-disable-ramp.patch` | Waits for both backlight chips to finish ramping down before turning off the panel and video link |
+| `0038-panel-piano-vendor-refresh-order.patch` | Preserves the stock command order: B2→B3 for CSOT and B3→B2 for BOE |
 
-PLL 注册、DPU 停止顺序和 PHY 接口时钟补丁分别参考 Junhao Xie 的 [67b3cbd4bab](https://github.com/BigfootACA/linux/commit/67b3cbd4bab5687c3aa3c9fe5a14c37433e28bbf)、[8f353c130fee](https://github.com/BigfootACA/linux/commit/8f353c130fee0fcf09afbe10e7fc58f901931418)、[b95037aef0a0](https://github.com/BigfootACA/linux/commit/b95037aef0a0bf5cd612e7517a67644887e9fd5d)，保留原作者署名。
+The PLL registration, DPU stop-order, and PHY interface clock patches are based on Junhao Xie's [67b3cbd4bab](https://github.com/BigfootACA/linux/commit/67b3cbd4bab5687c3aa3c9fe5a14c37433e28bbf), [8f353c130fee](https://github.com/BigfootACA/linux/commit/8f353c130fee0fcf09afbe10e7fc58f901931418), and [b95037aef0a0](https://github.com/BigfootACA/linux/commit/b95037aef0a0bf5cd612e7517a67644887e9fd5d), preserving original authorship.
 
-正常启动、120 Hz 下关闭／恢复显示、RTC 和电源键唤醒已有实机结果。显示恢复后可以继续操作，触控和网络可恢复；这不等同于待机耗电已达到原厂水平。整机睡眠的其他驱动处理见[电源管理](power-button.md)。
+Normal boot, display off/resume at 120 Hz, and wake via RTC and the power button have all been verified on hardware. The system remains usable after display resume with touch and networking restored; this does not imply that standby power draw matches stock levels. For other driver work related to system suspend, see [Power Management](power-button.md).
 
-关机和重启时，显示控制器不再为已关闭的输出提交色彩数据。设备链接让它先关闭面板和背光，再停止背光所用的 I²C 总线。Debian 实机已读回两颗背光芯片在息屏时关闭、亮屏时恢复；从亮屏状态正常重启后，不再出现显示原子关闭失败或背光总线已停用的报错。
+During shutdown and reboot, the display controller no longer submits color data to an already-disabled output. Device links ensure it turns off the panel and backlight before stopping the I²C bus used by the backlight. On Debian hardware, register readbacks confirm both backlight chips power down on screen-off and recover on screen-on; rebooting cleanly from a lit screen no longer logs atomic display shutdown failures or suspended backlight bus errors.
 
-## 144 Hz 与时序差异
+## 144 Hz and Timing Differences
 
-90／144 Hz 与 120 Hz 的水平时序不同，不能直接套用上述 VFP 更新。之前的花屏和笔输入问题已解决；原厂命令顺序、双路状态恢复与触控扫描协调保留。历史故障用于解释实现，不再列为当前使用限制。
+90/144 Hz use different horizontal timings from 120 Hz and cannot directly reuse the VFP update path above. Earlier display corruption and stylus input issues are resolved; stock command ordering, dual-link state restoration, and touch scan coordination remain in place. Historical faults are kept as implementation context and are no longer listed as current usage limitations.
 
-原厂切换流程见[原厂刷新率分析](oem-refresh.md)；显示位深、HDR 和 FRC 的边界见[色彩处理](display-depth.md)。
+See [Stock Refresh Rate Analysis](oem-refresh.md) for the stock switching flow, and [Color Processing](display-depth.md) for display bit depth, HDR, and FRC boundaries.

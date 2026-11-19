@@ -1,115 +1,115 @@
-# 文档写作规范
+# Documentation Writing Style
 
-这一页给写文档的人和 agent 查阅：怎么写、哪些词不用、怎么改。动笔前先读 `README.md` 开头两节、[UEFI Fastboot](../user/fastboot.md) 和[故障恢复](../user/recovery.md)，新写的内容靠近它们的密度和语气。
+This page is a reference for documentation authors and agents: how to write, which words to avoid, and how to revise prose. Before writing, read the first two sections of `README.md`, [UEFI Fastboot](../user/fastboot.md), and [Recovery](../user/recovery.md), and match their density and tone.
 
-## 读者
+## Audience
 
-文档有三类读者：想在平板上用 Linux 的用户，想自己编译的开发者，想读懂实现的贡献者。写之前先想清楚这一页给谁看。`docs/user/` 给用户，`docs/devel/` 给开发者和贡献者。过程记录留在 Git 历史里。尽量不在 `docs/` 根目录新增文件。
+The documentation serves three groups of readers: users who want to run Linux on the tablet, developers who want to build from source, and contributors who want to understand the implementation. Decide who a page is for before you start writing. `docs/user/` is for users; `docs/devel/` is for developers and contributors. Keep work-in-progress logs in Git history. Avoid adding new files directly under `docs/`.
 
-## 写作规则
+## Writing Rules
 
-1. 第一句话给结论或要做的事。不写“本文档介绍/描述/旨在”，不写“为了确保……”。
-2. 一段话讲一件事。连贯的说明用段落，有先后顺序的操作用编号列表，并列的选项或状态用表格，目录结构用 tree。不要把一段话拆成一串短条目。
-3. 加粗只用于界面上的按钮或菜单名，以及一页里确实需要警告的一句话。不要在每个条目开头加粗概念词再加冒号。
-4. 警告用 GitHub Alert（`> [!WARNING]`、`> [!NOTE]`、`> [!TIP]`），每页最多两个，内容限于会丢数据、会变砖或会白屏的事。
-5. 状态只用四种说法：可用、部分可用（写出缺什么）、未实现、未验证。需要区分“驱动已加载”、“编译通过”和“在设备上可用”时，用一句话说明。
-6. 同一个限制只在一处完整说明，其他页面链接过去。用户可见的限制统一写在[已知问题](../user/known-issues.md)。
-7. 文档里不出现测试编号（如 `test85`）、“本轮/此前/本次”、构建目录名（如带日期的 `build/...` 目录）和 `private/` 路径。确实需要的历史数据，写成“某日期、某版本测得 X”。
-8. 用户文档不出现内存地址、寄存器、源码路径，除非用户需要照着输入。开发文档可以有，但先说明用途再给细节。
-9. 缩写（ABL、ESP、SMMU、GDSC、FBE）在每页第一次出现时用半句话解释。
-10. README 开头可以有个性，像一个认真维护项目的人在讲自己做的东西，不用宣传口号。其余页面平实、直接。
-11. 页面结尾不写总结、升华或客套，需要延伸阅读时只放链接列表。
-12. 用词稳定。同一个东西在整个文档里只用一个名字：合体 BOOT、引导助手、UEFI Fastboot、`sunuefi_esp`、`sunuefi_root`。安装说明里 ESP 先叫“启动镜像”，root 先叫“系统镜像”，括号里带技术名。
+1. Lead with the conclusion or the required action. Do not write "This document introduces/describes/aims to..." or "In order to ensure...".
+2. Cover one topic per paragraph. Use prose paragraphs for connected explanations, numbered lists for sequential steps, tables for parallel options or statuses, and a `tree` layout for directory structures. Do not split a single paragraph into a string of short bullet points.
+3. Reserve bold text for UI button or menu names and for a single critical warning sentence on a page. Do not bold a leading term followed by a colon at the start of every bullet point.
+4. Use GitHub Alerts (`> [!WARNING]`, `> [!NOTE]`, `> [!TIP]`) for callouts, at most two per page, and restrict warnings to actions that can cause data loss, bricking, or a white screen.
+5. Use only four status labels: Working, Partially working (state what is missing), Not implemented, and Unverified. When you need to distinguish between "driver loaded", "builds cleanly", and "works on hardware", say so in one sentence.
+6. Document each limitation in full in only one place, and link to it from other pages. Collect all user-facing limitations in [Known Issues](../user/known-issues.md).
+7. Do not include test run numbers (such as `test85`), relative time phrasing ("this round", "previously", "this run"), build directory names (such as dated `build/...` directories), or `private/` paths. When historical data is genuinely needed, write "Measured X on <date> with <version>".
+8. Keep memory addresses, registers, and source paths out of user documentation unless the user has to type them. Developer documentation may include them, but explain their purpose before giving the details.
+9. Briefly explain acronyms (ABL, ESP, SMMU, GDSC, FBE) in a short clause on their first appearance on each page.
+10. The opening of `README.md` may carry a personal voice—like a maintainer talking plainly about what they built, without marketing slogans. Keep all other pages plain and direct.
+11. Do not end pages with summaries, grand takeaways, or pleasantries. If further reading is needed, include only a list of links.
+12. Keep terminology consistent. Use one name for each concept throughout the documentation: Combined BOOT, Boot Helper, UEFI Fastboot, `sunuefi_esp`, and `sunuefi_root`. In installation guides, refer to ESP as "boot image (ESP)" and root as "system image (root)", placing the technical name in parentheses.
 
-## 保留的内容
+## What to Keep
 
-命令、路径、数值、寄存器、偏移、SHA、分区名、固件名、内核版本必须准确完整，这是文档的价值所在。要删的是叙述性的重复、过程记录和口头加重。拿不准某个说法是否仍然成立时，查源码和 `config/` 再决定。旧文档和源码不一致时，以源码为准，改文档。
+Commands, paths, numeric values, registers, offsets, SHA hashes, partition names, firmware names, and kernel versions must stay accurate and complete—they are the core value of the documentation. Cut narrative repetition, process logs, and empty emphasis instead. When unsure whether a statement still holds, check the source code and `config/` before deciding. If old documentation conflicts with the source code, follow the source code and update the documentation.
 
-## 词汇表
+## Vocabulary
 
-下面的替换只用于正文。代码标识符、文件名和日志字符串（例如 `PianoDisplayClockLease.c`、`NOT_READY`）原样保留。
+The replacements below apply to prose only. Keep code identifiers, filenames, and log strings (such as `PianoDisplayClockLease.c` and `NOT_READY`) verbatim.
 
-| 不要写 | 改成 |
+| Avoid | Use instead |
 | --- | --- |
-| contract / 契约 | 直接写约束的内容：输入格式、接口约定、配置要求 |
-| lease / 租约 / 借用 | 引用计数、临时占用、“保持打开” |
-| observer / 观察者 | “读取并记录 X”、“只读检查 X” |
-| owner / 所有者（生命周期含义） | “负责初始化和关闭 X 的模块”、“占用 X 的代码” |
-| producer / 生产者 | “生成 X 的代码”、“提供 X 数据的模块” |
-| bounded / 有界 | 写出具体上限：“最多 256 字节”、“一次读 64 KiB” |
-| handoff / 交接 | “跳转到内核”、“把控制权交给 Linux”、“传给内核的参数” |
-| canonical 源码 | “源码”、“手写源码”（与生成文件相对时再区分） |
-| pinned / 固定 pin | “固定在提交 abc1234”、“锁定版本” |
-| fixture | 测试数据 |
-| fence / typed / guarded | 删掉修饰词，写它做了什么，如“ExitBootServices 之后禁止再调用” |
-| admission / 准入 | “允许 X 的条件” |
-| 验收 / 闭环 / 未闭环 | “确认可用”、“还没做完” |
-| candidate / 候选 | 写明状态：“草案”、“默认关闭的选项”、“尚未启用” |
-| audit / 审查（指代码阅读） | “核对”、“检查” |
-| evidence / 证据 | 具体写日志、读回值、截图 |
-| authoritative | “以 X 为准” |
-| fail-closed | “出错就停止，不继续” |
-| posture / surface / orchestration | 删掉，或写成“状态 / 接口 / 启动顺序” |
-| “不代表……不等同于……不能据此……”连用 | 保留一句真正有用的限制，其余删掉 |
-| 实际、真实、严格、精确、唯一（口头加重） | 只在对比“配置里写的”和“设备上读到的”时保留 |
-| “当前阶段”、“本轮”、“此前” | 写日期，或删掉 |
+| contract | State the actual constraint directly: input format, interface convention, or configuration requirement |
+| lease / borrow | reference count, temporary hold, or "keep enabled" |
+| observer | "reads and logs X" or "read-only check on X" |
+| owner (in a lifecycle sense) | "the module that initializes and tears down X" or "code holding X" |
+| producer | "code that generates X" or "module that supplies X data" |
+| bounded | State the exact limit: "at most 256 bytes", "reads 64 KiB at a time" |
+| handoff | "jumping to the kernel", "passing control to Linux", or "parameters passed to the kernel" |
+| canonical source | "source code" or "hand-written source" (distinguish only when contrasting with generated files) |
+| pinned | "fixed at commit abc1234" or "locked to version X" |
+| fixture | test data |
+| fence / typed / guarded | Drop the modifier and state what it does, e.g., "must not be called after ExitBootServices" |
+| admission | "conditions that allow X" |
+| sign-off / closed-loop / open-loop | "verified working", "not finished yet" |
+| candidate | State the actual status: "draft", "off-by-default option", or "not enabled yet" |
+| audit (for reading code) | "verify" or "check" |
+| evidence | Name the concrete item: logs, readback values, or screenshots |
+| authoritative | "X takes precedence" or "follow X" |
+| fail-closed | "stop on error instead of continuing" |
+| posture / surface / orchestration | Delete, or write "state / interface / boot order" |
+| Stacked disclaimers ("does not imply... is not equivalent to... cannot be taken as...") | Keep the one limitation that actually matters and delete the rest |
+| actual, real, strict, exact, sole (as empty emphasis) | Keep only when contrasting what is written in config with what is read from hardware |
+| "at this stage", "this round", "previously" | Give an explicit date, or delete |
 
-`owner`、`rail`（电源轨）在 Linux 和 UEFI 里有些地方是正常术语。判断标准是删掉这个词后读者是否更容易懂。
+`owner` and `rail` (power rail) are standard terminology in parts of Linux and UEFI. The test is whether the sentence becomes easier to understand when you remove the word.
 
-## 改写示例
+## Rewrite Examples
 
-示例只演示语气和取舍，写正式文档时事实以源码为准。
+These examples illustrate tone and editing choices only. For actual documentation, verify facts against the source code.
 
-### 说明命令做了什么
+### Explaining what a command does
 
-改前：它显式运行产品契约、日志大小边界、RAM 日志收集的模拟 ADB 响应、构建新鲜度、DMA 日志、USB 诊断读取模型及 runner 自身测试。每个文件显示结果和跳过数量；portable 中出现跳过也视为失败。
+Before: It explicitly runs product contracts, log size bounds, simulated ADB responses for RAM log collection, build freshness, DMA logs, the USB diagnostic read model, and runner self-tests. Each file displays results and skip counts; skips in portable are also treated as failures.
 
-改后：这条命令检查产品配置、日志大小上限、用模拟 ADB 收集 RAM 日志的流程、构建产物是否过期、DMA 日志、USB 诊断读取，以及测试脚本本身。输出里每个测试文件单独显示结果和跳过数。`portable` 组出现跳过按失败处理，GitHub CI 用的是同一条命令。
+After: This command checks product configuration, log size limits, RAM log collection using simulated ADB, stale build outputs, DMA logs, USB diagnostic reads, and the test runner itself. The output lists pass/fail results and skip counts for each test file separately. Any skip in the `portable` group fails the run; GitHub CI runs this same command.
 
-### 说明验证能证明什么
+### Explaining what a check proves
 
-改前：主机检查证明解析、契约或模拟行为；设备结论另记录源码/镜像身份、启动路径、实际屏幕/输入/数据结果与恢复情况。编译、模拟 DMA 或协议存在都不能替代真实硬件传输。
+Before: Host checks prove parsing, contracts, or simulated behavior; device conclusions separately record source/image identity, boot path, actual screen/input/data outcomes, and recovery status. Neither compilation, simulated DMA, nor protocol presence substitutes for real hardware transfers.
 
-改后：主机检查只能证明解析和模拟逻辑正确。PR 里要声称某个功能在设备上可用，需要写明镜像版本、启动方式和实际现象，例如屏幕显示了什么、输入有没有响应、能否回到 Android。
+After: Host checks only prove that parsing and simulation logic work. To claim in a PR that a feature works on hardware, state the image version, the boot method, and what happened on the tablet—such as what appeared on screen, whether input responded, and whether you could boot back into Android.
 
-### 介绍构建流程
+### Describing the build process
 
-改前：构建主线是 canonical 源码与固定输入 → 准备平台 → 编译 → 身份校验 → 封装。Git 跟踪状态和“是否由工具生成”是两个维度，不能简单把所有 tracked 文件视为手写源码。
+Before: The main build pipeline is canonical source and pinned inputs → platform preparation → compilation → identity verification → packaging. Git tracking status and "whether generated by a tool" are two separate dimensions; not all tracked files can simply be treated as hand-written source.
 
-改后：构建分五步：取固定版本的源码和输入，准备平台，编译，校验产物，打包。仓库里有一部分文件由脚本生成，下表的“来源”一列标出了哪些可以直接改，哪些改了会在下次构建时被覆盖。
+After: The build has five steps: fetch locked versions of the source and inputs, prepare the platform, compile, verify the outputs, and package. Some files in the repository are generated by scripts; the "Source" column in the table below marks which files you can edit directly and which ones are overwritten on the next build.
 
-### 介绍一张表
+### Introducing a table
 
-改前：按需查阅的输入表。clone 不包含 [忽略目录] 中的采集、第三方 checkout、环境与产物；下面记录脚本要求，不表示本次已重建或验收。
+Before: On-demand input reference table. A clone does not include captures, third-party checkouts, environments, or artifacts in [ignored directories]; the entries below record script requirements and do not imply that they have been rebuilt or signed off in this round.
 
-改后：完整构建需要几份从本机原厂系统提取的文件，它们不在仓库里。下表列出每个构建目标需要哪些输入、从哪里取、由哪个脚本检查。
+After: A full build requires several files extracted from the stock system on your device, which are not stored in the repository. The table below lists which inputs each build target needs, where to get them, and which script checks them.
 
-### 记录设备上的测试结果
+### Recording test results on hardware
 
-改前：2026-10-08 已部署含 Recovery 优先选择器的 `build/boot-repack-recovery-20261008/roundtrip-wrapped.img`，普通 Android 启动完成。Android 原生保存 Linux target2/sequence1 后正常重启，已通过 SSH 确认 g086 Linux、`/dev/sda36` ext4 rw 根和 GDM/ADSP/sensors active。
+Before: Deployed `build/boot-repack-recovery-20261008/roundtrip-wrapped.img` with the Recovery-first selector on 2026-10-08; normal Android boot completed. Saved Linux target2/sequence1 natively from Android and rebooted normally; confirmed g086 Linux, `/dev/sda36` ext4 rw root, and GDM/ADSP/sensors active over SSH.
 
-改后：在 Android 里保存 Linux 路线并重启后，平板进入了内部存储上的 Linux。通过 SSH 确认根文件系统是可读写的 ext4，GDM、ADSP 和传感器服务都在运行。
+After: After saving the Linux boot route in Android and rebooting, the tablet booted into Linux on internal storage. SSH confirmed a read-write ext4 root filesystem with GDM, ADSP, and sensor services running.
 
-### 说明一个启动参数
+### Explaining a boot parameter
 
-改前：准确、唯一的 `bootmonitor.bootmode=recovery` 会在读取 NEXT 请求页前返回未修改的原厂 GKI 入口，保留 ABL 提供的 DTB/initrd，不清除 Linux 偏好。
+Before: The exact, sole `bootmonitor.bootmode=recovery` returns the unmodified stock GKI entry before reading the NEXT request page, preserves the ABL-provided DTB/initrd, and does not clear the Linux preference.
 
-改后：内核命令行带有 `bootmonitor.bootmode=recovery` 时，选择器不读取启动请求，直接跳到原厂内核入口。ABL 传来的 DTB 和 initrd 原样保留，已保存的 Linux 路线不会被清除。
+After: When the kernel command line contains `bootmonitor.bootmode=recovery`, the selector skips reading the boot request and jumps straight to the stock kernel entry. The DTB and initrd passed by ABL are kept intact, and the saved Linux boot route is not cleared.
 
-### 说明内存约定
+### Explaining a memory convention
 
-改前：候选的设计合同是 EBS 前占用、不作 Conventional 分配；EBS 后 Linux 把 LoaderData+WB 视为 System RAM，而同一 DT reserved-memory/CMA 继续保留管理它。
+Before: The candidate design contract is occupied before EBS with no Conventional allocation; after EBS, Linux treats LoaderData+WB as System RAM while the same DT reserved-memory/CMA continues to reserve and manage it.
 
-改后：这两段 CMA 内存在 ExitBootServices 之前登记为已占用（EfiLoaderData），UEFI 不会把它们当空闲内存分配出去。进入 Linux 后，内核按设备树里的 reserved-memory 继续把它们作为 CMA 管理。这个行为还没有在设备的内存映射里确认过。
+After: Before ExitBootServices, these two CMA regions are marked as occupied (EfiLoaderData) so UEFI will not hand them out as free memory. Once Linux boots, the kernel continues to manage them as CMA according to the Device Tree `reserved-memory` nodes. This behavior has not yet been verified in the memory map on hardware.
 
-### 说明还没做的事
+### Explaining remaining work
 
-改前：The next implementation must produce two connected contracts: a cold descriptor/owner contract before the first MemoryPeim, then a live EFI allocation/CPU-source contract used by the Linux session. Current Core memory validators remain NOT_READY.
+Before: The next implementation must produce two connected contracts: a cold descriptor/owner contract before the first MemoryPeim, then a live EFI allocation/CPU-source contract used by the Linux session. Current Core memory validators remain NOT_READY.
 
-改后：下一步要补两项：第一次调用 MemoryPeim 之前，在冷启动状态下记录每段 DDR 由谁占用；Linux 启动阶段，核对 EFI 实际分配出去的内存。两项目前都没有实现，核心里的内存检查仍返回 `NOT_READY`。
+After: Two pieces are still missing: recording which component holds each DDR region during cold boot before the first `MemoryPeim` call, and checking the memory actually allocated by EFI during Linux boot. Neither is implemented yet, and the core memory checks still return `NOT_READY`.
 
-### 写给用户的按键说明
+### Writing keyboard instructions for users
 
-改前：官方键盘的 **右 Ctrl + `1`～`0`、`-`、`=`** 对应 **F1–F12**，见[键盘快捷键与 UEFI 接入进度](../user/keyboard.md)。
+Before: On the official keyboard, **Right Ctrl + `1`–`0`, `-`, `=`** map to **F1–F12**; see [Keyboard Shortcuts and UEFI Integration Progress](../user/keyboard.md).
 
-改后：官方键盘没有 F 键，按住右 Ctrl 再按顶排数字键代替：`1` 到 `0` 是 F1 到 F10，`-` 是 F11，`=` 是 F12。详见[键盘说明](../user/keyboard.md)。
+After: The official keyboard has no function keys. Hold Right Ctrl and press the top number row instead: `1` through `0` are F1 through F10, `-` is F11, and `=` is F12. See [Keyboard Guide](../user/keyboard.md).

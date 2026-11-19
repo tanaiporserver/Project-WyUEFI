@@ -1,9 +1,5 @@
-# 本机原厂分区备份
+# Local Stock Partition Backups
 
-`persist-20261025.img` 是本项目开发平板的完整 32 MiB `persist` 分区备份，
-在 SunUEFI 向该分区写入项目文件前保存。备份时冻结 ext4 写入，复制并
-比较分区、设备端副本与电脑端镜像的 SHA-256，随后恢复正常挂载。
+`persist-20261025.img` is a full 32 MiB backup of the `persist` partition from this project's development tablet, saved before SunUEFI wrote any project files to that partition. During backup, ext4 writes were frozen, the partition was copied, and the SHA-256 digests of the partition, the on-device copy, and the host-side image were compared before restoring normal mounting.
 
-大小和摘要见 [`manifest.json`](manifest.json)。此目录不作为产品输入，
-不装入 UEFI、Android 模块或发行版安装包。镜像用于原设备恢复，不作为
-其他平板的通用 `persist` 镜像。
+See [`manifest.json`](manifest.json) for file size and digest details. This directory is not a product input and is not bundled into UEFI, Android modules, or distribution installer packages. The image is intended for restoring the original device and is not a generic `persist` image for other tablets.

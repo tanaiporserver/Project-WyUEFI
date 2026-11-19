@@ -1,251 +1,96 @@
-# UEFI 设置页面
+# UEFI Setup Pages
 
-SimpleInit 提供触摸尺寸的图形菜单；TianoCore 设置页面使用 UEFI 文本控制台。
-在 3200×2136 屏幕上，默认 8×19 字形的 80×25 页面只占很小一块区域。
+SimpleInit provides a touch-sized graphical menu, while TianoCore setup pages use the UEFI text console. On a 3200×2136 display, an 80×25 page using default 8×19 glyphs occupies only a tiny fraction of the screen.
 
-产品构建只为 GraphicsConsole 的字符绘制增加四倍缩放。该驱动内部使用
-800×534 的逻辑画布，把文本块放大到物理屏幕；公开 GOP 的模式和帧缓冲仍是
-3200×2136，SimpleInit、截图和操作系统使用原来的接口，不切换物理显示模式。
-80×25 字符区放大后约为 2560×1900。
+Product builds add 4× scaling exclusively to character rendering in `GraphicsConsole`. Internally, the driver uses an 800×534 logical canvas and scales text blocks up to the physical screen. The exposed GOP mode and framebuffer remain 3200×2136—SimpleInit, screenshots, and the OS continue using the original interface without switching physical display modes. After scaling, the 80×25 character area covers roughly 2560×1900 pixels.
 
-构建工作副本中的五组 HII 字符串加入 `zh-CN`，常用设置页面默认中文，
-技术设备名和未翻译的文字仍用英文。中文来自 Noto Sans CJK SC 的 16×19
-宽字符位图，通过标准 HII 字体包注册；构建记录源字体和生成文件摘要。
-没有修改固定的上游检出目录。
+`zh-CN` translations are added to five HII string sets in the build working copy so common setup pages default to Chinese, while technical device names and untranslated text remain in English. Chinese glyphs come from 16×19 wide-character bitmaps generated from Noto Sans CJK SC and registered via standard HII font packages; the build records digests of both the source font and generated files. The pinned upstream checkouts are not modified.
 
-实体按键通过标准 `SimpleTextIn` 协议接入。按键设备同时安装
-`ConsoleInDevice` 标记，让标准控制台汇聚驱动能够找到它。进入设置页时，
-音量键映射上下移动，短按电源映射回车，同时按音量两键映射返回。
+Hardware buttons are exposed through the standard `SimpleTextIn` protocol. The key device also installs the `ConsoleInDevice` tag so the standard console splitter driver discovers it. In setup pages, the volume buttons map to Up/Down navigation, a short power button press maps to Enter, and pressing both volume buttons together maps to Back.
 
-源码位置：
+Source locations:
 
-* `uefi/components/product-support/Library/ConsoleScale/`：缩放和中文翻译。
-* `tools/prepare_product_console.py`、`tools/prepare_product_ui.py`：在构建副本生成字形并接入 GraphicsConsole。
-* `tools/prepare_gui_profile.py`：默认语言。
-* `uefi/core/PianoKeys.c`：标准按键设备与映射。
+* `uefi/components/product-support/Library/ConsoleScale/`: Scaling and Chinese translations.
+* `tools/prepare_product_console.py`, `tools/prepare_product_ui.py`: Generate glyphs in the build working copy and wire them into GraphicsConsole.
+* `tools/prepare_gui_profile.py`: Default language configuration.
+* `uefi/core/PianoKeys.c`: Standard key input device and key mapping.
 
-合体 BOOT 的实机检查确认四倍字号、常用菜单中文、音量键移动、电源键确认
-与双音量键返回均可使用。菜单、设置和 Shell 切换时保留同一个 Fastboot 服务。
-Shell 首次连接曾发生 bulk IN 响应停滞，重新连接行为仍需修正。
-磁吸键盘和触控板、触屏见后面两节。
+On-device verification with Combined BOOT confirmed 4× font scaling, Chinese localization on common menus, volume-button navigation, power-button confirmation, and dual-volume-button back navigation. The same Fastboot service persists when switching between the menu, setup pages, and Shell. An initial connection in the Shell previously stalled on bulk IN responses; reconnect behavior still needs fixing. See the next two sections for the official magnetic keyboard, touchpad, and touchscreen.
 
-SimpleInit 的键盘、相对指针和触屏读取器始终注册，即使启动时尚无该设备。
-每次读取先枚举标准协议，删除已经拔出的句柄；在 `TPL_CALLBACK` 内重新查找
-协议并读取，防止 USB 拔出在查询和调用之间释放接口。不再留下指向已退出
-SimpleInit 的协议安装通知。USB 键盘沿用 UsbKbDxe，固件设置和 Shell 沿用
-标准控制台，不另外接入 HID。
+SimpleInit always registers its keyboard, relative pointer, and touchscreen readers even if no such device is present at boot. Each poll enumerates the standard protocols first and removes handles that have been unplugged, then re-locates and reads the protocol at `TPL_CALLBACK` to prevent a USB disconnect from freeing the interface between lookup and invocation. No protocol-installation notifications pointing to an exited SimpleInit instance are left behind. USB keyboards continue using UsbKbDxe, and firmware setup and the Shell continue using the standard console without adding a separate HID path.
 
-键盘优先读取 `SimpleTextInEx`，没有该协议时读取 `SimpleTextIn`。Tab 和
-Shift+Tab 切换焦点，方向键在编辑状态保留各自方向，Home、End、Delete
-传给控件；每个键后向 LVGL 发送一次释放，连续相同按键不会合并。音量键
-仍可代替左右调节，电源键确认；输入框编辑时空格保留为空格。
+Keyboard input prefers `SimpleTextInEx` and falls back to `SimpleTextIn` when unavailable. Tab and Shift+Tab move focus, arrow keys retain their directions in edit mode, and Home, End, and Delete are passed to widgets. A release event is sent to LVGL after each keystroke so consecutive identical keys are not merged. Volume buttons can still act as left/right adjustments and the power button confirms; while editing a text box, Space remains a literal space.
 
-## 官方磁吸键盘与触控板
+## Official Magnetic Keyboard and Touchpad
 
-固件在后台初始化键盘套里的 Nanosic WN8030 微控制器，音量键和电源键可立即
-使用。启动选项最多等待键盘初始化 3.5 秒；如果键盘就绪，则保留一秒供用户按键。
-确认键盘未连接后按原有窗口启动。平板实测键盘 MCU 在开机时约 1.57 秒就绪。键盘以标准
-`SimpleTextIn` 和 `SimpleTextInEx` 发布，并带 `ConsoleInDevice` 标记，
-SimpleInit、固件设置和 Shell 都通过标准控制台读到它。顶排没有功能键，
-右 Ctrl 加 `1` 到 `0`、`-`、`=` 输出 F1 到 F12，与 Linux 相同，因此
-右 Ctrl + `=` 是 F12，可以进入固件设置。Caps Lock 灯跟随锁定状态，
-按键不自动连发。实机已确认 MCU 固件校验、键盘套连接识别、运行命令和
-固件设置中的物理按键操作；触控板移动、点击及拔插后的输入恢复还需上机检查。
+The firmware initializes the Nanosic WN8030 MCU inside the keyboard cover in the background while volume and power buttons remain immediately usable. Boot selection waits up to 3.5 seconds for keyboard initialization; if the keyboard becomes ready, an additional 1-second window is kept for user keypresses. Once the firmware confirms no keyboard is attached, boot proceeds with the original timeout window. On-device measurements show the keyboard MCU becomes ready in about 1.57 seconds at power-on. The keyboard is published via standard `SimpleTextIn` and `SimpleTextInEx` protocols with the `ConsoleInDevice` tag, so SimpleInit, firmware setup, and the Shell all read it through the standard console. Because the top row has no function keys, Right Ctrl + `1` through `0`, `-`, `=` emit F1 through F12—matching Linux—making Right Ctrl + `=` equal to F12 for entering firmware setup. The Caps Lock LED tracks lock state, and keys do not auto-repeat. On-device testing has verified MCU firmware verification, keyboard cover attach detection, running commands, and physical key input in firmware setup; touchpad movement, clicking, and input recovery after detach/reattach still require on-device verification.
 
-触控板以标准 `SimplePointer` 发布：单指移动光标，轻点一下是左键，
-按下触控板是左键或右键。它不作为绝对坐标设备发布，因为菜单会把绝对
-坐标当成触屏点按。SimpleInit 按“移动量 × `gui.mouse_scale` ÷ 分辨率”
-换算光标，触控板报告的分辨率为 1，一个计数移动一个像素，横向划过整块
-触控板约等于屏幕宽度；纵向计数按物理尺寸换算成与横向相同的比例。
+The touchpad is published as a standard `SimplePointer` device: single-finger drag moves the cursor, tap-to-click triggers a left click, and pressing the touchpad triggers left or right clicks. It is not exposed as an absolute pointer because the menu treats absolute coordinates as touchscreen taps. SimpleInit scales cursor movement as `delta × gui.mouse_scale ÷ resolution`; the touchpad reports a resolution of 1 so one count equals one pixel, making a full horizontal swipe across the touchpad roughly equal to the screen width. Vertical counts are scaled by physical dimensions to match the horizontal ratio.
 
-初始化顺序与 Linux 7.3 的 `hid-nanosic-wn8030` 驱动一致：打开 QUP1
-wrapper 与 SE6 的时钟，GPIO56/57 复用到 SE6；GPIO188 复位和 GPIO3 睡眠
-（均低有效）先保持有效，经 RPMh 先打开 L11B 1.8 V，再打开 L14B 3.3 V；
-释放复位，等待 500 ms 让 bootrom 启动，释放睡眠，确认 bootrom ID 为
-`0xC8`、状态为 0，下载 RAM 固件（头部和每包 503 字节的代码，每次写入后
-等待 3 ms），校验状态为 3 后启动固件，然后在 GPIO97 的上升沿读取 68 字节
-报告。固件启动后先查询 MCU 版本并发送键盘上电命令，不等待连接报告才上电。
-键盘接上时发送打开触控板和键盘供电的命令，此后每 12 秒重发键盘
-供电请求。初始化由共享事件循环推进；开机时按下一包的到期时间等待，不额外
-凑整到毫秒。每次只推进一步，USB 和触控仍能在键盘传输之间处理事件。
+The initialization sequence matches the Linux 7.3 `hid-nanosic-wn8030` driver: enable the QUP1 wrapper and SE6 clocks and mux GPIO56/57 to SE6; hold GPIO188 reset and GPIO3 sleep (both active-low) asserted; enable L11B (1.8 V) and then L14B (3.3 V) via RPMh; deassert reset, wait 500 ms for the bootrom to start, deassert sleep, verify bootrom ID `0xC8` and status 0; download the RAM firmware (header plus 503-byte code packets with a 3 ms wait after each write), verify status 3 and start the firmware; then read 68-byte reports on rising edges of GPIO97. Once the firmware starts, it queries the MCU version and sends the keyboard power-on command immediately without waiting for an attach report. When the keyboard attaches, it sends commands to enable the touchpad and keyboard power, and resends the keyboard power request every 12 seconds thereafter. Initialization advances through the shared event loop; at boot, waits follow the exact deadline of the next packet without rounding up to whole milliseconds. Each tick advances a single step so USB and touch events continue processing between keyboard transfers.
 
-帧头按原厂解析：屏蔽首字节最高位后必须为 `0x57`，第三字节只接受
-`0x39`、`0x4a`、`0x5b`、`0x6c`。一帧可以连续包含多个报告；ID 为零表示
-报告结束，后面未使用的缓冲区不要求清零，与 Linux 驱动的停止条件一致。
-报告大小和触点范围继续逐项检查，截断
-或不支持的报告不会提交半帧按键。`PIANO_POGO_INPUT` 汇总接受、拒绝、连接
-状态和命令结果，不记录认证材料。
+Frame headers follow the stock parser: after masking off the MSB of the first byte it must equal `0x57`, and the third byte accepts only `0x39`, `0x4a`, `0x5b`, or `0x6c`. A single frame may contain multiple consecutive reports; a report ID of zero marks the end of reports, and trailing unused buffer bytes are not required to be zeroed, matching the Linux driver's stop condition. Report sizes and contact bounds are still checked individually so truncated or unsupported reports never commit partial key frames. `PIANO_POGO_INPUT` summarizes accepted/rejected counts, connection state, and command results without logging authentication material.
 
-连接状态和供电状态分别来自状态字节的 bit 0、bit 1。物理断开时立即清空按键、
-释放触控板按钮，不等供电位一起归零；接上但尚未供电时也会发起上电请求。
+Connection state and power state come from bit 0 and bit 1 of the status byte, respectively. On physical detach, pressed keys are cleared and touchpad buttons are released immediately without waiting for the power bit to drop as well; if attached while not yet powered, a power-on request is also issued.
 
-帧头、连接状态、MCU 版本请求和上电命令对照原厂 `nanosic_driver.ko` 的
-`Nanosic_i2c_parse`、`Nanosic_i2c_specified_packets_detect`、
-`Nanosic_803_firmware_version_read` 与 `keyboard_resume_work`：版本请求发往
-`0x18` 路由，供电命令为 `0x25 = 1`。参考模块取自
-`OS3.0.309.0.WPYCNXM` 官方 OTA，提取时核对每项操作及完整 `vendor_dlkm`
-分区摘要；运行固件仍使用清单中的 `OS4.0.6.0.XPYCNXM` MCU 文件，没有换回
-旧固件。版本查询不属于键盘认证，也不能证明物理输入已经正常。
+Frame headers, connection state, MCU version requests, and power-on commands were cross-checked against `Nanosic_i2c_parse`, `Nanosic_i2c_specified_packets_detect`, `Nanosic_803_firmware_version_read`, and `keyboard_resume_work` in the stock `nanosic_driver.ko`: version requests target route `0x18`, and the power-on command is `0x25 = 1`. The reference module was extracted from the official `OS3.0.309.0.WPYCNXM` OTA with each operation and the full `vendor_dlkm` partition digest verified; runtime firmware still uses the `OS4.0.6.0.XPYCNXM` MCU binary pinned in the manifest rather than reverting to the older binary. Version queries are not keyboard authentication and do not prove that physical input works.
 
-传输使用 SE6 的 GENI I²C FIFO 接口，1 MHz，由 CPU 轮询，不使用 DMA，
-所以不新增 SMMU 上下文。SE6 必须已经由引导程序载入 I²C 协议固件并开放
-FIFO 接口；如果它只开放 GSI 接口，固件只读取状态、不改动它，键盘在 UEFI
-中不可用，Linux 照常使用。MCU 的 RAM 固件来自仓库内的
-`vendor/firmware/piano-keyboard/MCU_Upgrade.bin`，也就是 Linux 根系统使用
-的同一文件；`tools/prepare_product.py` 按该组件的清单核对后生成头文件嵌入
-固件，生成文件不提交。
+Transfers use SE6's GENI I²C FIFO interface at 1 MHz with CPU polling and no DMA, so no new SMMU context is added. SE6 must already have I²C protocol firmware loaded by the bootloader with the FIFO interface enabled; if only the GSI interface is exposed, the firmware only reads status without modifying SE6—the keyboard is unavailable in UEFI while Linux continues working normally. The MCU RAM firmware comes from `vendor/firmware/piano-keyboard/MCU_Upgrade.bin` in the repository, the same file used by the Linux rootfs; `tools/prepare_product.py` verifies it against the component manifest and generates an embedded header (not committed to Git).
 
-任何一步失败，固件立即释放已经占用的资源，不发布输入设备，只保留音量键
-和电源键。RAM 日志中的 `PIANO_POGO_UNAVAILABLE` 写明失败步骤和原因，
-例如 `se6-gsi-only`、`boot-id`、`verify` 或 `transport`；`PIANO_POGO_SE6`
-记录 SE6 的协议、FIFO 设置和时钟频率，`PIANO_POGO_READY` 和
-`PIANO_POGO_COVER` 记录接入和键盘连接。没有键盘时 MCU 照常启动，只是没有
-按键输入。
+If any step fails, the firmware immediately releases all acquired resources, publishes no input devices, and falls back to volume and power buttons only. `PIANO_POGO_UNAVAILABLE` in the RAM log records the failing step and reason (such as `se6-gsi-only`, `boot-id`, `verify`, or `transport`); `PIANO_POGO_SE6` logs the SE6 protocol, FIFO settings, and clock rate; `PIANO_POGO_READY` and `PIANO_POGO_COVER` log initialization readiness and cover attachment. Without a keyboard attached, the MCU still boots normally and simply produces no key input.
 
-进入 Linux 前，固件卸载输入协议，按 Linux 关机顺序让 MCU 进入睡眠
-和复位，等待 10 ms，恢复 L14B、L11B 的原 RPMh 投票，恢复引脚和 GPIO97
-的中断配置，恢复 SE6 寄存器，最后释放本固件持有的时钟引用。Linux 驱动
-探测时会重新上电、复位并下载固件，看到的状态与其他启动方式相同。这条
-路径不使用 DMA，也没有 SMMU 上下文。SE6 的主、次序列器均空闲后才恢复寄存器；次序列器仍在运行时不尝试取消它。SE6 停止或寄存器恢复失败时，不再关闭板级电源、引脚和时钟，保留它们直到重新启动。`PIANO_POGO_RELEASE` 列出没有恢复的项目；输入协议、引脚、电源或时钟未能安全退出时拒绝交接，保留资源并显示恢复操作。
+Before booting Linux, the firmware uninstalls the input protocols, puts the MCU into sleep and reset following the Linux shutdown order, waits 10 ms, restores the original RPMh votes for L14B and L11B, restores pin muxing and GPIO97 interrupt configuration, restores SE6 registers, and finally releases the clock references held by this firmware. When the Linux driver probes, it powers on, resets, and downloads firmware again, seeing the same hardware state as any other boot path. This path uses neither DMA nor an SMMU context. SE6 registers are restored only after both the primary and secondary sequencers are idle; if the secondary sequencer is still running, no cancellation is attempted. If SE6 stop or register restoration fails, board power rails, pins, and clocks are not turned off and remain held until reboot. `PIANO_POGO_RELEASE` lists any items that failed to restore; if input protocols, pins, power, or clocks fail to tear down safely, OS handover is refused, resources are retained, and recovery instructions are displayed.
 
-源码位置：
+Source locations:
 
-* `uefi/components/pogo-product/`：资源占用与释放、MCU 下载格式、启动状态机和输入协议。
-* `uefi/core/PianoGeniI2cPio.c`：GENI I²C FIFO 传输，所有等待都有时限。
-* `uefi/core/PianoPogoReport.c`、`uefi/core/PianoPogoInput.c`：报告解析、按键映射和触控板指针。
+* `uefi/components/pogo-product/`: Resource acquisition/release, MCU download format, bring-up state machine, and input protocols.
+* `uefi/core/PianoGeniI2cPio.c`: GENI I²C FIFO transport with timeouts on all waits.
+* `uefi/core/PianoPogoReport.c`, `uefi/core/PianoPogoInput.c`: Report parsing, key mapping, and touchpad pointer handling.
 
-## 触屏
+## Touchscreen
 
-屏幕的 NT36532E 是触控与显示一体的芯片，没有内置触控固件。固件在后台
-给它下载触控固件，完成后触屏以标准 `AbsolutePointer` 发布，坐标范围与 3200×2136 横屏画布相同，SimpleInit 直接用它点按。
-只跟踪一个触点，按标准协议分别报告按下、移动和抬起；抬起保留最后坐标，
-不修改坐标制造新事件。SimpleInit 同时检查坐标和按钮状态。硬件 SPI 与
-GPI DMA 传输已接入源码，GPI 初始化和固件解析已经上机检查；SPI 传输、
-芯片识别、整帧数据与菜单点按尚未跑通。
+The display's NT36532E is an integrated touch-and-display IC with no built-in touch firmware. UEFI downloads the touch firmware in the background and then publishes the touchscreen as a standard `AbsolutePointer` device with coordinates matching the 3200×2136 landscape canvas, which SimpleInit uses directly for taps. Only a single touch contact is tracked, reporting press, move, and release per the standard protocol; release retains the last coordinates without altering coordinates to synthesize a new event. SimpleInit checks both coordinates and button state. Hardware SPI and GPI DMA transport are wired into the source tree, and GPI initialization and firmware parsing have been verified on hardware; SPI transfers, chip identification, full-frame data, and menu touch input are not yet working end-to-end.
 
-初始化严格按 Linux 7.3 `nt36xxx` 驱动在“没有可跟随的 DRM 面板”时的探测
-顺序进行，这正是屏幕已由引导程序点亮时的情形：写 `0x7FFF80 = 0x5A`
-做引擎复位，等 10 ms；依次用三组芯片 ID 寄存器读取并匹配 NT36532，每组
-最多 5 次，每次先做 bootloader 复位；读 `ENB_CASC` 判断单芯片或级联；
-然后执行 `nvt_download_firmware_hw_crc`：bootloader 复位，写 ILM/DLM 的
-目标地址、长度和 CRC，打开自动复制，按 512 字节分块写入全部分区，等待
-自动复制完成，打开固件 CRC 校验，置 `BOOT_RDY`，确认复位状态在
-`0xA0`–`0xAF`，失败时整体重试，共 3 次；最后读取帧长度和固件信息，等待校准
-状态 `0xA3` 后，按原厂 `DATA_MODE_53` 发送 active 扫描命令并等待确认。
-与 Linux 驱动一样，不操作任何复位 GPIO、稳压器或面板命令。
+Initialization strictly follows the Linux 7.3 `nt36xxx` driver's probe sequence when no DRM panel is available to follow—matching the state where the bootloader has already lit the display: write `0x7FFF80 = 0x5A` for an engine reset and wait 10 ms; read and match NT36532 across three sets of chip ID registers in order (up to 5 attempts per set, performing a bootloader reset before each attempt); read `ENB_CASC` to determine single-chip vs. cascade mode; then run `nvt_download_firmware_hw_crc`: bootloader reset, write ILM/DLM target addresses, lengths, and CRCs, enable auto-copy, write all partitions in 512-byte chunks, wait for auto-copy completion, enable firmware CRC verification, set `BOOT_RDY`, and verify the reset status is within `0xA0`–`0xAF` (retrying the full download up to 3 times on failure); finally read frame length and firmware info, wait for calibration status `0xA3`, and send the active scan command per stock `DATA_MODE_53` and wait for acknowledgment. Just like the Linux driver, it touches no reset GPIOs, regulators, or panel commands.
 
-触控固件按 GPIO100（触控 lcd-id）选择：0 用
-`novatek/novatek_nt36532_piano_fw_csot.bin`，1 用
-`novatek/novatek_nt36532_piano_fw_boe.bin`，与 Linux 设备树的
-`firmware-name` 顺序相同。两份文件来自仓库内的
-`vendor/firmware/piano-touch`，`tools/prepare_product.py` 按该组件的清单
-核对后嵌入，`PIANO_TOUCH_FIRMWARE` 日志记录所选文件的 SHA-256。
+The touch firmware is selected by GPIO100 (touch `lcd-id`): `0` selects `novatek/novatek_nt36532_piano_fw_csot.bin` and `1` selects `novatek/novatek_nt36532_piano_fw_boe.bin`, matching the `firmware-name` order in the Linux Device Tree. Both files come from `vendor/firmware/piano-touch` in the repository; `tools/prepare_product.py` verifies them against the component manifest and embeds them, and `PIANO_TOUCH_FIRMWARE` logs the SHA-256 of the selected file.
 
-SE2 只开放 GSI 接口，传输使用 GPI1 的 AP 通道，不访问曾引发异常的
-`SE+0x2008` 安全配置窗口。GPIO40/41/42/43 复用为模式 0、8 位的硬件 SPI，
-频率不超过原厂设备树给出的 19.2 MHz。运行时通过 GPIO162 的上升沿锁存状态
-读取一帧原始矩阵；没有锁存事件时低频轮询。一次片选读取完整帧，仍须通过
-整帧校验，校验失败的帧不产生点按。
-矩阵的头部和全部采样值都必须位于校验覆盖范围内；固件分区按实际下载的
-`size + 1` 字节检查源文件和 24 位 SRAM 地址范围，CRC 的四字节读取也单独
-检查边界，拒绝截断分区和地址回绕。
+SE2 exposes only the GSI interface, so transfers use the AP channels of GPI1 without accessing the `SE+0x2008` secure configuration window that previously caused exceptions. GPIO40/41/42/43 are muxed for Mode 0, 8-bit hardware SPI at no more than the 19.2 MHz specified in the stock Device Tree. At runtime, a raw matrix frame is read upon latched rising edges of GPIO162, falling back to low-frequency polling when no latched event is present. Each chip-select transaction reads a complete frame, which must still pass full-frame checksum validation; frames failing validation produce no taps. Both the matrix header and all sample values must fall within the checksum-covered region; firmware partitions validate the source file and 24-bit SRAM address bounds against the actual `size + 1` downloaded bytes, and the 4-byte CRC read is bounds-checked separately, rejecting truncated partitions and address wraparound.
 
-GPI 配置来自原厂最终设备树和 `GpiDxe`，描述符格式、SPI 命令及启停顺序对照
-Linux `drivers/dma/qcom/gpi.c` 与 `drivers/spi/spi-geni-qcom.c`。全双工 GO
-描述符按原厂 `spi-msm-geni` 填写实际接收字数；8 位传输中字数等于字节数。
-错误记录寄存器只在全局错误中断置位时表示当前故障，空闲时的非零残留值不能
-独立阻止初始化。确认通道空闲并接入本固件的 SMMU 域后，按原厂初始化顺序清理
-旧记录；运行中的全局和通用错误中断仍立即停止传输。
-通道配置的状态、执行环境编号和通道编号由硬件只读提供，配置与恢复读回时只比较
-可写字段；这些位非零不表示写入失败。事件环及收发环的地址、长度与协议字段仍逐项核对。
-通道和事件环的配置只在分配期间有效，释放后不再回写这些寄存器；
-退出时恢复共享中断设置和串行引擎配置，不把已释放的环重新描述给硬件。
-先用已有的
-异常保护读取 AP 通道状态，只有通道和事件环未占用时才建立自己的 SMMU
-映射。GPI 通过 SID `0xB6` 读取描述符环和写入事件，GENI 串行引擎通过
-SID `0xA3` 访问数据缓冲区；原厂 `spi-msm-geni` 也分别使用 GPI 设备和
-QUP wrapper 的 DMA 映射。XBL `NAMEDNODE_QUP1` 的输入 `0x03000001`、
-`0x03000004` 分别对应这两个 SID。固件将两条路径接入同一受控域，共用页表，
-退出前核对并解除两条映射，只恢复它们原先未启用的路由槽位。页表和五份 DMA
-缓冲区复用共享内存管理代码，不假定设备地址等于物理地址。
-完成事件必须同时匹配通道、描述符地址、字节数和成功状态；全双工
-读取须收到发送、接收两条通道的完成事件，不能只凭接收环读指针前移就返回数据。
-GPI 全局或通用错误中断置位时，本次传输失败，并记录错误信息，不重新提交描述符。
-停止失败则保留内存和时钟并拒绝启动系统。
+GPI configuration is derived from the stock final Device Tree and `GpiDxe`, while descriptor formats, SPI commands, and start/stop sequences follow Linux `drivers/dma/qcom/gpi.c` and `drivers/spi/spi-geni-qcom.c`. Full-duplex GO descriptors populate the actual receive word count as in stock `spi-msm-geni`; for 8-bit transfers, word count equals byte count. The error log register indicates an active fault only when the global error interrupt is asserted; non-zero stale values while idle do not independently block initialization. Once the channels are confirmed idle and attached to this firmware's SMMU domain, stale records are cleared per the stock init sequence; active global and general error interrupts still abort transfers immediately. Channel state, execution environment ID, and channel ID fields in channel configuration are hardware read-only, so configuration and restore readbacks compare only writable fields; non-zero values in those bits do not indicate write failure. Event ring and TX/RX ring base addresses, lengths, and protocol fields are still verified individually. Channel and event ring configurations are valid only while allocated and are not written back after deallocation; teardown restores shared interrupt settings and serial engine configuration without re-describing freed rings to hardware. AP channel state is probed first under the existing exception guard, and SMMU mappings are created only when the channels and event ring are unoccupied. GPI reads descriptor rings and writes events via SID `0xB6`, while the GENI serial engine accesses data buffers via SID `0xA3`; stock `spi-msm-geni` likewise uses separate DMA mappings for the GPI device and the QUP wrapper. Inputs `0x03000001` and `0x03000004` of XBL `NAMEDNODE_QUP1` correspond to these two SIDs. The firmware attaches both paths to the same managed domain sharing one page table, verifies and unmaps both before exit, and restores only their previously disabled routing slots. Page tables and the five DMA buffers reuse shared memory-management code and do not assume device addresses equal physical addresses. Completion events must match channel, descriptor address, byte count, and success status simultaneously; full-duplex reads require completion events from both TX and RX channels rather than returning data merely because the RX ring read pointer advanced. If a GPI global or general error interrupt fires, the transfer fails, error details are logged, and the descriptor is not resubmitted. If stopping fails, memory and clocks are retained and OS boot is refused.
 
-算法移植自 `piano-touch-view`：锁定非笔的
-主帧类型，取 32 帧中值作基线，去除行列共模噪声，在 3×3 邻域找超过阈值
-200 的峰并求加权质心，再映射到屏幕坐标（Y 轴翻转）；静止时基线缓慢跟随
-漂移。pump 只在等待事件和菜单刷新时推进触屏：下载期间每次写一个分块，之后每次最多读一帧。
-固件先处理已排队的 USB 事件，再在传输或分区写入的批次之间读取磁吸键盘、
-触控板和触屏。界面仍可操作；切换到其他引导界面、启动系统或重启，要等当前
-写盘和回复结束。仅向内存下载、还未写盘时，用户可以手动重启。
+The algorithm is ported from `piano-touch-view`: lock onto the primary non-stylus frame type, take a 32-frame median as the baseline, remove row/column common-mode noise, locate peaks exceeding threshold 200 within a 3×3 neighborhood and compute the weighted centroid, then map to screen coordinates (with Y inverted); when idle, the baseline slowly tracks drift. The pump advances the touchscreen only during event waits and menu refreshes: one chunk write per tick during firmware download, and at most one frame read per tick afterward. The firmware processes queued USB events first, then polls the magnetic keyboard, touchpad, and touchscreen between transfer or partition-write batches. The UI stays responsive; switching to another boot screen, booting an OS, or rebooting waits for any in-progress disk write and reply to finish. While only downloading into RAM before any disk write starts, the user can reboot manually.
 
-失败时固件释放已占用的资源，不发布触屏，`PIANO_TOUCH_UNAVAILABLE` 写明
-步骤和原因，例如 `chip-id`、`firmware-start` 或
-`transport`；`PIANO_TOUCH_SE2`、`PIANO_TOUCH_CHIP_ID`、
-`PIANO_TOUCH_DOWNLOAD`、`PIANO_TOUCH_READY` 记录各阶段结果。连续出现看门狗
-帧时按 Linux 的做法重新下载。
-`oem ramlog` 重新输出保存的失败步骤、原因和 GPI 传输状态，即使初始化日志已被后续输出覆盖，也能定位失败位置。
+On failure, the firmware releases all acquired resources and publishes no touchscreen. `PIANO_TOUCH_UNAVAILABLE` records the failing step and reason (such as `chip-id`, `firmware-start`, or `transport`); `PIANO_TOUCH_SE2`, `PIANO_TOUCH_CHIP_ID`, `PIANO_TOUCH_DOWNLOAD`, and `PIANO_TOUCH_READY` log per-stage results. Consecutive watchdog frames trigger a firmware re-download, matching Linux behavior. `oem ramlog` replays the saved failure step, reason, and GPI transfer state so the failure location remains diagnosable even if later output overwrites the init log.
 
-进入 Linux 前，触屏先于 USB 和 UFS 退出：卸载触屏协议，停止并释放
-GPI 通道和事件环，确认 SE2 空闲，复核 SMMU 路由仍属于本驱动后恢复寄存器、
-释放 DMA 映射和缓冲区，解绑
-SMMU 域，并恢复它占用前的无效路由条目。其他设备的路由必须保持不变，
-解绑前重新读取并确认路由、页表和其他设备的上下文未变，以便 USB 和 UFS
-随后按各自的启动状态关闭。最后恢复引脚、GPIO162 中断配置和
-时钟引用。不向触控芯片发送关机命令，Linux 探测时会再次复位并下载固件。
-没有恢复的项目会写入 `PIANO_TOUCH_RELEASE`，并阻止控制权交给系统。
+Before booting Linux, the touchscreen exits ahead of USB and UFS: uninstall the touchscreen protocol, stop and deallocate the GPI channels and event ring, confirm SE2 is idle, re-verify that the SMMU routes still belong to this driver before restoring registers, release DMA mappings and buffers, detach the SMMU domain, and restore the invalid routing entries that existed prior to acquisition. Routes belonging to other devices must remain unchanged; before detaching, routes, page tables, and other devices' contexts are read back and verified unchanged so USB and UFS can subsequently shut down against their respective boot states. Finally, pin muxing, GPIO162 interrupt configuration, and clock references are restored. No power-down command is sent to the touch IC—Linux resets it and re-downloads firmware on probe. Any unrestored item is logged to `PIANO_TOUCH_RELEASE` and blocks handing control over to the OS.
 
-源码位置：
+Source locations:
 
-* `uefi/components/touch-product/PianoTouchService.c`：资源占用与释放、探测与下载状态机、`AbsolutePointer`。
-* `uefi/components/touch-product/PianoGeniSpiGpi.c`：硬件 SPI、GPI DMA 描述符与完成检查、安全停止。
-* `uefi/components/touch-product/PianoTouchNvt.c`：固件分区解析与芯片表。
-* `uefi/components/touch-product/PianoTouchMatrix.c`：原始矩阵到触点。
+* `uefi/components/touch-product/PianoTouchService.c`: Resource acquisition/release, probe/download state machine, and `AbsolutePointer`.
+* `uefi/components/touch-product/PianoGeniSpiGpi.c`: Hardware SPI, GPI DMA descriptors and completion checks, and safe stop.
+* `uefi/components/touch-product/PianoTouchNvt.c`: Firmware partition parsing and chip table.
+* `uefi/components/touch-product/PianoTouchMatrix.c`: Raw matrix to touch contact conversion.
 
-## 启动项与横屏
+## Boot Entries and Landscape Orientation
 
-SimpleInit 默认旋转改为 0°，使用 GOP 的 3200×2136 横屏画布。界面旋转由
-SimpleInit/LVGL 处理，物理显示模式保持原样；实机已确认横屏显示。
+SimpleInit's default rotation is set to 0°, using the 3200×2136 landscape GOP canvas. UI rotation is handled by SimpleInit/LVGL while the physical display mode remains untouched; landscape display has been verified on hardware.
 
-产品驻留核心在 BDS 的控制台初始化完成后启动，先恢复变量和安装安全退出协议。
-普通自动启动先消费 `BootNext`，再按 `BootOrder` 读取 `Boot####` 的设备路径。
-从 SimpleInit 选“启动 Linux”时，沿用系统启动顺序，但跳过 SimpleInit 自身，
-也不消费为下次开机设置的 `BootNext`。没有指定文件的设备启动项由上游库尝试标准后备文件，
-不绑定某个加载器名称或分区标签。产品安装的 systemd-boot 继续发现
-`EFI/Linux/` 中的版本化 UKI。不使用 Android 格式的 Linux `boot.img`
-或固件内的 Linux 替代项。通用启动管理的剩余工作见[开发清单](../release.md#标准-uefi-启动与存储)。具体内存与退出身份见
-[UEFI 核心](../uefi-core.md#esp-启动文件与系统交接)。
+The resident product core starts once BDS console initialization finishes, restoring variables and installing the safe-exit protocol first. Normal autoboot consumes `BootNext` first and then reads `Boot####` device paths in `BootOrder` sequence. Selecting "Boot Linux" from SimpleInit follows the system boot order while skipping SimpleInit itself and leaving `BootNext` unconsumed for the next reboot. Device boot entries without an explicit file path rely on upstream libraries to try the standard fallback path, without binding to a specific loader name or partition label. The product-installed systemd-boot continues discovering versioned UKIs under `EFI/Linux/`. Neither Android-format Linux `boot.img` images nor in-firmware Linux stand-ins are used. Remaining work for generic boot management is tracked in the [Development Checklist](../release.md#standard-uefi-boot-and-storage). For exact memory layout and exit identity details, see [UEFI Core](../uefi-core.md#esp-boot-files-and-os-handoff).
 
-普通非易失变量通过下文的文件后端保存。
-UKI 内含内核、initramfs、DTB 和参数，systemd-stub 调用 Linux EFI stub；
-固件提供完整内存描述、设备树修正与安全退出。
+Regular non-volatile variables are saved through the file backend described below. Each UKI bundles the kernel, initramfs, DTB, and kernel parameters; systemd-stub invokes the Linux EFI stub while the firmware supplies the complete memory map, Device Tree fixups, and safe exit.
 
-## 内置菜单与自动保存
+## Built-in Menu and Auto-Save
 
-[`config/simpleinit.static.uefi.cfg`](../../../config/simpleinit.static.uefi.cfg)
-原样内置在 SimpleInit 的 rootfs 中，先作为静态配置加载，再加载
-`persist/sunuefi/simpleinit.uefi.cfg` 中的用户设置。首次使用不需要复制
-任何文件：目录由固件创建，修改后的设置由 SimpleInit 自动保存。
-静态配置里的默认值不会整份复制到用户文件。
+[`config/simpleinit.static.uefi.cfg`](../../../config/simpleinit.static.uefi.cfg) is embedded verbatim in SimpleInit's rootfs and loaded first as static configuration, followed by user settings from `persist/sunuefi/simpleinit.uefi.cfg`. First-time use requires copying no files: the directory is created by the firmware and modified settings are auto-saved by SimpleInit. Defaults from the static configuration are not copied wholesale into the user file.
 
-默认中文、横屏、DPI 600，开启动画；菜单显示后无操作五秒自动启动，
-按键、触摸或滚动取消自动启动。“启动 Linux”排在
-第一项并默认选中；Windows 沿用扫描 `EFI/Microsoft/Boot/bootmgfw.efi`
-的方式发现。菜单保留从文件启动、固件设置、UEFI Shell、文件管理器和
-通用工具。菜单内的 Linux、设置、Shell 与重启动作交给同一个驻留核心处理，
-不会为每个页面重新创建 USB 或存储服务。
+Defaults are Chinese language, landscape orientation, 600 DPI, and animations enabled. After the menu appears, autoboot triggers after 5 seconds of inactivity; any keypress, touch, or scroll cancels autoboot. "Boot Linux" is listed first and selected by default; Windows continues to be discovered by scanning for `EFI/Microsoft/Boot/bootmgfw.efi`. The menu retains Boot from File, Firmware Setup, UEFI Shell, File Manager, and general utilities. Linux boot, setup, Shell, and reboot actions in the menu are handled by the same resident core without recreating USB or storage services for each page.
 
-菜单顺序使用 `boot.configs.<入口>.order` 整数。
-`tools/prepare_simpleinit.py` 负责配置与保存路径，
-`tools/prepare_product_ui.py` 负责动作分发和上游 EFI 文件扫描适配。
-文件系统 URL 使用完整设备路径，查找对应 SimpleFileSystem，不把父磁盘
-误当成分区文件系统。
+Menu ordering uses integer `boot.configs.<entry>.order` keys. `tools/prepare_simpleinit.py` handles configuration and save paths, while `tools/prepare_product_ui.py` handles action dispatch and upstream EFI file-scanning integration. Filesystem URLs use full device paths to locate the matching `SimpleFileSystem` without mistaking the parent disk for a partition filesystem.
 
-## persist 中的 UEFI 变量
+## UEFI Variables in `persist`
 
-SimpleInit 设置与 UEFI 变量分开保存：
+SimpleInit settings and UEFI variables are stored separately:
 
 ```text
 persist/sunuefi/
@@ -254,140 +99,68 @@ persist/sunuefi/
 └── nvram-b.bin
 ```
 
-变量文件包含普通非易失变量的名字、GUID、属性和数据。写入使用递增序号、
-CRC32 和两个交替副本；刷新后独立读回比较，再使用新的序号。启动时选择
-完整且序号最大的副本，通过标准 `SetVariable()` 恢复，不替换已经初始化
-的变量缓存。系统启动交接前完成保存并禁止新的非易失变量修改。退出 Boot
-Services 后不再访问 UFS，NV 写入返回不支持；带认证属性的 Secure Boot
-变量不通过这个普通文件后端持久化。
+The variable files contain the name, GUID, attributes, and data of standard non-volatile variables. Writes use a monotonically increasing sequence number, CRC32, and two alternating copies; after flushing, each copy is independently read back and compared before advancing to the new sequence number. At boot, the valid copy with the highest sequence number is selected and restored via standard `SetVariable()`, without replacing the already-initialized variable cache. Saving completes before OS handover, after which new non-volatile variable modifications are prohibited. After exiting Boot Services, UFS is no longer accessed and NV writes return Unsupported; Secure Boot variables with authenticated attributes are not persisted through this plain-file backend.
 
-ext4 驱动用固定的 lwext4 源码读取变量文件、`persist/bluetooth/.bt_nv.bin`
-和 `persist/time/ats_2`。只允许创建项目目录并写入两个变量文件，写入还会更新
-必要的 ext4 元数据。发现卷需要恢复时只读挂载，变量修改留在内存中，日志由
-Android 恢复。标准 Block I/O 和 Fastboot 不提供原厂 `persist` 的原始写入。
-文件系统先停止日志、卸载并同步，再停止 USB、UFS、SMMU 和时钟。
-存在未关闭文件或无法确认 DMA 已停止时拒绝系统启动交接，不强行释放。
+The ext4 driver uses pinned lwext4 sources to read the variable files, `persist/bluetooth/.bt_nv.bin`, and `persist/time/ats_2`. Writes are restricted to creating the project directory and writing the two variable files, updating necessary ext4 metadata as well. If the volume requires recovery, it is mounted read-only, variable changes remain in memory, and journal replay is left to Android. Standard Block I/O and Fastboot do not expose raw writes to stock `persist`. The filesystem stops journaling, unmounts, and syncs before USB, UFS, SMMU, and clocks are stopped. If open files remain or DMA cannot be confirmed stopped, OS handover is refused rather than forcing a release.
 
-lwext4 的固定来源在 [`config/uefi-ext4.json`](../../../config/uefi-ext4.json)，
-不编译分区或格式化工具。完整原始 `persist` 备份在
-[`vendor/piano/backups/`](../../../vendor/piano/backups/)，不参与固件构建。
+The pinned lwext4 source is defined in [`config/uefi-ext4.json`](../../../config/uefi-ext4.json); partitioning and formatting utilities are not built. A full raw `persist` backup resides in [`vendor/piano/backups/`](../../../vendor/piano/backups/) and does not participate in firmware builds.
 
-实现位于 `uefi/components/ext4/` 和 `uefi/components/nv/`，由
-`tools/firmware/prepare_ext4.py`、`tools/prepare_nv_runtime_guard.py` 接入构建。
-实机已完成保存、重启恢复和启动现有 Linux；退出后只读导出的分区副本通过
-`e2fsck -fn`，两个变量副本的 CRC32 均一致。
+Implementation resides in `uefi/components/ext4/` and `uefi/components/nv/`, integrated into the build by `tools/firmware/prepare_ext4.py` and `tools/prepare_nv_runtime_guard.py`. On-device testing completed saving, reboot restoration, and booting the existing Linux installation; a read-only partition dump exported after exit passed `e2fsck -fn`, and both variable copies matched their CRC32 checksums.
 
-上游 `SecureBootHandlerLib` 的文件系统扫描曾遗漏关闭根目录，导致 ext4
-拒绝卸载。修正在 `patches/firmware/series.json` 中登记的补丁里：每个扫描
-句柄都配对关闭，通知缓冲只释放一次，不绕过文件系统的打开文件检查。
+Upstream `SecureBootHandlerLib` previously leaked the root directory handle during filesystem scanning, causing ext4 to refuse unmount. The fix is registered in `patches/firmware/series.json`: every scan handle is closed in pairs and the notification buffer is freed once, without bypassing the filesystem's open-file check.
 
-## 电源动作与退出
+## Power Actions and Exit
 
-“电源与重启”提供关机、普通重启、Recovery、Bootloader 和 EDL（9008）。
-动作先在菜单中登记。界面退出后，驻留核心保存设置、关闭文件系统，并完成存储、
-输入、USB 和显示资源的安全退出。`ExitBootServices` 成功后才调用 `ResetSystem`。
+"Power & Reboot" provides Power Off, Normal Reboot, Recovery, Bootloader, and EDL (9008). The action is recorded in the menu first. After the UI exits, the resident core saves settings, closes filesystems, and completes safe teardown of storage, input, USB, and display resources. `ResetSystem` is called only after `ExitBootServices` succeeds.
 
-Recovery／Bootloader 使用原厂设备树的 PMK8550 SDAM 重启原因字段；
-EDL 使用 TCSR／SCM 下载模式，代码位于 `uefi/components/reset/`。
-普通重启已完成实机检查；Recovery、Bootloader 和关机尚未执行实机检查，
-EDL 未在设备上执行。
+Recovery and Bootloader use the PMK8550 SDAM reboot-reason fields from the stock Device Tree; EDL uses the TCSR/SCM download mode implemented under `uefi/components/reset/`. Normal reboot has been verified on hardware; Recovery, Bootloader, and Power Off have not yet been verified on hardware, and EDL has not been executed on the device.
 
-启动和退出失败时，屏幕说明失败步骤及返回 Android 的方法，状态码作为
-补充。USB 和固件服务仍正常时，错误页单独处理 Fastboot 的状态、日志和截图，
-错误页只执行诊断。资源仍可安全退出时，Fastboot 也可请求重启，驻留核心在发送
-`OKAY` 后按正常重启流程退出。检测到未能安全退出的资源时，固件保留可能
-仍在使用的 DMA 缓冲区。USB 已关闭或其状态无法确认时保持断开。
-软件重启无法完成时长按电源，在早期选择器按音量上选 Android。
+When boot or exit fails, the screen explains the failing step and how to return to Android, with the status code shown as supplementary detail. While USB and firmware services remain healthy, the error page handles Fastboot status, logs, and screenshots independently in a diagnostics-only mode. When resources can still exit safely, Fastboot can also request a reboot; the resident core sends `OKAY` and exits via the normal reboot flow. When resources that failed to exit safely are detected, the firmware retains DMA buffers that may still be in use. If USB is already shut down or its state cannot be confirmed, it stays disconnected. If software reboot cannot complete, long-press the power button and press Volume Up in the early selector to select Android.
 
-USB 初始化与 Linux 加载结果会保存在固件内存中，并在菜单运行时每五秒输出摘要，
-避免早期日志被 UFS 文件读取记录覆盖。摘要只重发已保存的状态，不重新访问 USB
-寄存器。读取失败时可区分 ESP 文件读取、镜像解析和后续启动交接阶段。
+USB initialization and Linux loading results are stored in firmware memory and printed as a summary every 5 seconds while the menu runs, preventing early logs from being overwritten by UFS file-read entries. Summaries only replay saved state and do not re-access USB registers. Read failures distinguish between ESP file reads, image parsing, and subsequent boot handover stages.
 
-## 中文默认语言与 FAT 挂载
+## Default Chinese Locale and FAT Mounting
 
-固定 Mu_Basecore 的 `FatPkg/EnhancedFatDxe/UnicodeCollation.c` 在启动驱动前
-使用 `PlatformLang` 与模块的默认语言匹配 UnicodeCollation2。
-固件提供的 EnglishDxe 只声明 `en`，全局默认 `zh-CN` 时两种语言均无法匹配，
-FAT 驱动返回 Unsupported，不发布 SimpleFileSystem。
+In the pinned Mu_Basecore, `FatPkg/EnhancedFatDxe/UnicodeCollation.c` matches `UnicodeCollation2` using `PlatformLang` and the module's default language before starting the driver. The firmware's `EnglishDxe` advertises only `en`, so when the global default is `zh-CN` neither language matches, causing the FAT driver to return Unsupported and publish no `SimpleFileSystem`.
 
-产品 DSC 只为 `Fat.inf` 设置 `PcdUefiVariableDefaultPlatformLang="en-US"`，
-提供文件名比较服务的回退语言；中文界面与全局 `PlatformLang` 保持不变。
-菜单已通过此回退挂载 ESP 并启动现有 Linux。
+The product DSC sets `PcdUefiVariableDefaultPlatformLang="en-US"` exclusively for `Fat.inf` to provide a fallback language for filename collation while leaving the Chinese UI and global `PlatformLang` unchanged. The menu mounts the ESP and boots the existing Linux installation through this fallback.
 
-## USB 复位与供电
+## USB Reset and Power
 
-之前正常 BOOT 进入 UEFI 时，ABL 已关闭 PHY，DWC31 2.00a 的 `DCTL.CSFTRST` 持续置位，200 ms 后超时；只开控制器时钟或清除 SUSPHY／ENBLSLPM 不能恢复。
+Previously, when entering UEFI via a normal BOOT, ABL had already shut down the PHY, leaving DWC31 2.00a `DCTL.CSFTRST` stuck asserted until timing out after 200 ms; enabling controller clocks alone or clearing `SUSPHY`/`ENBLSLPM` could not recover it.
 
-`PianoUsbPhy.c` 按同机 `mu_wide_platforms` 的 UsbConfigDxe 和原厂 XBL 表初始化 M31／QMP PHY，并通过原厂 RPMh 协议申请 `ldod2`、`ldog3`、`ldof1`、`ldob5`、`ldob15` 供电。中继器原先虽有使能位，但 `FD08=00`，缺少供电；补齐后正常 BOOT 可枚举，`CSFTRST` 在 20 ms 内完成。
+`PianoUsbPhy.c` initializes the M31/QMP PHYs following the same-device `mu_wide_platforms` UsbConfigDxe and stock XBL tables, and requests `ldod2`, `ldog3`, `ldof1`, `ldob5`, and `ldob15` power via the stock RPMh protocol. Previously, the repeater had its enable bit set but `FD08=00` due to missing power; once supplied, normal BOOT enumerates cleanly and `CSFTRST` completes within 20 ms.
 
-PHY 是 8 位寄存器，32 位读取会复制字节，例如写入 `1` 返回 `0x01010101`。退出时按有效位校验，不能把这种正常读回误报为失败。设备核心先停止 DMA、释放缓冲并撤销 SMMU，再停 PHY、恢复 RPMh 原投票和归还时钟；任何一步无法确认完成仍拒绝启动交接。
+The PHY uses 8-bit registers whose 32-bit reads replicate the byte across lanes (for example, writing `1` returns `0x01010101`). Teardown validates only the valid bits so this normal readback is not misreported as a failure. The device core stops DMA, frees buffers, and tears down SMMU mappings first, then stops the PHY, restores original RPMh votes, and returns clocks; any step whose completion cannot be confirmed still blocks OS handover.
 
-合体 BOOT 已完成身份、日志、3200×2136 截图读取和 Fastboot 普通重启，
-重启后重新枚举并启动原有 Linux。Linux 保留日志记录 PHY 停止、15 项供电
-恢复及 UFS／USB 资源退出成功。
+Combined BOOT has completed identity queries, log retrieval, 3200×2136 screenshot capture, and Fastboot normal reboot, re-enumerating after reboot and booting the existing Linux installation. Preserved Linux logs record PHY shutdown, restoration of 15 power rails, and successful UFS/USB resource exit.
 
-正常文件读取不再逐块写入默认 RAM 日志：`BLOCKIO_READ` 的成功提交、完成和
-协议内容改为 `DEBUG_VERBOSE`，需要逐次 DMA 记录时可在调试构建中开启。
-分配、映射、退出和错误记录继续保留，失败请求与响应仍会输出。
-这样可以避免读取 Linux 文件时覆盖前面的 USB 初始化现场。
+Normal file reads no longer write per-block entries to the default RAM log: successful submissions, completions, and protocol contents of `BLOCKIO_READ` were changed to `DEBUG_VERBOSE` and can be enabled in debug builds when per-DMA traces are needed. Allocation, mapping, exit, and error records remain enabled, and failed requests and responses are still printed. This prevents reading Linux files from overwriting earlier USB initialization state.
 
-## USB 主机
+## USB Host
 
-在 SimpleInit、固件设置或 Shell 里插上 OTG 转接头连接的键盘、鼠标、Hub 或
-U 盘，固件把平板的 USB 口从设备模式切换为主机模式，拔下后切回 UEFI
-Fastboot。实现已编译进产品镜像，尚未在平板上验证。
+When a keyboard, mouse, hub, or USB flash drive is plugged in via an OTG adapter in SimpleInit, firmware setup, or the Shell, the firmware switches the tablet's USB port from device mode to host mode and switches back to UEFI Fastboot once unplugged. The implementation is compiled into the product image and has not yet been verified on the tablet.
 
-角色由 PMIC 的 Type-C 状态决定。固件通过 SPMI 只读通道读取 PMIH010X
-充电模块的 Type-C 寄存器，布局取自本机原厂 UEFI 的 PmicDxe：类型 `0x02`、
-子类型 `0x7f`/`0xa8`/`0xba` 的充电外设之后 `+0x600` 是 Type-C 块，`+0x08`
-的 Rd 位表示接入的是 USB 设备，`+0x0B` 的位 0、位 1 是接入和插头方向。
-只有 PMIC 型号为 `0x47` 或 `0x56` 时才这样读取，其他型号保持设备模式。
-连续两次、相隔 250 ms 读到“接入 USB 设备”才切到主机，切回时同样需要两次。
-切换只在界面通过 `WaitForEvent` 等待输入时进行；开机倒计时和读取启动文件
-不经过这个等待，不会切换，Shell 命令只有在等待按键时才可能切换。PMIC 同时
-报告对方的 Rp（电脑或充电器在供电）时，始终保持设备模式。
+Role selection is determined by the PMIC's Type-C status. The firmware reads the PMIH010X charger module's Type-C registers over a read-only SPMI channel using the layout from this device's stock UEFI PmicDxe: offset `+0x600` after a charger peripheral of type `0x02` and subtype `0x7f`/`0xa8`/`0xba` is the Type-C block; the Rd bit at `+0x08` indicates an attached USB device, and bits 0 and 1 at `+0x0B` indicate attachment and plug orientation. This readout runs only when the PMIC revision is `0x47` or `0x56`; other revisions remain in device mode. Switching to host mode requires two consecutive "USB device attached" readings spaced 250 ms apart, and switching back likewise requires two consecutive readings. Role switching occurs only while the UI is waiting for input in `WaitForEvent`; boot countdowns and boot-file reads do not enter this wait and will not switch, and Shell commands can switch only while waiting for keypresses. Whenever the PMIC also reports peer Rp (a PC or charger supplying power), the port always stays in device mode.
 
-切到主机时，常驻 USB 服务先按原有流程停止 Fastboot，释放 9 个 DMA 缓冲区并
-确认控制器停下；时钟、PHY 和 USB0 的 SMMU 页表继续由同一个 USB 服务持有。
-随后按原厂 UsbConfigDxe 的 `Usb30InitHost` 写 DWC3 全局寄存器（另按 Linux
-对本机设备树的处理设置 `GCTL.DSBLCLKGTNG` 和 `GUCTL.HSTINAUTORETRY`），把 xHCI
-寄存器窗口（`0x0A600000` 起 32 KiB）通过 `PianoUsbHostPci` 交给标准
-XhciDxe，再由 UsbBus、UsbKb、UsbMouse、UsbMassStorage 接管设备。DMA 只经过
-USB0 的 SMMU 页表：XhciDxe 的环和上下文放在改成非缓存（`EFI_MEMORY_WC`）的
-页上，数据传输经由每次主机会话只映射一次的 1 MiB 中转区复制，并显式维护缓存。
+When switching to host mode, the resident USB service first stops Fastboot via the existing teardown flow, frees its 9 DMA buffers, and confirms the controller has stopped; clocks, PHY, and the USB0 SMMU page table continue to be held by the same USB service. It then writes the DWC3 global registers per stock UsbConfigDxe's `Usb30InitHost` (also setting `GCTL.DSBLCLKGTNG` and `GUCTL.HSTINAUTORETRY` per Linux's Device Tree handling for this device) and hands the xHCI register window (32 KiB starting at `0x0A600000`) to standard `XhciDxe` through `PianoUsbHostPci`, after which `UsbBus`, `UsbKb`, `UsbMouse`, and `UsbMassStorage` take over attached devices. DMA passes exclusively through the USB0 SMMU page table: `XhciDxe` rings and contexts reside in pages remapped as non-cacheable (`EFI_MEMORY_WC`), and data transfers copy through a 1 MiB bounce buffer mapped once per host session with explicit cache maintenance.
 
-U 盘在 UEFI 里只读。固件补丁让 UsbMassStorageDxe 的 `WriteBlocks` 直接返回
-写保护，并把介质报告为只读，不会向 U 盘发送 WRITE 命令。
+USB flash drives are read-only in UEFI. A firmware patch makes `UsbMassStorageDxe`'s `WriteBlocks` immediately return write-protected and reports the medium as read-only, never sending WRITE commands to the drive.
 
-固件尚未控制 VBUS 或 Type-C 端口模式。原厂 PmicDxe 的 VBUS 开关函数为空；
-实机进入 UEFI 时 Type-C `+0x44` 为 `0x02`（只受电），仅检测 Rd 不能补齐
-普通 OTG 设备的供电和角色切换。Linux 则通过 ADSP 的 PMIC GLINK／UCSI 和
-MCA 控制充电及 OTG 通路，不能直接用旧版 PMIC 的升压寄存器布局替代。
-每次 Type-C 状态变化时，`SUNUEFI_USB_TYPEC_POWER` 记录 DCDC 和 USBIN
-的只读状态，`SUNUEFI_USB_TYPEC_MODE` 记录端口模式。外设供电及枚举仍未验证。
+The firmware does not yet control VBUS or Type-C port mode. Stock PmicDxe's VBUS switch function is a stub; on hardware, Type-C `+0x44` reads `0x02` (sink-only) upon entering UEFI, so detecting Rd alone cannot provide power and role switching for ordinary OTG devices. Linux instead controls charging and OTG paths through ADSP's PMIC GLINK/UCSI and MCA, which cannot simply be replaced with legacy PMIC boost register layouts. On every Type-C state change, `SUNUEFI_USB_TYPEC_POWER` logs read-only DCDC and USBIN status and `SUNUEFI_USB_TYPEC_MODE` logs the port mode. Peripheral power delivery and enumeration remain unverified.
 
-不做 USB PD 协商，也不交换数据角色：带电源的 USB-C 扩展坞给平板供电时，
-平板是受电方和设备，扩展坞上的设备不会出现。同一次启动中翻转插头时，
-在等待输入的过程中连续两次确认新方向，待原连接的传输和 DMA 停稳后再切换
-QMP PHY 高速通道。新方向配置失败时，恢复原通道后允许 USB 2 连接，
-下一次拔插再重试。实际速度以重新枚举后的主机或设备报告为准。
+Neither USB PD negotiation nor data-role swap is performed: when a powered USB-C dock supplies power to the tablet, the tablet is the sink and device, so peripherals on the dock will not appear. When flipping the plug within the same boot, two consecutive readings confirm the new orientation during input waits, and the QMP PHY SuperSpeed lanes switch only after active transfers and DMA from the previous connection have settled. If configuring the new orientation fails, the original lane configuration is restored to allow USB 2 connectivity, retrying on the next unplug/replug. Actual speed is whatever the host or device reports after re-enumeration.
 
-从内部存储启动时，USB 服务在加载引导文件之前退出主机模式。还有文件或驱动占用
-U 盘时，固件返回菜单并提示拔下设备后重试。从 U 盘启动时，主机会话保持到引导程序
-完成文件读取并调用 `ExitBootServices`。程序在交接前返回时，恢复 Type-C 角色检测。
+When booting from internal storage, the USB service exits host mode before loading boot files. If open files or drivers are still using a USB drive, the firmware returns to the menu and prompts the user to unplug the device and retry. When booting from a USB drive, the host session remains active until the bootloader finishes reading files and calls `ExitBootServices`. If the loaded program returns before handover, Type-C role detection resumes.
 
-退出主机模式时，先断开 XhciDxe 及其上层驱动，确认 PCI I/O 层没有剩余映射和分配，
-停止并复位 xHCI，撤销中转区映射，再恢复 DWC3 寄存器。系统交接还会关闭 SMMU、
-PHY 和时钟。无法确认 DMA 已停下时，固件保留资源并拒绝交接。
+When exiting host mode, `XhciDxe` and its upper-layer drivers are disconnected first, the PCI I/O layer is verified to have no remaining mappings or allocations, xHCI is halted and reset, the bounce buffer mapping is revoked, and DWC3 registers are restored. OS handover additionally shuts down the SMMU, PHY, and clocks. If DMA cannot be confirmed stopped, the firmware retains resources and refuses handover.
 
-日志里 `SUNUEFI_USB_TYPEC`、`SUNUEFI_USB_ROLE`、`SUNUEFI_USB_HOST_*` 记录
-检测结果、切换过程和 xHCI 能力寄存器。主机模式下 UEFI Fastboot 不在线，
-拔下 USB 设备、接回电脑后用 `fastboot -s SunUEFI-piano oem ramlog` 取回。
+In the logs, `SUNUEFI_USB_TYPEC`, `SUNUEFI_USB_ROLE`, and `SUNUEFI_USB_HOST_*` record detection results, role transitions, and xHCI capability registers. UEFI Fastboot is offline while in host mode; unplug the USB device, reconnect to a computer, and retrieve logs with `fastboot -s SunUEFI-piano oem ramlog`.
 
-源码位置：
+Source locations:
 
-* `uefi/components/usb-host/PianoUsbTypec.c`：Type-C 状态读取。
-* `uefi/components/usb-host/PianoUsbHost.c`：主机模式寄存器、DMA 和退出。
-* `uefi/core/PianoUsbController.c`：设备与主机角色切换。
-* `uefi/core/PianoUsbHostPci.c`：PCI I/O 层，控制器运行中释放的共享缓冲区保留到 xHCI 停下后再释放。
-* `patches/firmware/mu-basecore/cfb9372/`：U 盘只读。
+* `uefi/components/usb-host/PianoUsbTypec.c`: Type-C status readout.
+* `uefi/components/usb-host/PianoUsbHost.c`: Host-mode registers, DMA, and exit.
+* `uefi/core/PianoUsbController.c`: Device and host role switching.
+* `uefi/core/PianoUsbHostPci.c`: PCI I/O layer; shared buffers freed while the controller is running are retained until xHCI stops.
+* `patches/firmware/mu-basecore/cfb9372/`: Read-only USB flash drives.

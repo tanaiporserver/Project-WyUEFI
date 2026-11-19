@@ -1,49 +1,36 @@
-# Piano 手写笔核心
+# Piano Stylus Core
 
-这里包含笔的 BlueZ 初始化、离线解码工具和手动诊断代码。产品的笔和手指由内核直接上报。
+This directory contains stylus BlueZ initialization, offline decoding tools, and manual diagnostic code. In production, stylus and finger input are reported directly by the kernel.
 
-校准经设备配置包安装到标准固件目录。`pen-control.py` 只执行 BlueZ
-FE11/FE12 初始化；发布构建必须有匹配的内核笔驱动和校准。输入链、校准、
-两笔限制和许可依据见
-[内核输入与许可边界](../../../docs/devel/hardware/pen-protocol.md#内核输入与许可边界)。
+Calibration data is installed to the standard firmware directory via the device configuration package. `pen-control.py` only performs BlueZ FE11/FE12 initialization; release builds require a matching kernel stylus driver and calibration data. For the input pipeline, calibration, limitations between the two stylus models, and licensing rationale, see [Kernel Input and Licensing Boundaries](../../../docs/devel/hardware/pen-protocol.md#kernel-input-and-licensing-boundaries).
 
-Focus Pen Pro 已在新整数内核解码器上完成 120 Hz 压感绘画，物理 evdev 的压力范围为 0..16383，双轴倾角有变化。弱悬停、倾角精度、完整四边和掌压仍需实机对照。普通笔与刷新率的范围见[内核输入说明](../../../docs/devel/hardware/pen-protocol.md#内核输入与许可边界)。轻捏、双击笔身和笔身滑动见[笔身手势](#笔身手势)。
+Focus Pen Pro has completed 120 Hz pressure-sensitive drawing on the new integer kernel decoder, with physical evdev pressure spanning 0..16383 and live dual-axis tilt variation. Weak hover, tilt accuracy, full four-edge behavior, and palm rejection still require on-device verification. For the standard stylus and refresh-rate scope, see [Kernel Input Notes](../../../docs/devel/hardware/pen-protocol.md#kernel-input-and-licensing-boundaries). For squeeze, double-tap, and barrel slide, see [Barrel Gestures](#barrel-gestures).
 
-## 普通 Focus Pen
+## Standard Focus Pen
 
-普通 Xiaomi Focus Pen（M80p，蓝牙 `0022:4d80`）与 Focus Pen Pro（P81c，
-`0022:5081`）共用单个 THP 读取进程。连接后按真实 HID 身份切换扫描模式、
-校准和输入设备：普通笔使用模式 1、压力范围 0..8191，Pro 使用模式 3、
-压力范围 0..16383。切换型号前释放旧工具，重新创建具有正确压力范围的
-标准 tablet-tool；断连与数据超时仍释放接触状态。
+The standard Xiaomi Focus Pen (M80p, Bluetooth `0022:4d80`) and Focus Pen Pro (P81c, `0022:5081`) share a single THP reader process. Upon connection, scan mode, calibration, and input devices are switched according to the actual HID identity: the standard stylus uses mode 1 with a pressure range of 0..8191, while the Pro uses mode 3 with a pressure range of 0..16383. Before switching models, the old tool is released and a standard tablet-tool with the appropriate pressure range is recreated; disconnection and data timeouts still release contact state.
 
-普通笔已确认悬停、定位和压感书写，刷新率限制见[已知问题](../../../docs/user/known-issues.md#触控笔)。
-BOE/CSOT 配置保留同机原厂 vendor1 的坐标差值与倾角校准，不使用 Sheng
-的屏幕映射或校准常数。`piano-pen-offline --vendor 1` 可检查这组参数；
-默认 `--vendor 3` 保持 Pro 的离线接口。
+Hover, positioning, and pressure-sensitive writing have been verified on the standard stylus; see [Known Issues](../../../docs/user/known-issues.md#stylus) for refresh-rate limitations. The BOE/CSOT configurations preserve the coordinate deltas and tilt calibration from this device's stock vendor1 settings without using Sheng's screen mapping or calibration constants. Run `piano-pen-offline --vendor 1` to inspect this parameter set; the default `--vendor 3` keeps the offline interface for the Pro.
 
-普通笔的 Report2 `0x4e`／`0x4b` 分别映射为 `BTN_STYLUS`／`BTN_STYLUS2`，
-仅在笔位于感应范围内上报。内核 HID 修正阻止它们同时作为全局翻页键，
-保留独立焦点键和原始 hidraw 压力数据。普通笔不会收到 Pro 的轻捏、
-振动或无线配置命令。
+Report2 `0x4e` / `0x4b` on the standard stylus map to `BTN_STYLUS` / `BTN_STYLUS2` respectively and are only reported while the stylus is in proximity. The kernel HID fixup prevents them from also acting as global Page Up/Page Down keys while preserving the dedicated Focus button and raw hidraw pressure data. The standard stylus never receives Pro squeeze, vibration, or radio configuration commands.
 
-## 开源实现
+## Open-Source Implementation
 
-`piano-pen-decoder.hpp/.cpp` 派生自 `ianchb/xiaomi-sheng-thp` 固定提交 `34046210932d654a4c0df0121ecc31c008f8148c`，保留 Apache-2.0 许可。`piano-pen-core.h/.cpp` 提供 C 接口，让现有的触控读取进程可以调用它。来源与修改范围见 [OPEN_CORE_ORIGIN.txt](OPEN_CORE_ORIGIN.txt)，完整许可见 [Apache-2.0.txt](Apache-2.0.txt)。
+`piano-pen-decoder.hpp/.cpp` is derived from `ianchb/xiaomi-sheng-thp` at pinned commit `34046210932d654a4c0df0121ecc31c008f8148c`, retaining the Apache-2.0 license. `piano-pen-core.h/.cpp` exposes a C API so the existing touch reader process can call into it. See [OPEN_CORE_ORIGIN.txt](OPEN_CORE_ORIGIN.txt) for provenance and modification scope, and [Apache-2.0.txt](Apache-2.0.txt) for the full license.
 
-核心接收去掉 stream header 和 257 字节 transport 的原始 payload，复用 `piano-pen-frame.c` 的两层原始校验和、几何检查与四分包位图。只有四份主触摸数据齐全才标记完整；type17 不会改成 type29。矩阵经过轴分离、坐标计算、倾角校正与滤波后，返回带有效位的结果。未知压力、坐标或倾角不能补零上报。
+The core takes raw payloads stripped of the stream header and the 257-byte transport wrapper, reusing the two-layer raw checksum, geometry checks, and four-packet bitmap from `piano-pen-frame.c`. A frame is marked complete only when all four main touch packets are present; type17 is never rewritten as type29. After axis separation, coordinate calculation, tilt correction, and filtering on the matrix, the decoder returns results with explicit validity flags. Unknown pressure, coordinates, or tilt must never be zero-filled and reported.
 
-校准从调用者提供的原厂 ini 读取，没有内嵌 Sheng 的位置表或尺寸。Piano 的 40/60 轴从两个 2400 点 mapping 抽取，pitch 按原厂整数公式计算。P81c 的 vendor3 选择默认 `stylus` 参数，不是 `stylus_3` 槽。输出声明为 portrait：X `0..213599`、Y `0..319999`、压力范围按笔型号选择、倾角 ±60；不额外交换坐标，也不除以 report factor10。
+Calibration is loaded from the caller-supplied stock ini file with no embedded Sheng position tables or dimensions. Piano's 40/60 axes are extracted from the two 2400-point mappings, and pitch is computed with the stock integer formula. P81c's vendor3 selects the default `stylus` parameters rather than the `stylus_3` slot. Output is declared in portrait orientation: X `0..213599`, Y `0..319999`, pressure range selected by stylus model, tilt ±60; coordinates are not swapped and are not divided by report factor10.
 
-**Touch 校准必须按触控 LCDid／固件选择，不能按 Display 面板名称选择。** 当前设备触控 LCDid 为1，使用 BOE 触控固件及 BOE ini，即使显示链路标识为 CSOT。两份 ini 的位置表不同，必须分别保留。
+**Touch calibration must be selected by touch LCDid / firmware, not by display panel name.** On the current device, the touch LCDid is 1, which uses BOE touch firmware and the BOE ini even when the display pipeline identifies as CSOT. The two ini files have different position tables and must both be retained.
 
-`piano_pen_core_report5()` 接收15字节 BLE Report5。Report ID 后两个字节组成小端压力，不能用 raw29 metadata 构造替代报告。BLE 时间戳使用 `CLOCK_BOOTTIME`，与 NTP 驱动的 `ktime_get_boottime()` 同源；睡眠后不能混用 `CLOCK_MONOTONIC`。压力有效期由调用者明确给出，不是声称还原原厂的超时参数。
+`piano_pen_core_report5()` accepts 15-byte BLE Report5 packets. The two bytes immediately following the Report ID form the little-endian pressure value; substitute reports must not be synthesized from raw29 metadata. BLE timestamps use `CLOCK_BOOTTIME`, matching `ktime_get_boottime()` in the NTP driver; do not mix with `CLOCK_MONOTONIC` across suspend. The pressure max-age is explicitly supplied by the caller and does not claim to reproduce a stock timeout parameter.
 
-## 离线工具
+## Offline Tool
 
-`piano-pen-offline.cpp` 只读外部 ini 与捕获文件，输出诊断 JSON；没有 FIFO、蓝牙配置或 uinput 操作。
+`piano-pen-offline.cpp` only reads external ini and capture files and emits diagnostic JSON; it performs no FIFO, Bluetooth configuration, or uinput operations.
 
-在仓库根目录编译，输出到 `build/pen-core/`；交叉编译可指定 `CC`、`CXX`、`AR` 和工具链参数：
+Build from the repository root to output under `build/pen-core/`; for cross-compilation, specify `CC`, `CXX`, `AR`, and toolchain flags:
 
 ```sh
 make -C linux/userspace/pen
@@ -51,51 +38,42 @@ build/pen-core/piano-pen-offline --ini ACTUAL.ini --config
 build/pen-core/piano-pen-offline --ini ACTUAL.ini --pressure-max-age-ns N --events ACTUAL.tsv
 ```
 
-事件文件每行使用同一 BOOTTIME 时基：`时间戳 report5|report2|raw29 捕获文件`，或者 `时间戳 reset -`。`report2` 是两字节的笔身手势报告，输出其中的值和手势名称。未知字段输出 `null`。工具已经读取 BOE／CSOT 配置、原厂651个压力报告，以及 Linux 的 type29／Report5 序列。后者得到1177帧有效坐标与倾角，其中896帧同时具有有效压力；没有制作 raw29 测试帧。膜／悬浮专用分支、完整掌压干扰与边缘体验仍需要实机对照。
+Each line in the event file uses the same BOOTTIME clock base: `<timestamp> report5|report2|raw29 <capture-file>`, or `<timestamp> reset -`. `report2` is a two-byte barrel-gesture report, outputting its raw value and gesture name. Unknown fields are emitted as `null`. The tool has been verified against BOE/CSOT configurations, 651 stock pressure reports, and Linux type29/Report5 sequences. The latter yielded 1,177 frames with valid coordinates and tilt, 896 of which also had valid pressure; no synthetic raw29 test frames were constructed. Screen-protector / hover-specific branches, full palm interference, and edge behavior still require on-device verification.
 
-## 对照用的用户态笔输入
+## Userspace Stylus Input for Reference Comparison
 
-`piano-pen-owner.c/.h` 将只读蓝牙 HID 压力和 type29 帧与标准 tablet-tool
-输入连接起来，供开发者在隔离环境中对照解码结果。必须显式提供校准和压力有效期；
-日常书写使用内核路径，勿在实体笔输入运行时另外启动虚拟笔。
+`piano-pen-owner.c/.h` connects read-only Bluetooth HID pressure and type29 frames to a standard tablet-tool input device so developers can compare decoding results in an isolated environment. Calibration and pressure max-age must be supplied explicitly; everyday writing uses the kernel path—do not launch the virtual stylus while physical stylus input is active.
 
 ```sh
 piano-touch-view input --seconds 0 \
   --pen-ini /path/to/ACTUAL.ini --pen-pressure-max-age-ms 100 --pen-input
 ```
 
-100ms是调用者选择的有效期，不能称为原厂参数。可加 `--pen-json` 输出诊断；未知压力不伪造为0，退出、流中断和 epoch改变会释放工具与按键状态。输入保持压力0..16383，横向坐标由 portrait输出转换为 `X=portraitY`、`Y=213599-portraitX`，倾角同步转换。已有实机确认的位置与线宽变化来自这条标准输入路径。
+100 ms is a caller-chosen validity window, not a stock parameter. Add `--pen-json` for diagnostic output; unknown pressure is never faked as 0, and tool and button state are released on exit, stream interruption, or epoch change. Input preserves pressure 0..16383; landscape coordinates are transformed from portrait output as `X=portraitY` and `Y=213599-portraitX`, with tilt transformed accordingly. On-device verified positioning and stroke-width variation came from this standard input path.
 
-该路径不设置笔扫描或显示模式。启动时的校准选择与无线／磁吸状态仍由现有硬件启动逻辑协调，不能仅凭程序编译成功就忽略这些条件。
+This path does not configure stylus scan mode or display mode. Calibration selection at startup and radio/magnetic-dock state are still coordinated by existing hardware bring-up logic; successful compilation alone does not satisfy those prerequisites.
 
-KDE 按 `/devices/virtual/` 路径识别 uinput，所以数位板页面会显示用户空间驱动提醒，
-不会禁用配置。笔通过标准 libinput／tablet-tool 交给 KWin，压力曲线与显示映射仍
-使用桌面设置，不在解算进程另设一套曲线。设备上的压力曲线修改已写入标准
-`kcminputrc` 并可恢复；不改总线类型或伪造硬件路径来隐藏该提醒。
+KDE identifies uinput devices by their `/devices/virtual/` path, so the Drawing Tablet settings page displays a userspace-driver notice without disabling configuration. The stylus is handed to KWin through standard libinput / tablet-tool; pressure curves and display mapping remain managed by desktop settings rather than a separate curve in the decoder process. Pressure-curve adjustments on the device are saved to standard `kcminputrc` and can be reverted; bus type is not altered and hardware paths are not spoofed to hide the notice.
 
-掌压识别在手指解码中完成，新内核的实现见[服务源码地图](../../../docs/devel/linux/services.md)，旧内核与离线诊断使用 [`piano-touch-view-palm-rejection.patch`](../../../tools/patches/piano-touch-view-palm-rejection.patch)。每个触点取峰值周围连通且不低于触摸阈值（默认 200）的格子，达到 70 格时上报为 `MT_TOOL_PALM`，同一片手掌只占一个触点，抬起前不会变回手指，也不按下 `BTN_TOUCH`；libinput 不把它交给应用，手指变成手掌时取消已开始的触摸。70 取自原厂触控配置 `/odm/firmware/piano_nova_boe_thp_config.ini`（CSOT 版本取值相同）的 `palm_area_num_level2`。原厂按同样的 60×40 感应矩阵计数，每格约 16 mm²，70 格约 1140 mm²，相当于直径 38 mm 的圆。原厂同组还有 `palm_neg_area_num_level2=30`（负值格子数）和更大的 `palm_area_num_level1=110`；这里不统计负值格子，只用 70 格；面积统计沿用手指的 200 阈值，没有复现原厂的面积判定。弱信号把手掌分成多个小块时，会漏判为多指。按格子数判断，两指并拢时连成的细长区域仍是两根手指。触点大小按椭圆估算长短轴，以 `ABS_MT_TOUCH_MAJOR`／`ABS_MT_TOUCH_MINOR` 上报，单位是 13／mm（面板 239×163 mm）。校验通过的 type29 笔帧到来时，仍按着的触点以手掌方式抬起，先落下的手不会在笔靠近时变成一次点击。BSP 的 `79-piano-pen-touch-group.rules` 把触屏和笔放进同一个 libinput 设备组，笔在感应范围内时，libinput 自带的触控仲裁忽略笔旁的新触摸。在平板上调整时，用 `evtest` 查看手指和手掌的 `ABS_MT_TOUCH_MAJOR`、`ABS_MT_TOUCH_MINOR` 与 `ABS_MT_TOOL_TYPE`，长短轴相乘再除以 3500 约等于格子数，据此调整掌压面积阈值。
+Palm rejection is performed inside finger decoding; see the [Services Source Map](../../../docs/devel/linux/services.md) for the new-kernel implementation, while older kernels and offline diagnostics use [`piano-touch-view-palm-rejection.patch`](../../../tools/patches/piano-touch-view-palm-rejection.patch). For each contact, the connected cells around the peak at or above the touch threshold (default 200) are counted; once a contact reaches 70 cells, it is reported as `MT_TOOL_PALM`. A single palm region occupies only one slot, never reverts to a finger before lift, and never asserts `BTN_TOUCH`; libinput does not forward it to applications, and an active touch is cancelled if a finger turns into a palm. The threshold 70 comes from `palm_area_num_level2` in the stock touch configuration `/odm/firmware/piano_nova_boe_thp_config.ini` (the CSOT variant uses the same value). Stock firmware counts cells on the same 60×40 sensing matrix, where each cell is about 16 mm² and 70 cells is about 1140 mm² (equivalent to a 38 mm diameter circle). The same stock group also defines `palm_neg_area_num_level2=30` (negative-value cell count) and a larger `palm_area_num_level1=110`; this implementation does not count negative cells and only uses the 70-cell threshold, reusing the finger threshold of 200 rather than reproducing the stock area heuristic. When weak signal splits a palm into multiple small islands, it can be misclassified as multiple fingers. Because classification uses cell count, two fingers pressed together into a narrow elongated region still register as two fingers. Contact size estimates the major and minor axes of an ellipse and reports them via `ABS_MT_TOUCH_MAJOR` / `ABS_MT_TOUCH_MINOR` in units of 13/mm (panel dimensions 239×163 mm). When a checksum-validated type29 stylus frame arrives, any held contacts are lifted as palms so a resting hand does not turn into a tap as the stylus approaches. The BSP's `79-piano-pen-touch-group.rules` places the touchscreen and stylus in the same libinput device group, so libinput's built-in touch arbitration ignores new touches near the stylus while it is in proximity. When tuning on the tablet, inspect `ABS_MT_TOUCH_MAJOR`, `ABS_MT_TOUCH_MINOR`, and `ABS_MT_TOOL_TYPE` for fingers and palms with `evtest`; multiplying the major and minor axes and dividing by 3500 approximates the cell count to guide palm-area threshold tuning.
 
-## 原厂协议进展
+## Stock Protocol Findings
 
-原厂压力 producer 是 `com.android.bluetooth` 的 `bt_main_thread`，通过原生 `libbluetooth_jni.so` 接收 Report5，将每个原始字节零扩展为 int32，调用 `setModeLongValue(0,1088,15,values)`。触控服务随后构造 common7／`0x440` 并直接交给算法；这条路径绕过内核 common queue。Android 的专用分支会跳过普通 UHID 转发，解释了同轮 hidraw 报告数为0；不能据此认定 Linux BlueZ 的路由也相同。
+The stock pressure producer is `bt_main_thread` in `com.android.bluetooth`, which receives Report5 through native `libbluetooth_jni.so`, zero-extends each raw byte to int32, and calls `setModeLongValue(0,1088,15,values)`. The touch service then builds common7 / `0x440` and passes it straight to the algorithm, bypassing the kernel common queue. Android's dedicated branch skips normal UHID forwarding, which explains why hidraw reported 0 packets during the same capture; do not assume Linux BlueZ routes packets the same way.
 
-Android 轻捏已经捕获到 `02 6e`／`02 00` Report2，与 `KEY_F19` 的 DOWN／UP 和 `MSC_SCAN=0007006e` 对应。Report6 是独立姿态数据，不是压力或轻捏。Linux 已接收到相同轻捏 Report2，以及长度21的 Report6 姿态报告，说明蓝牙 HID 通道确实有数据。Report2 同时承载轻捏、双击和笔身滑动，处理方式见[笔身手势](#笔身手势)。Report6 不转成任何输入。
+Squeeze on Android has been captured as Report2 `02 6e` / `02 00`, corresponding to `KEY_F19` DOWN/UP and `MSC_SCAN=0007006e`. Report6 is separate IMU/attitude data, not pressure or squeeze. Linux receives the same squeeze Report2 packets along with 21-byte Report6 attitude reports, confirming that the Bluetooth HID channel is delivering data. Report2 carries squeeze, double-tap, and barrel slide; see [Barrel Gestures](#barrel-gestures) for handling. Report6 is not translated into any input events.
 
-## 原厂无线初始化
+## Stock Radio Initialization
 
-[`pen-control.py`](../../bsp/common/usr/lib/piano/pen-control.py) 使用系统 BlueZ 完成原厂控制序列：读取笔信息、两轮分配 ID并设置参数／频率／电压、发送时间戳和磁吸状态，最后设置轻捏与屏幕状态。每一步等待回应，ID来自笔的回应，主机地址来自当前蓝牙适配器；不内嵌配对密钥或设备地址。
+[`pen-control.py`](../../bsp/common/usr/lib/piano/pen-control.py) uses system BlueZ to execute the stock control sequence: reading stylus info, two rounds of ID assignment and parameter/frequency/voltage configuration, sending the timestamp and magnetic-dock state, and finally configuring squeeze and screen state. Each step awaits a response; IDs come from the stylus response and the host address comes from the active Bluetooth adapter—no pairing keys or device addresses are embedded.
 
-无线参数保存在 [`p81c-radio.json`](../../bsp/common/usr/share/piano/pen/p81c-radio.json)，依据本机 `OS3.0.309.0.WPYCNXM` 的原厂服务发送结果整理，与解算用的 BOE／CSOT ini不同。这个原厂版本的运行时 `TIME_STAMP` 是1745566508，选择普通参数表；不能把屏幕144Hz直接当作笔的频率参数。
+Radio parameters are stored in [`p81c-radio.json`](../../bsp/common/usr/share/piano/pen/p81c-radio.json), derived from what the stock service sends on this device running `OS3.0.309.0.WPYCNXM`, separate from the BOE/CSOT ini files used for decoding. That stock build uses a runtime `TIME_STAMP` of 1745566508 and selects the standard parameter table; the display's 144 Hz refresh rate must not be passed directly as the stylus frequency parameter.
 
-跨系统使用后，笔可能已经忘记 Linux 保留的配对密钥。旧版 BlueZ
-（SteamOS 的 5.79）可能只返回通用连接失败，程序同时监听标准内核蓝牙
-管理接口的认证失败事件。只有失败地址与磁吸充电器识别的笔相符，才清除
-该笔的旧配对并重新配对；不按普通超时清除配对，也不影响其他设备。
-实机已完成认证失败后的自动重新配对与无线初始化，笔接受了三级轻捏震动设置。
+After switching between operating systems, the stylus may have forgotten the pairing key retained by Linux. Older BlueZ versions (such as 5.79 on SteamOS) may return only a generic connection failure, so the daemon also listens for authentication-failure events on the standard kernel Bluetooth management socket. It clears the stale pairing and re-pairs only when the failing address matches the stylus identified by the magnetic charger; ordinary timeouts do not clear pairings and other devices are unaffected. Automatic re-pairing after authentication failure and radio initialization have been verified on hardware, with the stylus accepting level-3 squeeze haptic feedback.
 
-完整初始化已在 Linux 收到全部回应。之前144Hz环境仍没有笔矩阵和压力；随后120Hz冷启动环境已经取得 type29与Report5，并完成标准笔输入绘画。显示／触控扫描协调仍需继续对照，不能据此断言144Hz硬件禁止笔输入。无线初始化工具不读取THP流、不改变显示模式、不生成输入设备，也不作为新的后台服务运行。
+Full initialization has received every expected response on Linux. An earlier 144 Hz environment still produced no stylus matrix or pressure; a subsequent 120 Hz cold-boot environment received both type29 and Report5 and completed standard stylus drawing. Display/touch scan coordination still needs further comparison, so this does not prove that 144 Hz hardware prohibits stylus input. The radio initialization tool does not read the THP stream, change the display mode, create input devices, or run as a new standalone background service.
 
-已安装磁吸草案和活动状态接口的设备，可显式运行：
+On devices with the draft magnetic-dock and activity-state interfaces installed, invoke it explicitly:
 
 ```sh
 sudo /usr/lib/piano/pen-control.py --address YOUR_PEN_ADDRESS \
@@ -103,63 +81,51 @@ sudo /usr/lib/piano/pen-control.py --address YOUR_PEN_ADDRESS \
   --stationary-device /proc/nvt_thp_pen_stationary
 ```
 
-运行需要 Python GI与BlueZ，并且笔已经连接。磁吸和静止接口为可选：缺少磁吸开关时，不发送猜测的磁吸状态，但仍初始化笔的无线与轻捏反馈参数。临时对照期间使用草案模块；默认发布内核尚未包含这两个接口。
+Running it requires Python GI, BlueZ, and an already-connected stylus. The magnetic-dock and stationary interfaces are optional: when the magnetic switch is absent, no guessed dock state is sent, while the stylus radio and squeeze-feedback parameters are still initialized. Draft modules are used during ad-hoc comparison; the default release kernel does not yet include these two interfaces.
 
-## HID 报告与桌面行为
+## HID Reports and Desktop Behavior
 
-P81C 的 137 字节 HID Report Map 将私有 Report5 数据放在键盘 Usage Page 的 `0x57`，Linux 通用 HID 会将它映射为 `KEY_KPPLUS`。压力包的四个 16 位字段和六个 8 位字段不是十个加号按键。默认内核的[输入补丁](../../../patches/linux/7.3/0003-input-wireless.patch)扩展现有 `hid-xiaomi`，按 Bluetooth VID/PID、Report ID 和字段布局跳过这条错误键盘映射，保留原始 hidraw 数据给笔输入程序。它不替换整份描述符，不全局屏蔽 `+`，也不影响键盘保护套。
+The P81C's 137-byte HID Report Map places private Report5 data under Keyboard Usage Page `0x57`, which generic Linux HID maps to `KEY_KPPLUS`. The pressure packet's four 16-bit fields and six 8-bit fields are not ten plus keys. The default kernel's [input patch](../../../patches/linux/7.3/0003-input-wireless.patch) extends the existing `hid-xiaomi` driver to skip this bogus keyboard mapping based on Bluetooth VID/PID, Report ID, and field layout while keeping raw hidraw data available to the stylus input handler. It does not replace the full descriptor, globally block `+`, or affect the keyboard cover.
 
-`piano-touch.service` 通过 BlueZ 初始化并跟随连接，不读取 THP 或生成键鼠输入。
-笔连接并且 `ServicesResolved` 就绪后发送配置，断连后等待重新连接。磁吸状态来自
-标准开关；缺少该开关时仍可完成 BLE 初始化。
+`piano-touch.service` initializes over BlueZ and tracks connections without reading THP or generating keyboard/mouse input. It sends configuration once the stylus is connected and `ServicesResolved` becomes ready, and waits for reconnection after disconnect. Magnetic-dock state is read from the standard switch; BLE initialization still completes when the switch is absent.
 
-断连时，伴随进程从 BlueZ 枚举已开启的适配器，尝试连接已配对、受信任的 Focus Pen 或 Pro。SC96231 内核驱动从磁吸链路提供笔的准确地址后，程序优先使用该地址；BlueZ 报告认证失败时，只清除这支笔失效的配对并通过标准 Agent1／Device1 接口重新配对。配对代理不成为系统默认代理，不接受其他设备。原厂 Android 与 Linux 交替使用后，已完成自动删除旧配对、重新配对、恢复 GATT 控制服务和初始化。
+While disconnected, the companion process enumerates powered BlueZ adapters and attempts to connect to a paired, trusted Focus Pen or Pro. Once the SC96231 kernel driver supplies the exact stylus address over the magnetic link, the daemon prioritizes that address; if BlueZ reports an authentication failure, it clears only that stylus's stale pairing and re-pairs via the standard Agent1/Device1 interfaces. The pairing agent never registers as the system default agent and rejects other devices. Automatic stale-pairing removal, re-pairing, GATT control service recovery, and initialization have been verified after alternating between stock Android and Linux.
 
-扫描每次持续 30 秒，随后间隔 90 秒；磁吸状态变化提前重试，设备连接和服务出现由 D-Bus 事件立即处理。程序不会开启用户关闭的蓝牙，也不会终止其他程序的扫描。磁吸供电、地址和电量读取由内核 `sc96231` 与 MCA regulator 完成，不依赖用户空间 GPIO 或 I²C 命令。
+Discovery scans run for 30 seconds followed by a 90-second interval; magnetic-dock state changes trigger an early retry, and device connections and service appearances are handled immediately via D-Bus signals. The daemon never enables Bluetooth if the user turned it off, nor does it stop scans started by other processes. Magnetic-dock power delivery, address retrieval, and battery readout are handled by the kernel `sc96231` driver and MCA regulator without userspace GPIO or I²C commands.
 
-压力 HID 设备通过 inotify 创建通知立即接入，保留一秒扫描作为通知不可用时的回退。初始化开始、无线参数完成、压力设备打开和第一份 Report5 均记录单调时钟，便于定位“悬停先出现、稍后才能点击”。命令回应时间仍取决于笔的连接参数与磁吸状态，不能据此承诺全部连接延迟已消除。
+Pressure HID devices are attached immediately via inotify creation events, keeping a 1-second poll as a fallback when inotify is unavailable. Monotonic timestamps are logged at initialization start, radio-parameter completion, pressure-device open, and first Report5 receipt to help diagnose cases where hover works before clicking becomes active. Command response latency still depends on the stylus connection parameters and magnetic-dock state, so total connection latency is not guaranteed to be zero.
 
-笔尖位置、压力和悬停仍通过标准 tablet-tool 接口输出。光标外观由桌面和应用决定，不能靠把笔伪装成触摸屏解决。`piano-pen-canvas` 在自己的画布内对笔事件使用隐藏光标，鼠标／触控板事件恢复普通光标，画布之外不改桌面全局设置。其他应用的笔光标遵循各自设置。
+Tip position, pressure, and hover remain exported through the standard tablet-tool interface. Cursor appearance is controlled by the desktop environment and applications, not by disguising the stylus as a touchscreen. `piano-pen-canvas` hides the cursor for stylus events inside its own canvas and restores the normal cursor on mouse/touchpad events without altering global desktop settings outside the canvas. Stylus cursors in other applications follow their own settings.
 
-## 笔身手势
+## Barrel Gestures
 
-轻捏、双击笔身和笔身上下滑动由笔自己识别，都经 Report2 发出：两个字节 `02 value`，新值替换旧值，每个手势以 `02 00` 结束。笔固件只发送下表中的值，固件与原厂系统中的依据见[笔身手势协议](../../../docs/devel/hardware/pen-protocol.md#笔身手势)。
+Squeeze, barrel double-tap, and barrel swipe up/down are recognized by the stylus itself and sent over Report2 as two bytes `02 value`, where each new value replaces the previous one and every gesture ends with `02 00`. The stylus firmware only sends the values listed below; see the [Barrel Gestures Protocol](../../../docs/devel/hardware/pen-protocol.md#barrel-gestures) for evidence from firmware and stock Android.
 
-| Report2 | 手势 | Linux 输出 | 原厂行为 |
+| Report2 | Gesture | Linux Output | Stock Behavior |
 | --- | --- | --- | --- |
-| `02 6e` … `02 00` | 轻捏，按住期间保持 | tablet-tool 节点：短按是笔尖位置的一次点击，按住 600 ms 以上是 `BTN_STYLUS` | 默认在笔的位置打开快捷面板 |
-| `02 58`、`02 00` | 双击笔身 | tablet-tool 节点的 `BTN_STYLUS2` 按下、抬起 | 交给原厂创作、笔记等支持笔身手势的应用 |
-| `02 61`、`02 00` | 上滑 | 笔键盘节点的 `KEY_PAGEUP` | 阅读与办公应用收到 Page Up，短视频应用切到上一条 |
-| `02 5b`、`02 00` | 下滑 | 笔键盘节点的 `KEY_PAGEDOWN` | 阅读与办公应用收到 Page Down，短视频应用切到下一条 |
+| `02 6e` … `02 00` | Squeeze (held while pressed) | tablet-tool node: short press clicks at the tip position; holding > 600 ms asserts `BTN_STYLUS` | Opens the quick menu at the stylus position by default |
+| `02 58`, `02 00` | Barrel double-tap | `BTN_STYLUS2` press and release on the tablet-tool node | Delivered to stock drawing, note-taking, and other apps supporting barrel gestures |
+| `02 61`, `02 00` | Swipe up | `KEY_PAGEUP` on the stylus keyboard node | Reading and office apps receive Page Up; short-video apps jump to the previous clip |
+| `02 5b`, `02 00` | Swipe down | `KEY_PAGEDOWN` on the stylus keyboard node | Reading and office apps receive Page Down; short-video apps jump to the next clip |
 
-滑动由内核 `hid-xiaomi` 的 [`0029` 补丁](../../../patches/linux/7.3/0029-hid-xiaomi-p81c-body-gestures.patch)直接映射为 Page Up／Page Down，发给当前窗口，与键盘上的翻页键相同；它不依赖这里的程序，其他发行版使用同一内核也能得到。通用 HID 原本会把双击和滑动变成小键盘回车、`9` 和 `3`，补丁去掉了这些映射，也不再发送轻捏的 F19。
+Swipes are mapped directly to Page Up / Page Down by the kernel `hid-xiaomi` [`0029` patch](../../../patches/linux/7.3/0029-hid-xiaomi-p81c-body-gestures.patch) and delivered to the focused window just like keyboard paging keys; this does not depend on the tools here and works on other distributions running the same kernel. Generic HID would otherwise map double-tap and swipes to keypad Enter, `9`, and `3`; the patch removes those mappings and stops emitting F19 on squeeze.
 
-内核在 HID／触控驱动内融合轻捏和双击，只在笔处于感应范围内时上报工具按钮，
-抬出范围、断连或数据超时后释放。轻捏短按点击，长按 600 ms 触发 `BTN_STYLUS`。
-不支持笔的应用通常把 `BTN_STYLUS` 当作中键、
-`BTN_STYLUS2` 当作右键；绘图应用可将其绑定到橡皮擦或取色工具。
-双击或滑动打断轻捏时，轻捏结束但不算一次点击。
+The kernel merges squeeze and double-tap inside the HID/touch drivers and reports tool buttons only while the stylus is in proximity, releasing them on out-of-proximity, disconnect, or data timeout. A short squeeze clicks, while holding for 600 ms triggers `BTN_STYLUS`. Applications without dedicated stylus support typically treat `BTN_STYLUS` as middle-click and `BTN_STYLUS2` as right-click; drawing applications can bind them to tools such as eraser or color picker. If a double-tap or swipe interrupts a squeeze, the squeeze ends without registering a click.
 
-笔尖受压时笔不发送手势，停笔片刻后才会识别。双击和滑动的开关保存在笔里，`pen-control.py` 在每次连接时应用配置中的 `double_tap` 与 `slide`；改法见[笔协议说明](../../../docs/devel/hardware/pen-protocol.md)。原厂在双击和滑动时会让平板另发一次振动命令，Linux 不发送，因此这两个手势没有笔端振动。
+The stylus suppresses gestures while pressure is applied to the tip and resumes recognition shortly after pausing. Enable toggles for double-tap and swipe are stored on the stylus, and `pen-control.py` applies `double_tap` and `slide` from the configuration on every connection; see [Stylus Protocol Notes](../../../docs/devel/hardware/pen-protocol.md) for how to change them. Stock Android sends an extra vibration command from the tablet on double-tap and swipe; Linux does not send it, so those two gestures produce no vibration on the stylus.
 
-双击与滑动的报告格式来自笔固件和原厂系统，尚无平板上的实测记录。在平板上检查时，`sudo libinput debug-events --show-keycodes` 应在笔的键盘设备上显示 `KEY_PAGEUP`／`KEY_PAGEDOWN`，在 `Piano Focus Pen Pro` 上显示 `BTN_STYLUS2`；`sudo evtest` 可分别查看两个设备。只看原始 Report2 的命令见协议页。
+The report formats for double-tap and swipe are derived from the stylus firmware and stock system and have not yet been verified with on-tablet test logs. When verifying on the tablet, `sudo libinput debug-events --show-keycodes` should show `KEY_PAGEUP` / `KEY_PAGEDOWN` on the stylus keyboard device and `BTN_STYLUS2` on `Piano Focus Pen Pro`; `sudo evtest` can inspect both devices individually. See the protocol page for commands to inspect raw Report2 packets.
 
-## 构建与校准打包入口
+## Build and Calibration Packaging Entry Points
 
-`tools/build_release_helpers.py` 与 `tools/build_piano_runtime_helpers.py` 共用 `build_pen_core()`，从源码副本调用这里的 Makefile。运行文件包含 `/usr/bin/piano-pen-offline`、`/usr/bin/piano-pen-canvas`，以及 Apache-2.0 许可和来源说明。编译清单记录 C／C++ 源码、头文件、Makefile、工具链和目标静态 C++ 库；离线工具是 ARM64 静态程序，构建不需要原厂 ini。蓝牙程序和服务由 `piano-device-config` 安装，不进入这份诊断工具构建。
+`tools/build_release_helpers.py` and `tools/build_piano_runtime_helpers.py` share `build_pen_core()`, invoking this directory's Makefile from a source copy. Runtime artifacts include `/usr/bin/piano-pen-offline`, `/usr/bin/piano-pen-canvas`, the Apache-2.0 license, and provenance notes. The build manifest records the C/C++ sources, headers, Makefile, toolchain, and target static C++ library; the offline tool is a statically linked ARM64 binary and does not require stock ini files at build time. The Bluetooth daemon and service are installed by `piano-device-config` and are not part of this diagnostic-tool build.
 
-`libpiano-pen-core.a` 包含 C 编译的 owner／frame 与 C++ 编译的 core／decoder，已经静态链接到正常构建的 `piano-touch-view`，库文件本身不安装进系统。触控源码和入口包装保留 C ABI，最终链接使用同一目标 sysroot 的 C++ 链接器。rootfs 通过现有 `runtime.stage()` 安装程序并保留补丁、owner 和核心源码的来源记录。
+`libpiano-pen-core.a` bundles the C-compiled owner/frame units and C++-compiled core/decoder units and is statically linked into regular builds of `piano-touch-view`; the static archive itself is not installed to the system. The touch sources and entry wrappers keep a C ABI, and final linking uses the C++ linker from the same target sysroot. The rootfs installs the binaries via the existing `runtime.stage()` while preserving provenance records for the patches, owner, and core sources.
 
-原生 ELF 不放进 `Architecture: all` 配置包。BSP 维护带来源与 SHA256 的数字校准，
-在 `/usr/lib/firmware/novatek/piano-{boe,csot}-pen.ini` 建立指向已有数据的相对
-链接，供标准固件加载器使用。运行时构建器检查匹配内核、notifier 导出符号及
-目标根目录中的校准；新内核缺任何一项就报错。两条构建入口将内核与校准摘要
-写入相同的清单，安装时再次校验。
-`--sysroot` 只选择编译环境；校准默认在该目录检查，跨发行版构建通过
-`--firmware-root` 指定已从同一 BSP 安装校准的目标 rootfs。
+Native ELF binaries are never placed in `Architecture: all` configuration packages. The BSP maintains numeric calibration data with provenance and SHA256 digests, creating relative symlinks at `/usr/lib/firmware/novatek/piano-{boe,csot}-pen.ini` pointing to existing data for the standard firmware loader. The runtime builder checks for a matching kernel, exported notifier symbols, and calibration files in the target root; on new kernels, missing any of these raises an error. Both build entry points write kernel and calibration digests to the same manifest, which is re-verified at install time. `--sysroot` selects only the build environment; calibration is checked there by default, while cross-distribution builds pass `--firmware-root` to point at a target rootfs that already has calibration installed from the same BSP.
 
-## 保留的原厂算法 worker
+## Retained Stock Algorithm Worker
 
-`prepare_alg_gnu.py` 与 `piano-pen-worker.c` 仍用于对照调用者提供的固定原厂 ALG，代码与原库指令不混在一起。其配置／初始化已经隔离执行成功。`--decode29` 重建 HAL 帧前缀；`--prepare29` 另需1032字节 common7／`0x440`，调用压力与矩阵准备接口。它不输出坐标，也不能把缺失 SC 状态的前缀直接交给完整 `parse_data_package` 或 slot7。
+`prepare_alg_gnu.py` and `piano-pen-worker.c` remain available for comparing against a caller-supplied pinned stock ALG without mixing code with stock library instructions. Their configuration and initialization have been executed successfully in isolation. `--decode29` reconstructs the HAL frame prefix; `--prepare29` additionally requires a 1032-byte common7 / `0x440` buffer and invokes the pressure and matrix preparation interfaces. It does not emit coordinates, nor can a prefix lacking SC state be passed directly to the full `parse_data_package` or slot7.
 
-主实现路线是上述独立开源核心，不需要分发原厂 ALG/HAL。完整字段、来源与剩余硬件问题见 [手写笔协议开发记录](../../../docs/devel/hardware/pen-protocol.md)。
+The primary implementation path is the standalone open-source core described above, which does not require distributing stock ALG/HAL binaries. For complete field layouts, provenance, and remaining hardware issues, see [Stylus Protocol Development Notes](../../../docs/devel/hardware/pen-protocol.md).

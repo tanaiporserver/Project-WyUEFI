@@ -1,74 +1,74 @@
-# 项目状态
+# Project Status
 
-本页按功能列出当前状态，包含维护者与贡献者完成的适配。首页的表格是它的简化版；各项的技术细节在 `docs/devel/` 的对应页面中。
+This page lists the current status by feature, including bring-up work completed by maintainers and contributors. The table on the home page is a simplified summary; technical details for each item are in the corresponding pages under `docs/devel/`.
 
-## 测试设备
+## Test Device
 
-维护者使用小米平板 8 Pro（`piano`，型号 `25091RP04C`，SM8750P，16 GB 内存），原厂系统为 Android 17／HyperOS 4（`OS4.0.5.0.XPYCNXM`），Bootloader 已解锁。Linux 按原厂引导程序传来的标识选择 BOE／CSOT 面板，见[面板选择](devel/hardware/panel-selection.md)。合体 BOOT 支持国行和国际版 Piano。
+The maintainer tests on a Xiaomi Pad 8 Pro (`piano`, model `25091RP04C`, SM8750P, 16 GB RAM) running stock Android 17 / HyperOS 4 (`OS4.0.5.0.XPYCNXM`) with an unlocked bootloader. Linux selects the BOE or CSOT panel based on the identifier passed by the stock bootloader; see [Panel Selection](devel/hardware/panel-selection.md). Combined BOOT supports both CN variant and Global variant Piano.
 
-这台机器划出了 `sunuefi_esp`（512 MiB FAT32，4 KiB 扇区，与 UFS 逻辑扇区一致）和 `sunuefi_root`（256 GiB ext4），已运行 Debian 13 / GNOME、Nyarch / GNOME 和 SteamOS 0.6.0。默认内核为 `7.3.3-piano-sunuefi-cachy`，从合体 BOOT 经 UEFI 启动，支持来回切换 Android 与 Linux。四个发行版共用内核、BSP 和原厂 DSP 固件；root 镜像首次启动会自动扩展到分区容量。
+This device is partitioned with `sunuefi_esp` (512 MiB FAT32, 4 KiB sectors matching the UFS logical sector size) and `sunuefi_root` (256 GiB ext4), and has run Debian 13 / GNOME, Nyarch / GNOME, and SteamOS 0.6.0. The default kernel is `7.3.3-piano-sunuefi-cachy`, booted from Combined BOOT via UEFI, supporting switching back and forth between Android and Linux. All four distributions share the same kernel, BSP, and stock DSP firmware; the root image automatically expands to fill the partition on first boot.
 
-## 启动与安装
+## Boot & Installation
 
-| 项目 | 状态 |
+| Item | Status |
 | --- | --- |
-| 合体 BOOT：Android 直通 | 可用。普通开机进入原厂 Android |
-| 合体 BOOT：保存 Linux 路线并重启 | 可用。路线在 Android 侧保存，重启后经 UEFI 进入内部磁盘 Linux |
-| 标准 EFI 启动 | 产品使用标准 UKI，由驻留核心加载，未安装 systemd-boot；通用启动项、BootNext 与任意分区发现尚未实现，见[开发清单](devel/release.md#标准-uefi-启动与存储) |
-| Linux 返回 Android | 可用。`piano-next-boot android --reboot`，见[Linux 下次启动入口](devel/boot/linux-next-boot.md) |
-| 原厂 Recovery | 保留。`reboot recovery` 进入 Mi Recovery。持久 Linux 偏好与 Recovery 同时存在时的行为还没有在设备上试过 |
-| 独立 Recovery 安装 | 不可用。ABL 对“Recovery 自带内核”的分支不加载 vendor_boot 和 pvmfw，启动停在 Fastboot；合体 BOOT 走普通启动路径，绕开了这个问题。安装器拒绝 `--recovery` |
-| 启动路线管理 | 模块保存 Android／UEFI 路线，普通开机沿用；前置选择页显示约三秒，音量键可临时改选，电源键确认。临时选择不改保存的路线 |
-| 合体 BOOT 在线安装 | 模块从当前 BOOT 提取 Android 内核并安装或更新同一份 UEFI 核心；HyperOS 更新后可点击“重新安装引导”。已有核心升级已在设备上完成，所有 OTA 场景尚未覆盖。见[原生 BOOT 重打包](devel/boot/combined-boot.md) |
-| 一键安装器 | 更新已有的 `sunuefi_esp` 与 `sunuefi_root`；UEFI 只读原厂蓝牙地址并通过标准设备树属性传给 Linux，不依赖安装阶段配置。新平板首次分区返回 `NEW_INSTALL_NOT_READY` |
-| Android Root 模块 | 提供可安装 ZIP，包含启动选择、引导检查、重新安装和独立存储管理。SukiSU 安装和 WebUI 可用；删除后的空间归还已通过早期离线 F2FS 扩容完成。新设备首次分区、root 容量调整仍需实机验证，见[引导助手](devel/boot/android-module.md) |
+| Combined BOOT: Android passthrough | Working. Normal boot enters stock Android |
+| Combined BOOT: Save Linux route & reboot | Working. Route is saved on the Android side; after rebooting, boots Linux from internal storage via UEFI |
+| Standard EFI boot | Production builds use standard UKIs loaded by the resident core without systemd-boot installed; generic boot entries, BootNext, and arbitrary partition discovery are not yet implemented. See [Development Checklist](devel/release.md#standard-uefi-boot-and-storage) |
+| Switch back to Android from Linux | Working. Run `piano-next-boot android --reboot`; see [Linux Next-Boot Entry](devel/boot/linux-next-boot.md) |
+| Stock Recovery | Preserved. `reboot recovery` enters Mi Recovery. Behavior when a persistent Linux preference and Recovery are both active has not yet been tested on device |
+| Standalone Recovery installation | Not working. ABL does not load `vendor_boot` or `pvmfw` on the "Recovery with built-in kernel" branch, stalling boot in Fastboot; Combined BOOT takes the normal boot path to bypass this. The installer rejects `--recovery` |
+| Boot route management | Module saves the Android/UEFI route and reuses it on normal boots; the pre-boot selector screen displays for ~3 seconds, where volume keys temporarily override the choice and the power key confirms. Temporary selections do not overwrite the saved route |
+| Combined BOOT online installation | Module extracts the stock Android kernel from the current BOOT partition and installs or updates the same UEFI core; after a HyperOS update, tap "Reinstall Boot". Existing core upgrades have been verified on device, though not all OTA scenarios are covered yet. See [Stock BOOT Repacking](devel/boot/combined-boot.md) |
+| One-click installer | Updates existing `sunuefi_esp` and `sunuefi_root`; UEFI reads the stock Bluetooth address read-only and passes it to Linux via a standard Device Tree property, independent of installation-time configuration. First-time partitioning on a new tablet returns `NEW_INSTALL_NOT_READY` |
+| Android Root module | Provided as an installable ZIP with boot selection, boot verification, reinstallation, and dedicated storage management. SukiSU installation and WebUI work; space reclamation after deletion works via early offline F2FS expansion. First-time partitioning on new devices and root size adjustment still need on-device verification. See [Boot Helper](devel/boot/android-module.md) |
 
 ## UEFI
 
-| 项目 | 状态 |
+| Item | Status |
 | --- | --- |
-| UEFI 存储 | 提供标准 BlockIO 读写和 ESP 文件访问。扫描只读取 GPT，不自动写盘；明确的刷写请求只操作指定目标 |
-| 交接与退出 | 启动 Linux 前清理 USB、UFS、时钟与 SMMU，无法确认安全时拒绝交接 |
-| 显示 | 合体 BOOT 进入 UEFI 后可显示菜单；延后原厂 ClockDxe 的 CESTA/media 和 DCD 启动初始化，保留继承的显示状态。见[显示定位](devel/boot/uefi-display.md) |
-| 菜单 / Setup / Shell | SimpleInit 菜单、TianoCore 中文设置页面与四倍字号可用；音量键移动、电源键确认、双音量键返回可用，见[设置页面](devel/boot/uefi-console.md)；Shell 尚未完成实机验证 |
-| Y700 四代触屏 | NT36536 的单指菜单点击、滑动可用，见[驱动说明](devel/hardware/y700-touch.md) |
-| Piano 触屏、键盘、USB Host | 固件设置中的官方键盘输入已确认，触屏能读取数据帧。点按、触控板及 USB 主机还需设备操作确认。菜单保留音量键与电源键 |
-| UEFI Fastboot | 在菜单、固件设置和 Shell 中运行，提供日志、截图、读取、暂存、刷写和重启。已在启动分区验证 raw／sparse 写入与读回。命令见 [UEFI Fastboot](user/fastboot.md) |
-| EFI 变量 | 普通非易失变量保存在 `persist/sunuefi/` 的双副本文件中；退出 Boot Services 后不再写 UFS，见[变量保存](devel/boot/uefi-console.md#persist-中的-uefi-变量) |
-| 标准 EFI 启动 | 按 UEFI 启动顺序选择系统。已通过 systemd-boot 启动 SteamOS 的独立内核、initramfs 和设备树，也能启动旧 UKI |
+| UEFI storage | Provides standard BlockIO read/write and ESP file access. Scanning reads GPT only and never auto-writes to disk; explicit flashing requests operate only on the specified target |
+| Handoff & exit | Cleans up USB, UFS, clocks, and SMMU before booting Linux; refuses handoff if safety cannot be confirmed |
+| Display | Displays menu after entering UEFI from Combined BOOT; defers stock ClockDxe CESTA/media and DCD startup initialization to preserve the inherited display state. See [Display Bring-up](devel/boot/uefi-display.md) |
+| Menu / Setup / Shell | SimpleInit menu, TianoCore Chinese Setup UI, and 4x font scaling work; volume keys navigate, power key confirms, and both volume keys return. See [Setup UI](devel/boot/uefi-console.md); Shell has not yet been verified on device |
+| Y700 Gen 4 touchscreen | Single-finger menu tap and swipe work on NT36536; see [Driver Notes](devel/hardware/y700-touch.md) |
+| Piano touchscreen, keyboard, USB Host | Official keyboard input in firmware Setup is confirmed, and the touchscreen can read data frames. Touch tap, touchpad, and USB Host still need on-device interaction verification. Menu retains volume and power key controls |
+| UEFI Fastboot | Runs in the menu, firmware Setup, and Shell; supports logs, screenshots, read, staging, flashing, and reboot. Raw/sparse writes and read-back verified on boot partitions. See [UEFI Fastboot](user/fastboot.md) for commands |
+| EFI variables | Regular non-volatile variables are stored in dual-copy files under `persist/sunuefi/`; no UFS writes occur after ExitBootServices. See [Variable Storage](devel/boot/uefi-console.md#uefi-variables-in-persist) |
+| Standard EFI boot | Selects OS by UEFI boot order. Verified booting SteamOS's standalone kernel, initramfs, and Device Tree via systemd-boot, as well as legacy UKIs |
 
-## Linux 与硬件
+## Linux & Hardware
 
-| 项目 | 状态 | 已知问题 |
+| Item | Status | Known Issues |
 | --- | --- | --- |
-| 显示 | 3200×2136，默认 120 Hz，低分辨率缩放、144 Hz、KDE HDR／广色域切换、十位输出、夜灯、标准 Gamma／Degamma及熄屏恢复 | 12-bit／FRC 和色深选择尚未提供，见[显示位深](devel/hardware/display-depth.md) |
-| GPU | Adreno 加速的 GNOME | 部分 GTK 窗口连续缩放约 30 次/秒画面提交，需继续区分客户端处理和帧回调等待；见[窗口缩放](devel/hardware/window-resize.md) |
-| 触屏 | 内核直接上报标准多点触控，点按、拖动、长按与手势可用，约 144 Hz | 360 Hz 未实现 |
-| 键盘 / 触控板 | 打字、触控板、背光和睡眠恢复可用，背光走 UPower / GNOME | — |
-| 触控笔 | Focus Pen Pro 在 120 Hz 下通过内核 evdev 完成定位与压感绘画，GNOME 原生数位板页识别物理 SPI 设备；保留磁吸、笔电量、充满停电和自动重新配对 | 两种笔、手势和掌压的覆盖范围见[笔协议](devel/hardware/pen-protocol.md)与[已知问题](user/known-issues.md#触控笔) |
-| Wi-Fi | 可用 | 新系统需自行保存网络连接 |
-| 蓝牙 | 可用，使用 p81 板级 NVM，已修复连接距离过短；启动时自动读取本机原厂地址 | 原厂地址缺失时提供稳定硬件标识派生方案，见[蓝牙配置](devel/hardware/bluetooth.md) |
-| Linux USB 3 | 标准 Type-C 方向和角色切换、5 Gbit/s USB 调试网络 | 首次连接时序继续核对，见[USB Type-C](devel/linux/kernel.md#usb-type-c) |
-| 外接存储 | U 盘、移动硬盘、读卡器可用，FAT32／exFAT／NTFS 读写 | — |
-| 扬声器 | 四路播放、音量调节和睡眠恢复，沿用原厂功放增益 235 | — |
-| 麦克风 | 录音、原生单声道 ALSA / PipeWire 输入及睡眠恢复，硬件增益 +40 dB | — |
-| 相机 | 前后预览、录像、自动曝光／对焦／白平衡及首帧恢复，CAMSS/TFE 硬件 ISP | 实现见[相机与闪光灯](devel/hardware/camera-flash.md)，手动接口见[相机控制](devel/hardware/camera-controls.md) |
-| 相机隐私灯 | 摄像头工作时实体绿色指示灯亮起，随视频流和前后摄像头切换启停 | — |
-| 闪光灯 | 两路标准 LED 接受手电筒开关请求，关闭后读回零，无故障标志 | 实际发光和曝光同步还没有确认，见[实现说明](devel/hardware/camera-flash.md) |
-| 传感器 | 自动旋转、光线、距离、罗盘及标准 SensorProxy 接口 | 实现见[传感器](devel/hardware/sensors.md) |
-| 自动亮度 | 桌面联动可用，GNOME 策略沿用原厂 lux 阈值与延迟，传感器数据不做修改 | 见[自动亮度](devel/hardware/auto-brightness.md) |
-| 夜灯 / 色温 | GNOME 夜灯可用，自动生成内置屏幕的颜色配置 | 通用 sRGB 配置，不是原厂校准 |
-| 电源 | 双电池、PD 与小米快充、拓展坞充电和 OTG、UPower、合盖恢复、挂起及 RTC／电源键唤醒；2 分钟熄屏，电池 5 分钟、外接电源 10 分钟自动挂起 | 不启用磁盘休眠。见[电源键](devel/hardware/power-button.md) |
-| GNOME 电源模式 | 节能／平衡／性能三档可用，默认平衡，由 TuneD 与 tuned-ppd 提供 | 档位调整 CPU／GPU 上限，不改变待机功耗，见[电源模式](devel/hardware/power-profiles.md) |
-| 视频编解码 | ✅ | Iris 硬件加速与 V4L2 编解码可用，提供适配的 FFmpeg 软件包 |
-| SteamOS / Proton / FEX | ✅ | 游戏模式和桌面模式正常运行，ARM64 Proton 与 FEX 支持良好（个别游戏需自身参数，与项目本身无关） |
-| 指纹 | 旧传输路径完成 Linux 独立录入、保存与认证；自包含 Linux TEE 路径完成初始化及 fprintd 枚举 | 新路径还缺录入、重开模板及匹配／不匹配复测，不沿用旧路径结果；见[指纹实现](devel/hardware/led-ir-fingerprint.md#侧指纹) |
-| 红外 / RGB 灯 | 红外通过标准 LIRC 一次发送 1 秒报文；RGB 提供标准 LED 接口 | 红外载波、包络与距离未测量；RGB 发光位置未确认 |
-| 默认桌面 | 中文界面、拼音输入法、Chromium 浏览器，GNOME 动画开启 | — |
-| Windows / WinPE | 目标 | 未启动 |
+| Display | 3200×2136, 120 Hz default, lower-resolution scaling, 144 Hz, KDE HDR / wide color gamut toggle, 10-bit output, Night Light, standard Gamma/Degamma, and screen-off resume | 12-bit/FRC and color depth selection not yet provided; see [Display Color Depth](devel/hardware/display-depth.md) |
+| GPU | Adreno-accelerated GNOME | Continuous resizing of some GTK windows commits ~30 frames/s; still distinguishing client-side processing from frame callback waits. See [Window Resize](devel/hardware/window-resize.md) |
+| Touchscreen | Kernel reports standard multitouch directly; tap, drag, long press, and gestures work at ~144 Hz | 360 Hz not implemented |
+| Keyboard / Touchpad | Typing, touchpad, backlight, and sleep resume work; backlight integrates with UPower / GNOME | — |
+| Stylus | Focus Pen Pro positioning and pressure-sensitive drawing via kernel evdev at 120 Hz; GNOME native Graphics Tablet panel recognizes the physical SPI device; preserves magnetic attachment, battery level, charge stop when full, and auto re-pairing | Coverage for both styluses, gestures, and palm rejection: see [Stylus Protocol](devel/hardware/pen-protocol.md) and [Known Issues](user/known-issues.md#stylus) |
+| Wi-Fi | Working | Fresh installations must save their own network connections |
+| Bluetooth | Working with `p81` board-level NVM; fixed short connection range; automatically reads the device's stock address at boot | Provides a stable hardware-ID-derived fallback when the stock address is missing; see [Bluetooth Configuration](devel/hardware/bluetooth.md) |
+| Linux USB 3 | Standard Type-C orientation and role switching, 5 Gbit/s USB debug networking | Continuing to verify initial connection timing; see [USB Type-C](devel/linux/kernel.md#usb-type-c) |
+| External storage | USB flash drives, external HDDs, and card readers work; FAT32 / exFAT / NTFS read/write | — |
+| Speakers | Quad-channel playback, volume control, and sleep resume; preserves stock amp gain 235 | — |
+| Microphone | Recording, native mono ALSA / PipeWire input, and sleep resume; hardware gain +40 dB | — |
+| Camera | Front/rear preview, video recording, AE/AF/AWB, and first-frame recovery via CAMSS/TFE hardware ISP | Implementation in [Camera & Flash](devel/hardware/camera-flash.md); manual controls in [Camera Controls](devel/hardware/camera-controls.md) |
+| Camera privacy LED | Physical green indicator lights up while camera is active, toggling with video stream and front/rear camera switching | — |
+| Flash | Dual standard LEDs accept torch on/off requests, read back zero when off, with no fault flags | Actual light output and exposure synchronization not yet confirmed; see [Implementation Notes](devel/hardware/camera-flash.md) |
+| Sensors | Auto-rotation, ambient light, proximity, compass, and standard SensorProxy interface | Implementation in [Sensors](devel/hardware/sensors.md) |
+| Auto-brightness | Works with desktop integration; GNOME policy follows stock lux thresholds and delays without modifying sensor data | See [Auto-Brightness](devel/hardware/auto-brightness.md) |
+| Night Light / Color temperature | GNOME Night Light works; auto-generates an ICC profile for the built-in display | Generic sRGB profile, not stock factory calibration |
+| Power | Dual batteries, PD and Xiaomi fast charging, hub charging and OTG, UPower, lid-close resume, suspend, and RTC/power-key wake; 2 min screen blank, auto-suspend after 5 min on battery / 10 min on AC | Disk hibernate disabled. See [Power Button](devel/hardware/power-button.md) |
+| GNOME power profiles | Power Saver / Balanced / Performance profiles work (Balanced default), provided by TuneD and `tuned-ppd` | Profiles adjust CPU/GPU ceilings and do not change idle power draw; see [Power Profiles](devel/hardware/power-profiles.md) |
+| Video codecs | ✅ | Iris hardware acceleration and V4L2 encode/decode work; adapted FFmpeg packages provided |
+| SteamOS / Proton / FEX | ✅ | Game Mode and Desktop Mode work normally; ARM64 Proton and FEX work well (some individual games need their own launch options, unrelated to this project) |
+| Fingerprint | Legacy transport path completed standalone Linux enrollment, storage, and authentication; self-contained Linux TEE path completed initialization and `fprintd` enumeration | New path still needs enrollment, template reload, and match/mismatch re-verification (legacy results are not carried over); see [Fingerprint Implementation](devel/hardware/led-ir-fingerprint.md#side-fingerprint-sensor) |
+| IR / RGB LED | IR sends a 1-second packet in a single transmission via standard LIRC; RGB exposes a standard LED interface | IR carrier, envelope, and range unmeasured; RGB LED physical location unconfirmed |
+| Default desktop | Chinese UI, Pinyin input method, Chromium browser, GNOME animations enabled | — |
+| Windows / WinPE | Goal | Not yet booted |
 
-### 其它发行版
+### Other Distributions
 
-CI 提供 Debian / GNOME、Debian / KDE、Nyarch / GNOME 和 SteamOS，生成模块、ESP、各发行版 root 稀疏镜像、临时启动 UEFI 及日志。Debian / GNOME、Nyarch / GNOME 和 SteamOS 已在设备上运行；Debian / KDE 的完整实机体验仍需验证。各发行版使用同一套内核和 BSP。
+CI builds Debian / GNOME, Debian / KDE, Nyarch / GNOME, and SteamOS, producing the module, ESP, sparse root images for each distribution, temporary-boot UEFI, and logs. Debian / GNOME, Nyarch / GNOME, and SteamOS have been run on device; full on-device experience for Debian / KDE still needs verification. All distributions share the same kernel and BSP.
 
-120 Hz 的默认选择由内核面板驱动补丁提供，并在 `config/release.json` 中记录；不是登录桌面后才切换刷新率。BOE／CSOT 仍按设备标识选择，不固定面板供应商，也不移除其他显示模式。挂起通过标准 systemd／logind 接口启用，GNOME 按上述空闲时间触发。休眠、混合睡眠和先挂起后休眠保持关闭。
+The 120 Hz default is provided by a kernel panel driver patch and recorded in `config/release.json`, rather than switching refresh rates only after desktop login. BOE/CSOT panels are still selected by device identifier without hardcoding the vendor or removing other display modes. Suspend is enabled through standard systemd/logind interfaces, triggered by GNOME according to the idle timeouts above. Hibernate, hybrid-sleep, and suspend-then-hibernate remain disabled.

@@ -1,43 +1,28 @@
-# 在触控进程中接入笔
+# Integrating Stylus Support in the Touch Process
 
-`piano-pen-owner.c` 由现有 `piano-touch-view` 的同一 poll 循环调用。
-它不打开 THP FIFO，只读取匹配 Bluetooth VID `0x22`、PID `0x5081` 的
-hidraw。 15 字节 Report5 按读取时的 `CLOCK_BOOTTIME` 时间进入 core；
-NTP1 使用内核的同源时间，去除 257 字节传输头后把原始 type29 交给
-`piano-pen-frame` 的双校验和 core。断开、流 epoch 和进程退出会释放输入状态。
+`piano-pen-owner.c` is driven by the same poll loop as the existing `piano-touch-view`.
+It does not open the THP FIFO; instead, it only reads the `hidraw` device matching Bluetooth VID `0x22` and PID `0x5081`. The 15-byte Report5 enters the core stamped with `CLOCK_BOOTTIME` at read time; NTP1 uses the kernel's same clock source, strips the 257-byte transport header, and feeds the raw type29 payload into `piano-pen-frame`'s dual-checksum validation and the core. Disconnection, stream epoch changes, and process exit release the input state.
 
-默认不启用笔。实机草案用法是在现有 `input` 命令及手指参数后追加：
+Stylus support is disabled by default. Draft on-device usage appends the following flags after the existing `input` command and finger arguments:
 
 ```sh
 --pen-ini ACTUAL.ini --pen-pressure-max-age-ms 100 --pen-input
 ```
 
-多支同型号设备同时存在时，使用 `--pen-hidraw /dev/hidrawN` 选定笔。
-`--pen-json` 可输出已解码的原生 portrait 数值；未知字段为 null。
-owner 不负责蓝牙连接、原厂初始化或修改显示／扫描状态；这些由现有 touch 服务中的 BlueZ 伴随进程处理。
+When multiple devices of the same model are present, select the stylus explicitly with `--pen-hidraw /dev/hidrawN`.
+`--pen-json` outputs decoded native portrait values, with unknown fields set to `null`.
+The owner does not manage Bluetooth connections, stock initialization, or display/scan state changes; those are handled by the BlueZ companion process in the existing touch service.
 
-笔通过独立的标准 tablet-tool uinput 设备上报。landscape 坐标为
-`X=portraitY`、`Y=213599-portraitX`；倾角为
-`tiltX=portraitTiltY`、`tiltY=-portraitTiltX`。
-面板 239×163 mm 对应 X/Y 分辨率 1339/1310 native units/mm。
-`BTN_TOUCH` 是每个 SYN 帧的第一项。 Report2 的 `02 6e`／`02 00`
-作为 `BTN_STYLUS` 按下／松开，在工具进入范围时才上报；释放工具也
-释放该按钮。HID 的 P81C 专用映射同时去掉重复的 F19 键盘输出。
-未知报告不会生成笔身滑动或字符快捷键。
+The stylus reports through a dedicated standard tablet-tool `uinput` device. Landscape coordinates are mapped as `X=portraitY` and `Y=213599-portraitX`; tilt values are mapped as `tiltX=portraitTiltY` and `tiltY=-portraitTiltX`.
+The 239×163 mm panel corresponds to X/Y resolutions of 1339/1310 native units/mm.
+`BTN_TOUCH` is the first event in every SYN frame. Report2 `02 6e`/`02 00` maps to `BTN_STYLUS` press/release and is reported only while the tool is in proximity; releasing the tool also releases this button. The dedicated HID P81C mapping also suppresses duplicate F19 keyboard output.
+Unknown reports do not generate barrel-swipe events or character shortcuts.
 
-有效坐标表示进入范围；新鲜的压力大于零表示接触，零压力表示
-悬停。缺失或过期压力会按显式时间策略释放接触，不补造零压力或未知倾角。
-有效原始帧但 solver 不再给坐标时退出范围。100 ms 是使用的调用者策略，
-并非原厂超时参数。无有效帧超过同一期限也释放工具状态。数值或校验失败
-仅计数，不生成替代坐标。
+Valid coordinates indicate proximity entry; fresh pressure greater than zero indicates contact, while zero pressure indicates hover. Missing or stale pressure releases contact according to the explicit timeout policy without fabricating zero pressure or unknown tilt values.
+When a valid raw frame is received but the solver no longer yields coordinates, the tool leaves proximity. The 100 ms limit is a caller-side policy rather than a stock timeout parameter. Receiving no valid frames beyond the same threshold also releases tool state. Value or checksum failures are only counted and never produce fallback coordinates.
 
-Type29 只有一个手指矩阵 quarter，不能直接送入 type3 的连续手指矩阵解码。
-当前接入跳过这条路径，并在有效 type29 到来时释放旧的手指跟踪状态。
-同时使用笔和手指所需的完整 quarter 桥接仍需实现。
+Type29 contains only a single finger-matrix quarter and cannot be fed directly into type3's contiguous finger-matrix decoder.
+The current integration skips that path and releases stale finger tracking state whenever a valid type29 frame arrives.
+Full quarter bridging required for simultaneous stylus and finger input still needs to be implemented.
 
-构建时将 `piano-touch-view` 派生副本应用
-`tools/patches/piano-touch-view-pen-owner.patch`，顺序在 observability 和
-raw-capture 补丁之后。C 源码包括 touch-view、owner、frame；C++20 源码包括
-core、decoder。最后使用同一 ARM64 GNU sysroot 的 C++ linker 静态链接，
-不要使用主机 x86 的默认 ld。现有 Makefile 的 archive 已包含 owner C 对象；
-touch-view 对象可与该 archive 及 `-lm` 通过 `clang++`／交叉 g++ 链接。
+For building, apply `tools/patches/piano-touch-view-pen-owner.patch` to the derived copy of `piano-touch-view` after the observability and raw-capture patches. C sources include touch-view, owner, and frame; C++20 sources include core and decoder. Link statically with the C++ linker from the same ARM64 GNU sysroot rather than the host x86 default `ld`. The existing Makefile archive already includes the owner C object; the touch-view object can be linked against that archive and `-lm` using `clang++` or cross `g++`.

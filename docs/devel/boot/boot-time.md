@@ -1,67 +1,31 @@
-# Piano Linux 启动时间
+# Piano Linux Boot Time
 
-2026-10-12，修正中文默认语言影响 FAT 挂载的问题后，从 UEFI 菜单选择
-Linux 成功进入 GNOME。运行内核 `7.2.9-piano-gnome-gd33a42990baf`，
-`systemd-analyze time` 显示 **1.917 秒 kernel + 37.140 秒 userspace = 39.057 秒**，
-`graphical.target` 在用户空间开始后的 37.137 秒达到，GDM 服务正常运行。
-该数字不含开机选择器与 UEFI，也不是全新 root 首次启动的结果。
-这次没有对各项历史优化分别做耗时对照，不能把全部提速归因于 FAT 修正。
+On 2026-10-12, after fixing the issue where the default Chinese locale affected FAT mounting, selecting Linux from the UEFI menu booted cleanly into GNOME. Running kernel `7.2.9-piano-gnome-gd33a42990baf`, `systemd-analyze time` reported **1.917s kernel + 37.140s userspace = 39.057s**, with `graphical.target` reached 37.137s after userspace started and the GDM service running normally. This figure excludes the boot selector and UEFI, and is not a fresh root first boot. Individual historical optimizations were not benchmarked separately in this run, so the entire speedup cannot be attributed to the FAT fix alone.
 
-2026-10-09 全新 Debian / GNOME root 的首次启动，内核
-`7.2.9-piano-gnome-g60fd202096bf`，测得 **37.730 秒 kernel + 68.332 秒
-userspace = 106.062 秒**。系统直接从 UFS ext4 启动，没有解压完整 root
-归档。中文、Chromium 和默认动画均已在这次首次桌面中使用。
+On 2026-10-09, the first boot of a fresh Debian / GNOME root with kernel `7.2.9-piano-gnome-g60fd202096bf` measured **37.730s kernel + 68.332s userspace = 106.062s**. The system booted directly from UFS ext4 without extracting a full root archive. Chinese locale, Chromium, and default animations were all active in this first desktop session.
 
-这次四组 SPMI 警告及堆栈的内核时间跨度合计约 9.18 秒，长堆栈
-逐行输出到高分辨率 framebuffer 时，每行间隔约 35–55 毫秒。默认构建
-已把控制台等级改为 `loglevel=4`：屏幕保留错误和更严重的信息，普通
-警告与信息仍可从 dmesg / journal 读取。SPMI 失败本身并未因此修好，
-这项变化的提速需要下一版启动对比确认；ramoops 的 console 镜像也会
-受控制台等级影响。
+In that boot, four groups of SPMI warnings and stack traces spanned roughly 9.18s of kernel time; printing long stack traces line by line to the high-resolution framebuffer took about 35–55 ms per line. Default builds now set the console level to `loglevel=4`: errors and higher-severity messages still appear on screen, while ordinary warnings and informational messages remain available in dmesg / journal. This does not fix the underlying SPMI failures, and the resulting speedup must be confirmed by comparing against the next build's boot; the `ramoops` console mirror is also affected by the console log level.
 
-首次传感器配置导入约 13.17 秒，后续启动已有配置时会跳过复制。
-显示服务约 14.63 秒，并被通用系统初始化延后到内核时间约 81 秒开始；
-还需要分别优化设备准备和服务依赖，不能把这些重叠时间直接相加。
+First-boot sensor configuration import took about 13.17s; subsequent boots skip copying once the configuration exists. The display service took about 14.63s and was delayed by general system initialization until roughly 81s of kernel time; device readiness and service dependencies still need to be optimized separately, and these overlapping durations cannot simply be added together.
 
-2026-10-08 同机正常启动，`7.2.9-piano-gnome-g45bba6e91e6c` 到
-`7.2.9-piano-gnome-ga8c9650eb320` 加 CPUCP builtin 后，
-`systemd-analyze` 总时间由 **127.098 秒降至 106.091 秒**。两次均使用
-UFS ext4 根分区，initramfs 不解压 root tar。
+On 2026-10-08, across normal boots on the same device from `7.2.9-piano-gnome-g45bba6e91e6c` to `7.2.9-piano-gnome-ga8c9650eb320` with CPUCP built in, total `systemd-analyze` time dropped from **127.098s to 106.091s**. Both boots used the UFS ext4 root partition without extracting a root tar in initramfs.
 
-| 时间 | 45b | a8 + CPUCP builtin |
+| Metric | 45b | a8 + CPUCP built-in |
 | --- | ---: | ---: |
-| kernel，包含 initramfs | 52.486 s | 45.667 s |
+| kernel, including initramfs | 52.486 s | 45.667 s |
 | userspace | 74.611 s | 60.423 s |
-| 总时间 | 127.098 s | 106.091 s |
-| `basic.target`，PID1 之后 | 48.395 s | 35.155 s |
-| `piano-display.service` 自身 | 15.796 s | 14.802 s |
+| Total time | 127.098 s | 106.091 s |
+| `basic.target`, after PID 1 | 48.395 s | 35.155 s |
+| `piano-display.service` itself | 15.796 s | 14.802 s |
 
-CPUCP 是 SM8750 SCMI mailbox 的供应驱动。默认构建现在合入
-`linux/configs/piano-cpucp-early.config` 的 `CONFIG_QCOM_CPUCP_MBOX=y`，
-使其在 `core_initcall` 注册；SCMI 协议、mailbox transport 和 cpufreq 也为
-builtin。磁盘 initramfs 的模块依赖处理同时接受 module 与 builtin。
+CPUCP is the provider driver for the SM8750 SCMI mailbox. Default builds now merge `CONFIG_QCOM_CPUCP_MBOX=y` from `linux/configs/piano-cpucp-early.config` so it registers at `core_initcall`; the SCMI protocol, mailbox transport, and cpufreq are also built in. Disk initramfs module dependency handling accepts both loadable modules and built-in drivers.
 
-a8 的原始 journal 字段确认 SCMI bus 在 **1.405523 秒**注册，协议在
-**15.649120 秒**成功通信，早于 PID1 的 45.667 秒。之前文本中的
-54.500442/54.521800 秒是 journal 的 `__MONOTONIC_TIMESTAMP`，即 journald
-接收这些 kmsg 的时间；内核时间保存在 `_SOURCE_BOOTTIME_TIMESTAMP`
-及兼容的 `_SOURCE_MONOTONIC_TIMESTAMP`。不能据 `journalctl -o short-monotonic`
-的接收时间推断 builtin 驱动仍在 PID1 之后才 ready。systemd v257 的
-[kmsg 输入源码](https://github.com/systemd/systemd/blob/v257.9/src/journal/journald-kmsg.c#L236-L244)
-保留两个 source 字段，
-[显示源码](https://github.com/systemd/systemd/blob/v257.9/src/shared/logs-show.c#L452-L485)
-因 BOOTTIME 与 MONOTONIC 的区别选择 journal entry 的时间。
+Raw journal fields from `a8` confirm that the SCMI bus registered at **1.405523s** and the protocol communicated successfully at **15.649120s**, well before PID 1 at 45.667s. The `54.500442`/`54.521800`s figures in earlier notes were the journal's `__MONOTONIC_TIMESTAMP`, i.e., when `journald` received those kmsg records; kernel timestamps are stored in `_SOURCE_BOOTTIME_TIMESTAMP` and the compatible `_SOURCE_MONOTONIC_TIMESTAMP`. Do not infer from `journalctl -o short-monotonic` receive timestamps that a built-in driver became ready only after PID 1. In systemd v257, the [kmsg ingestion source](https://github.com/systemd/systemd/blob/v257.9/src/journal/journald-kmsg.c#L236-L244) preserves both source fields, while the [log display source](https://github.com/systemd/systemd/blob/v257.9/src/shared/logs-show.c#L452-L485) selects the journal entry's timestamp due to the difference between `BOOTTIME` and `MONOTONIC`.
 
-这次总时间缩短 21.007 秒，同时包含 a8 的其它内核改动，不是单独切换 CPUCP
-的对照。没有采样早期 CPU 频率，也没有完整的 45b 首阶段日志，不能把
-全部耗时或改善归给一项。45b 显示服务没有消耗 150 秒 DSI 等待；
-`dev-sda36.device` 的 28.823 秒是后续 udev/systemd 就绪时间，不能当作
-UFS 根分区发现耗时。后续定位应使用原始 source 时间，并保留必需的驱动初始化。
+The 21.007s total reduction also includes other kernel changes in `a8`, not an isolated A/B comparison of toggling CPUCP alone. Early CPU frequencies were not sampled and complete first-stage logs for `45b` are unavailable, so neither the full boot cost nor the entire improvement can be attributed to a single factor. In `45b`, the display service did not spend 150s waiting on DSI; the 28.823s on `dev-sda36.device` reflects later udev/systemd readiness time and must not be mistaken for UFS root partition discovery time. Future profiling should use raw source timestamps while keeping required driver initialization intact.
 
-私人原始记录位于 `内部记录目录 的
-`a8-cold-state.txt`、`a8-scmi-source-times.json`；45b 时间线及这次更正位于
-`内部记录目录
+Private raw logs are stored in the internal records directory (`a8-cold-state.txt`, `a8-scmi-source-times.json`); the `45b` timeline and this correction are also stored in the internal records directory.
 
-完整SMMU/UFS路由及上下文转储默认关闭。需要定位DMA时，在内核命令行显式加入 `piano.boot-dma-log=1`，initramfs仍会在原来的加载阶段只读转储；这不是新的启动profile，也不改变DMA映射、模块加载失败处理或根分区选择。恢复a8的日志显示该转储发生在早期启动并逐行写入console/kmsg；下一份默认initramfs不再为正常启动执行这些诊断读取。尚未测量这项变化带来的耗时差，不把全部慢启动归因于它。
+Full SMMU/UFS routing and context dumps are disabled by default. When diagnosing DMA issues, explicitly pass `piano.boot-dma-log=1` on the kernel command line, and initramfs will still perform the read-only dump at the original loading stage; this is not a new boot profile and does not alter DMA mappings, module load failure handling, or root partition selection. Logs recovered from `a8` showed that this dump occurred during early boot and wrote line by line to console/kmsg; the next default initramfs no longer executes these diagnostic reads during normal boot. The timing difference from this change has not yet been measured, and slow boots should not be attributed solely to it.
 
-内核编译现改用固定的构建专用checkout，准备器仍保留每版不可变snapshot。之前每次更换带tree摘要的源码绝对路径，会改变所有对象的编译命令和依赖时间，即使只改少量文件也近乎整树重编。固定checkout在持有源/O/产物锁后按正常Git切换提交，manifest记录commit/tree及两份源码路径；runtime headers_install也使用同一compiler路径，不修改Kbuild的.cmd或依赖检查。现有已完成bde3 runtime身份仍可读取且完全一致；首次迁入新路径仍需整编，后续增量耗时尚未实测。
+Kernel builds now use a fixed build-dedicated checkout, while the preparer still retains an immutable snapshot for each revision. Previously, changing the absolute source path containing the tree digest on every build altered the compile command and dependency timestamps of every object, causing near full-tree rebuilds even for small edits. The fixed checkout switches commits via normal Git operations while holding the source/`O`/artifact locks, and the manifest records the commit/tree along with both source paths; runtime `headers_install` also uses the same compiler path without modifying Kbuild `.cmd` files or dependency checks. Existing completed `bde3` runtime identities remain readable and completely identical; the initial migration to the new path still requires a full build, and subsequent incremental build times have not yet been measured.

@@ -1,16 +1,7 @@
-# Linux 补丁系列
+# Linux Patch Series
 
-[发布配置](../../config/release.json)选择产品内核和补丁系列。当前系列的
-[`series.json`](7.3/series.json)记录公共源码基线、补丁顺序、提交及父链、
-每份补丁的 SHA256 和应用后的源码树。
+The [release configuration](../../config/release.json) selects the product kernel and patch series. The current series' [`series.json`](7.3/series.json) records the public source baseline, patch order, commits and parent chain, SHA256 of each patch, and the resulting source tree after application.
 
-按 Linux 主线习惯拆分补丁，每一项只做一个可独立审查的变更。
-修正尚未进入上游的新增代码时，修改引入它的补丁，再重放之后的补丁并更新清单；
-修复上游已有的问题则另作独立补丁。迁移内核版本时，删掉已由上游替代的补丁，
-同一个修复不按发行版复制。
+Split patches following Linux mainline conventions so each entry makes a single independently reviewable change. When fixing newly added code that has not yet gone upstream, amend the patch that introduced it, replay subsequent patches, and update the manifest; fixes for existing upstream issues belong in separate patches. When migrating kernel versions, drop patches already superseded by upstream and do not duplicate the same fix per distribution.
 
-在[构建环境](../../docs/devel/building.md)中运行 `./build.sh linux`。构建入口
-从固定的公开来源准备基线，在 `build/kernel-worktrees/` 中按顺序应用补丁并核对
-每步源码树。不需要在远端取原补丁的提交对象。应用记录写入
-`build/release/source-manifest.json`，其中记录供后续构建使用的实际提交。
-重跑会核对已有工作树；应用失败会保留该工作树，供排查。
+Run `./build.sh linux` in the [build environment](../../docs/devel/building.md). The build entry point prepares the baseline from a pinned public source, applies patches sequentially in `build/kernel-worktrees/`, and verifies the source tree at each step. Fetching original patch commit objects from a remote is not required. The application record is written to `build/release/source-manifest.json`, recording the actual commits used for subsequent builds. Re-running verifies the existing worktree; if application fails, the worktree is preserved for troubleshooting.

@@ -1,24 +1,35 @@
 # Piano Goodix — HyperOS 4
 
-`gfpia.elf` 是从官方完整 OTA `OS4.0.6.0.XPYCNXM` 的 `modem` 分区里
-`gfpia.mdt` 和 `gfpia.b00..b08` 按 ELF 程序头的文件偏移还原的完整签名
-程序，保持各段原始字节，未修改代码或签名。
+`gfpia.elf` is the complete signed executable reconstructed from `gfpia.mdt`
+and `gfpia.b00..b08` on the `modem` partition of the official full OTA
+`OS4.0.6.0.XPYCNXM` according to the ELF program header file offsets. Original
+segment bytes are preserved unmodified, with no changes to code or signatures.
 
-它由高通 QTEE 加载，用于 Goodix 指纹传感器通信。
-文件不含用户录入的指纹模板、解锁密码或运行时认证数据。
-来源、大小和 SHA256 记录在 `manifest.json`。
+It is loaded by Qualcomm QTEE to communicate with the Goodix fingerprint
+sensor. The file contains no enrolled user fingerprint templates, unlock
+credentials, or runtime authentication data. Provenance, size, and SHA256 are
+recorded in `manifest.json`.
 
-三个 `piano-goodix-*.bin` 是同一版本 OTA 的 `/odm/lib64/libgf_hal.so` 中的
-通用模型参数：CAP S／T 防伪模型，以及芯片类型 49 使用的 Dubai U4 模型。
-按 ELF 导出符号的实际文件偏移提取，保留原始字节；提取符号定义在
-`tools/firmware/import_ota.py`。清单记录输出大小和 SHA256，未记录来源库摘要和逐符号偏移。
-这些文件不含任何用户数据，也不包含原厂库的可执行代码。
+The three `piano-goodix-*.bin` files are generic model parameters extracted
+from `/odm/lib64/libgf_hal.so` in the same OTA version: the CAP S/T
+anti-spoofing models and the Dubai U4 model used by chip type 49. They are
+extracted using the actual file offsets of the exported ELF symbols with
+original bytes preserved; the extracted symbol definitions live in
+`tools/firmware/import_ota.py`. `manifest.json` records output sizes and SHA256
+hashes, without recording the source library digest or per-symbol offsets.
+These files contain no user data and no executable code from the stock library.
 
-原生客户端按设备返回的标志选择 S／T 模型，以命令 1113 分块传入安全程序，
-随后执行初始化完成命令。通信与供电由标准 QTEE、UIO 接口提供，
-不要求 Android 指纹服务在 Linux 中运行。
+The native client selects the S or T model based on the flag returned by the
+device, uploads it in chunks to the trusted application via command 1113, and
+then issues the initialization-complete command. Communication and power
+control are handled through standard QTEE and UIO interfaces, with no need to
+run Android fingerprint services on Linux.
 
-这些签名程序和模型参数不是本项目原创源码；本项目及公开 QTEE 客户端的源码许可
-不授予它们的再分发权。现有清单和 OTA 来源只证明文件身份，目录中没有适用于
-`gfpia.elf` 和三份模型的再分发授权文本或链接。发布时需要另行核对权利人的授权范围；
-这里不据此断言可以分发或必然禁止分发。
+This signed binary and these model parameters are not original source code of
+this project; neither this project's license nor the public QTEE client's
+source license grants redistribution rights for them. The existing manifest and
+OTA provenance establish file identity only—this directory contains no
+redistribution license text or links covering `gfpia.elf` or the three models.
+Rights-holder licensing terms must be verified separately before distribution;
+nothing here asserts that redistribution is permitted or necessarily
+prohibited.

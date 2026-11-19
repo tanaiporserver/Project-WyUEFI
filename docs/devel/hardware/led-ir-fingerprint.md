@@ -1,234 +1,104 @@
-# Piano 的 RGB 灯、红外与侧指纹
+# Piano RGB LED, IR Blaster, and Side Fingerprint Sensor
 
-本页记录 RGB 通道、SPI 红外和 Goodix 侧指纹的原厂接口与 Linux 实现。指纹通过原生 QTEE 客户端和带本地后端的 libfprint 接入 fprintd、GNOME 与 PAM，支持 Linux 独立录入、持久保存和认证；传感器控制与用户空间后端仍是项目适配，不是安装发行版原版 libfprint 就能使用。
+This page documents the stock interfaces and Linux implementations for the RGB channels, SPI IR blaster, and Goodix side fingerprint sensor. The fingerprint sensor integrates with fprintd, GNOME, and PAM through a native QTEE client and a locally built libfprint backend, supporting independent Linux enrollment, persistent storage, and authentication; sensor control and the userspace backend remain project-specific adaptations rather than working out of the box with a stock distribution libfprint package.
 
-| 功能 | 原厂接口 | 当前 Linux 缺口 |
+| Feature | Stock Interface | Current Linux Gap |
 | --- | --- | --- |
-| RGB 通道 | PM8550 SID1 上的 `qcom,pm8350c-pwm`，SPMI LPG，通道 1/2/3 为 red/green/blue | 标准驱动和产品DT已有；补齐SDAM/LPG模块加载后已出现三个标准LED接口。发光、可见位置和用途尚待确认。 |
-| 红外发射 | SE15 / SPI `0x89c000` / CS0，`ir-spi`，Android 原始波形字符设备 | 标准 LIRC 可一次发送 1 秒报文；载波、包络和距离没有测量。 |
-| 侧指纹 | Goodix，GPIO 控制与高通 QTEE 安全服务 | 已接入 fprintd、GNOME 锁屏与 PAM；依赖本地 UIO 驱动、libfprint 后端和静态客户端。 |
+| RGB channels | `qcom,pm8350c-pwm` on PM8550 SID1, SPMI LPG, channels 1/2/3 for red/green/blue | Standard driver and production DT are present; three standard LED interfaces appear once the SDAM/LPG modules are loaded. Light emission, physical visibility/location, and purpose remain unconfirmed. |
+| IR blaster | SE15 / SPI `0x89c000` / CS0, `ir-spi`, Android raw waveform character device | Standard LIRC can transmit a 1-second frame in a single transfer; carrier frequency, optical envelope, and range have not been measured. |
+| Side fingerprint sensor | Goodix, GPIO control and Qualcomm QTEE secure service | Integrated with fprintd, GNOME lock screen, and PAM; depends on a local UIO driver, libfprint backend, and static client. |
 
-## RGB 通道
+## RGB Channels
 
-原厂 `/soc/qcom,spmi@c42d000/qcom,pm8550@1/led-controller` 绑定 `qcom-spmi-lpg` / `leds_qcom_lpg`。三个子节点原样指定 `reg=1/2/3`、红/绿/蓝颜色和相应 label。其两个 nvmem 依赖是 **PMK8550 SID0 的 `sdam@8400`、`sdam@8500`**，用于 LPG 通道状态和图案数据，不是相机闪光灯的 `0xee00` 外设。
+The stock `/soc/qcom,spmi@c42d000/qcom,pm8550@1/led-controller` node binds to `qcom-spmi-lpg` / `leds_qcom_lpg`. Its three child nodes specify `reg=1/2/3`, red/green/blue colors, and the corresponding labels verbatim. Its two nvmem dependencies are **`sdam@8400` and `sdam@8500` on PMK8550 SID0**, used for LPG channel state and pattern data—not the `0xee00` camera flash peripheral.
 
-当前产品 `board.dtb` 已保留上述节点和依赖，节点未写 status，按 DT 规则启用。当前配置已有 `LEDS_QCOM_LPG=m`、`LEDS_CLASS_MULTICOLOR=m`、`NVMEM_SPMI_SDAM=m`；[上游 LPG 驱动](https://github.com/torvalds/linux/blob/master/drivers/leds/rgb/leds-qcom-lpg.c)已经支持该 compatible、通道和标准 LED class，[绑定说明](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/leds/leds-qcom-lpg.yaml)也接受这些字段。**无需再加一个重复 RGB overlay。**
+The current production `board.dtb` preserves these nodes and dependencies; the node omits `status`, so it is enabled by Device Tree rules. The current kernel config enables `LEDS_QCOM_LPG=m`, `LEDS_CLASS_MULTICOLOR=m`, and `NVMEM_SPMI_SDAM=m`. The [upstream LPG driver](https://github.com/torvalds/linux/blob/master/drivers/leds/rgb/leds-qcom-lpg.c) already supports this compatible string, channels, and the standard LED class, and the [binding documentation](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/leds/leds-qcom-lpg.yaml) accepts these properties. **Do not add another duplicate RGB overlay.**
 
-Linux起初没有RGB，LPG的deferred-probe原因为未取得LPG chan SDAM。正确提供者模块名为 `nvmem_qcom_spmi_sdam`；加载它及 `leds_qcom_lpg` 后，platform device绑定 `qcom-spmi-lpg`，出现 `red`、`green`、`blue`，初始brightness为0、max_brightness为255。没有读取SDAM内容或写brightness，尚不证明可见灯的位置或用途。
+RGB was initially missing on Linux because LPG hit deferred probe when it failed to obtain the LPG channel SDAM. The correct provider module is `nvmem_qcom_spmi_sdam`; loading it alongside `leds_qcom_lpg` binds the platform device to `qcom-spmi-lpg` and exposes `red`, `green`, and `blue` with initial `brightness` 0 and `max_brightness` 255. Neither reading SDAM contents nor writing `brightness` has been performed, so the physical location or purpose of any visible LED is not yet confirmed.
 
-LPG 和 SDAM 通过设备树的硬件别名自动加载，不需要模块列表或守护进程。`sdam@7000/sm1510_present@5d` cell 的无效位切片由打包器移除，保留原始字节，详见[启动设备树处理](../linux/kernel.md#piano-启动配置)。LPG 使用的是 8400/8500 两个 SDAM。
+LPG and SDAM autoload via Device Tree hardware modalias without needing a module list or daemon. The invalid bit slice on the `sdam@7000/sm1510_present@5d` cell is stripped by the packager while preserving the raw byte; see [Boot Device Tree Handling](../linux/kernel.md#piano-boot-configuration). LPG uses the 8400 and 8500 SDAMs.
 
-## 红外发射
+## IR Blaster
 
-Piano 的发送器通过标准 rc-core/LIRC 接口接收脉冲与间隔，设备为
-`/dev/lircN`。无需 Android HAL 或常驻服务，`ir-ctl` 由 v4l-utils 提供。
-发送时可用 `ir-ctl -d /dev/lirc0 --carrier=38000 --send=remote.txt`，文件使用
-ir-ctl 的 `pulse` / `space` 文本格式。实机通过 `/dev/lircN` 发送了 292 ms
-和 1 秒报文，SPI 跟踪确认各自只有一次完整传输。超出标准 LIRC 范围的输入
-仍由内核拒绝，随后短报文可以正常发送。载波、光学包络和遥控距离需要接收端测量。
+Piano's transmitter accepts pulse and space durations through the standard rc-core/LIRC interface on `/dev/lircN`. No Android HAL or background daemon is required, and `ir-ctl` is provided by v4l-utils. To transmit, run `ir-ctl -d /dev/lirc0 --carrier=38000 --send=remote.txt` using `ir-ctl`'s `pulse` / `space` text format. On-device testing transmitted 292 ms and 1-second frames through `/dev/lircN`, with SPI traces confirming each completed in a single contiguous transfer. Inputs outside standard LIRC bounds are still rejected by the kernel, and subsequent short frames transmit normally. Carrier frequency, optical envelope, and effective remote range require measurement with a receiver.
 
-原厂最终设备树将发送器放在
-`/soc/qcom,qupv3_2_geni_se@8c0000/spi@89c000/ir-spi@0`，即
-SE15 / QUP2 SE7 / CS0。GPIO28/29/30/31 分别为 MISO/MOSI/CLK/CS，
-子设备最大时钟为 19.2 MHz。
-[原厂驱动](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71/drivers/media/rc/ir-spi.c)
-使用私有 `/dev/ir_spi` 位图接口。Linux 适配保留原厂接线与波形量化，改用
-`xiaomi,piano-ir-spi` 匹配标准 ir-spi 驱动，不要求原厂未描述的供电开关。
+The stock final Device Tree places the transmitter at `/soc/qcom,qupv3_2_geni_se@8c0000/spi@89c000/ir-spi@0`—that is, SE15 / QUP2 SE7 / CS0. GPIO28/29/30/31 serve as MISO/MOSI/CLK/CS, with a child maximum clock of 19.2 MHz. The [stock driver](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71/drivers/media/rc/ir-spi.c) uses a proprietary `/dev/ir_spi` bitmap interface. The Linux adaptation preserves the stock wiring and waveform quantization while matching the standard `ir-spi` driver via `xiaomi,piano-ir-spi`, without requiring any power switch not described in the stock DT.
 
-原厂 `/odm/lib64/hw/consumerir.qcom.so` 的 SHA256 为
-`fc9e6f2c7770b0f5eb765af8e6eec17494ba7a081a47051606188bec17164f9a`。
-其固定 1.92 MHz 采样时钟、约 40% 默认占空比、原生 32 位 MSB-first
-字序和低电平间隔由编码器保留。载波接受 30–56 kHz，并支持 LIRC 占空比设置。
-38 kHz 请求量化为 51 点周期、20 点高电平，名义载波约 37647 Hz。
-累计时间决定采样边界，不沿用原厂减 5 µs 的时间修正。
+The stock `/odm/lib64/hw/consumerir.qcom.so` has SHA256 `fc9e6f2c7770b0f5eb765af8e6eec17494ba7a081a47051606188bec17164f9a`. The encoder preserves its fixed 1.92 MHz sample clock, ~40% default duty cycle, native 32-bit MSB-first word order, and low-level space periods. Carrier frequencies from 30 to 56 kHz are accepted, and LIRC duty-cycle settings are supported. A 38 kHz request quantizes to a 51-sample period with 20 high samples, yielding a nominal carrier of ~37647 Hz. Cumulative time determines sample boundaries without retaining the stock `-5 µs` timing offset.
 
-报文沿用上游 LIRC 的正值、奇数段和总时长校验，设备驱动不额外限制报文大小。
-编码在完整的 32 位零字后对齐到 1024 字节，1 秒波形填充后为 240640 字节。
-GENI 向 SPI 核心公布 QUP 映射设备支持的单段 DMA 大小，GPI 用一个数据描述符
-发送完整波形，不在脉冲之间拆分传输。
+Frames follow upstream LIRC validation for positive values, odd segment counts, and total duration; the device driver imposes no extra frame-size limit. Encoded output is aligned to 1024 bytes after a full 32-bit zero word, padding a 1-second waveform to 240640 bytes. GENI advertises the single-segment DMA size supported by the QUP-mapped device to the SPI core so GPI transmits the entire waveform with one data descriptor instead of splitting transfers between pulses.
 
-共享 [`设备树`](../../../linux/dts/piano-ir-spi-controller.dtso)沿用原厂
-GCC ID123、GIC SPI462、GPI2 SE7 和 IOMMU 路由。运行与休眠的差异只在
-GPIO29：idle/sleep 状态将 MOSI 主动拉低，其余引脚沿用原厂 GPIO 休眠配置。
-GENI 驱动在消息开始时选择 default，在队列空闲且 SE 确认停止后选择 idle；
-自动休眠选择相同的低电平状态。IR 客户端不直接抢占控制器引脚。
+The shared [Device Tree overlay](../../../linux/dts/piano-ir-spi-controller.dtso) retains the stock GCC ID123, GIC SPI462, GPI2 SE7, and IOMMU routing. Active and sleep states differ only on GPIO29: the `idle`/`sleep` states actively drive MOSI low, while the remaining pins keep the stock GPIO sleep configuration. The GENI driver selects `default` when a message starts and `idle` once the queue is empty and the SE confirms it has stopped; autosuspend selects the same low-level state. The IR client does not directly claim controller pins.
 
-发送超时后，GENI 必须等两路 GPI 通道确认终止才返回 SPI 核心，避免核心
-提前解除仍被 DMA 使用的缓冲区映射。终止失败时保留消息、映射、时钟和引脚，
-继续恢复；不把超时当成硬件已停止。绑定、编码和空闲引脚由内核补丁系列的
-0041–0043 维护，单段 DMA 大小由
-[GENI SPI 补丁](../../../patches/linux/7.3/0138-LOCAL-spi-geni-qcom-map-large-gpi-transfers.patch)
-处理。`RC_CORE`、`LIRC` 和 `IR_SPI` 配置由共享平台片段启用。
+After a transfer timeout, GENI must wait for both GPI channels to confirm termination before returning to the SPI core, preventing the core from unmapping buffers still in use by DMA. If termination fails, the message, mappings, clocks, and pins are kept for recovery rather than assuming the hardware has stopped. The bindings, encoder, and idle pin handling are maintained in kernel patches 0041–0043, and single-segment DMA sizing is handled by the [GENI SPI patch](../../../patches/linux/7.3/0138-LOCAL-spi-geni-qcom-map-large-gpi-transfers.patch). `RC_CORE`, `LIRC`, and `IR_SPI` are enabled in the shared platform config fragment.
 
-## 侧指纹
+## Side Fingerprint Sensor
 
-旧 MinkIPC／quic-teec 客户端已完成独立凭据创建、指纹录入、模板保存和重新打开后的验证。
-实机录入右食指后，关闭并重新打开客户端仍能匹配；未录入的左食指返回不匹配，
-不是等待超时。Linux 使用自己的凭据和模板目录，不复制 Android 已录入的指纹。
-自包含 Linux TEE 客户端保留同一业务实现，实机验证范围如下：
+The legacy MinkIPC/quic-teec client completed independent credential creation, fingerprint enrollment, template persistence, and post-reopen verification. After enrolling the right index finger on hardware, closing and reopening the client still matched it, while an unenrolled left index finger returned a non-match rather than timing out. Linux uses its own credential and template directories and does not copy fingerprints enrolled in Android. The self-contained Linux TEE client preserves the same business logic; on-device verification coverage is as follows:
 
-| 功能 | 旧 MinkIPC／quic-teec 路径 | 自包含 Linux TEE 路径 |
+| Capability | Legacy MinkIPC / quic-teec Path | Self-Contained Linux TEE Path |
 | --- | --- | --- |
-| 加载签名程序、查询设备并关闭 | 实机完成 | 单次 `info` 成功，1.06 秒；`sensor_type=5`、`command_address_bits=64`、`device_info_ok=true` |
-| 初始化、模型加载和 Keymaster 绑定 | 实机完成 | 产品内核及匹配固件上初始化成功，sensor 5、chip 49，三份模型加载完成 |
-| Gatekeeper 凭据、HAT 和授权录入 | 实机完成 | 源码保留，未取新令牌、未录入、未调用 RPMB 后端 |
-| 密封模板持久化、重开后匹配与不匹配 | 实机完成 | 源码保留，未采样或匹配 |
+| Load signed TA, query device, and close | Verified on hardware | Single `info` succeeded in 1.06 s; `sensor_type=5`, `command_address_bits=64`, `device_info_ok=true` |
+| Initialize, load models, and bind Keymaster | Verified on hardware | Initialization succeeded on production kernel and matching firmware: sensor 5, chip 49, all three models loaded |
+| Gatekeeper credentials, HAT, and authorized enrollment | Verified on hardware | Source code preserved; no new token requested, no enrollment run, RPMB backend not invoked |
+| Sealed template persistence, post-reopen match and non-match | Verified on hardware | Source code preserved; no capture or matching run |
 
-新产品内核及匹配固件已完成 `info`、`initialize` 和 fprintd 设备枚举；
-新传输路径的录入、模板重开及匹配／不匹配仍缺实机复测，不能沿用旧客户端的完整认证结果。
+The new production kernel and matching firmware have completed `info`, `initialize`, and fprintd device enumeration. Enrollment, template reopen, and match/non-match over the new transport path still require on-device re-verification; full authentication results from the legacy client cannot be carried over.
 
-HyperOS 4 的 `mfp-daemon` 使用 Goodix HAL、`/dev/xiaomi-fp`
-和高通 QTEE。`libQSEEComAPI.so` 通过 `libminkdescriptor.so` 打开
-UID 122 的 QSEECOMPAT 服务，再加载名为 **`gfpia`** 的签名安全程序。
-原厂进程的映射和文件描述符已确认这条路径，不能套用其他小米平板的
-FPC 驱动或 Goodix USB 驱动。
+HyperOS 4's `mfp-daemon` uses the Goodix HAL, `/dev/xiaomi-fp`, and Qualcomm QTEE. `libQSEEComAPI.so` opens the QSEECOMPAT service at UID 122 through `libminkdescriptor.so`, then loads the signed trusted application named **`gfpia`**. Memory mappings and file descriptors of the stock process confirm this path; FPC drivers or Goodix USB drivers from other Xiaomi tablets cannot be used here.
 
-Linux 7.3 的 `qcomtee` 驱动提供标准 `/dev/tee0`。
-使用高通公开的 [quic-teec](https://github.com/quic/quic-teec) 客户端，
-已在实机取得同一个 QSEECOMPAT 服务，并成功加载、释放由原厂分段文件
-还原的完整签名 `gfpia`。程序大小为 11,681,880 字节，QTEE 版本为
-5.2.0；安全程序和加载接口均没有修改或绕过签名。
+Linux 7.3's `qcomtee` driver provides the standard `/dev/tee0` interface. Using Qualcomm's public [quic-teec](https://github.com/quic/quic-teec) client on hardware obtained the same QSEECOMPAT service and successfully loaded and unloaded the complete signed `gfpia` reconstructed from stock split files. The TA size is 11,681,880 bytes and the QTEE version is 5.2.0; neither the trusted application nor the loading interface was modified or signature-bypassed.
 
-### Linux TEE 对象接口
+### Linux TEE Object Interface
 
-QTEE 使用通用 Linux TEE uAPI 的对象调用，不是 GlobalPlatform（GP）会话协议。
-`TEE_IOC_VERSION` 在 Piano 返回 `impl_id=4`、`impl_caps=0`、`gen_caps=16`，
-分别对应 `TEE_IMPL_ID_QTEE` 和 `TEE_GEN_CAP_OBJREF`；没有声明 `TEE_GEN_CAP_GP`。
-[Linux 7.3 的头文件](https://github.com/torvalds/linux/blob/v7.3/include/uapi/linux/tee.h)
-已经包含 `TEE_IOC_OBJECT_INVOKE`、`UBUF`、`OBJREF`，
-[QTEE 驱动](https://github.com/torvalds/linux/blob/v7.3/drivers/tee/qcomtee/call.c)
-的 `qcomtee_ops` 实现 `object_invoke_func`、`supp_recv` 和 `supp_send`，
-没有实现 `open_session` 或 `invoke_func`。不能将对象 ID 当作 GP session，
-也不能用 `TEE_IOC_OPEN_SESSION`／`TEE_IOC_INVOKE` 替换对象调用。
+QTEE uses object invocations from the generic Linux TEE uAPI rather than the GlobalPlatform (GP) session protocol. On Piano, `TEE_IOC_VERSION` returns `impl_id=4`, `impl_caps=0`, and `gen_caps=16`, corresponding to `TEE_IMPL_ID_QTEE` and `TEE_GEN_CAP_OBJREF`; `TEE_GEN_CAP_GP` is not advertised. The [Linux 7.3 header](https://github.com/torvalds/linux/blob/v7.3/include/uapi/linux/tee.h) already includes `TEE_IOC_OBJECT_INVOKE`, `UBUF`, and `OBJREF`, and `qcomtee_ops` in the [QTEE driver](https://github.com/torvalds/linux/blob/v7.3/drivers/tee/qcomtee/call.c) implements `object_invoke_func`, `supp_recv`, and `supp_send`, without implementing `open_session` or `invoke_func`. Object IDs cannot be treated as GP sessions, and `TEE_IOC_OPEN_SESSION` / `TEE_IOC_INVOKE` cannot replace object invocations.
 
-| 用途 | 已有内核接口 | QTEE 的参数含义 |
+| Purpose | Existing Kernel Interface | QTEE Parameter Semantics |
 | --- | --- | --- |
-| 调用服务或签名程序 | `TEE_IOC_OBJECT_INVOKE` | 对象 ID、操作号、输入／输出缓冲区和对象引用；`TEE_OBJREF_NULL` 作为调用目标表示 root object |
-| 分配可映射共享内存 | `TEE_IOC_SHM_ALLOC`、`mmap` | 分配返回的共享内存 ID 以 memory `OBJREF` 传入，不能用用户地址冒充物理地址 |
-| 文件服务、凭据等回调 | `TEE_IOC_SUPPL_RECV`、`TEE_IOC_SUPPL_SEND` | 同一 TEE context 中的 callback object 和 request ID，通过 meta 参数收发 |
-| 释放远端引用 | `TEE_IOC_OBJECT_INVOKE` | QTEE 保留操作 `65535`，由驱动释放该 context 中的对象引用 |
+| Invoke a service or signed TA | `TEE_IOC_OBJECT_INVOKE` | Object ID, operation number, input/output buffers, and object references; `TEE_OBJREF_NULL` as the target designates the root object |
+| Allocate mappable shared memory | `TEE_IOC_SHM_ALLOC`, `mmap` | The allocated shared memory ID is passed as a memory `OBJREF`; user virtual addresses cannot masquerade as physical addresses |
+| File service, credential, and other callbacks | `TEE_IOC_SUPPL_RECV`, `TEE_IOC_SUPPL_SEND` | Callback object and request ID within the same TEE context, exchanged via `meta` parameters |
+| Release a remote reference | `TEE_IOC_OBJECT_INVOKE` | QTEE reserved operation `65535`, causing the driver to release the object reference in that context |
 
-对象引用的 TEE／USER／MEM 标志和回调 meta 布局属于 QTEE 对通用接口的使用方式，
-不是所有 TEE 实现都接受的协议。上游[接口说明](https://docs.kernel.org/tee/qtee.html)
-同时描述了 direct invocation 和 callback request。
-[`piano-goodix-tee.c`](../../../linux/userspace/fingerprint/piano-goodix-tee.c)
-直接使用这些 ioctl，处理远端对象、内存对象和 callback object，不链接 MinkIPC 或 quic-teec。
-它在创建 root object 时检查 implementation 和 capability，拒绝只有 GP 会话的设备；
-失败时关闭 fd 并回收内存，fd 带 `O_CLOEXEC`。这项检查不会加载安全程序或修改安全存储。
+The TEE/USER/MEM flags on object references and the callback `meta` layout are QTEE-specific conventions on top of the generic interface, not a protocol accepted by all TEE implementations. The upstream [interface documentation](https://docs.kernel.org/tee/qtee.html) describes both direct invocation and callback requests. [`piano-goodix-tee.c`](../../../linux/userspace/fingerprint/piano-goodix-tee.c) uses these ioctls directly to manage remote objects, memory objects, and callback objects without linking MinkIPC or quic-teec. When creating the root object, it validates the implementation and capabilities and rejects GP-session-only devices; on failure it closes the fd and frees memory, opening fds with `O_CLOEXEC`. This check neither loads a trusted application nor modifies secure storage.
 
-每次传给 QTEE 的本地 callback 都有单独 ID 和引用，收到内核释放通知或关闭 context 后回收；
-输入／输出缓冲区和对象引用分别转换，不把 GP memory reference 当作 QTEE memory object。
-回调输出缓冲区只属于该次调用，保持到 `SUPPL_SEND` 返回，再清零释放。
-传输错误不自动重发，也不假定 QTEE 未保留 callback；剩余引用在关闭 context 后回收。
-关闭传感器及安全程序、发出文件监听释放后才关闭 root。回调线程只有阻塞在 `SUPPL_RECV`
-时允许取消，执行文件操作、发送回复或持有用户空间锁时不可取消；随后等待线程退出。
-共享页由标准 TEE 内存引用保护，Linux 用户空间解除映射不绕过内核／安全世界的引用计数。
+Each local callback passed to QTEE has its own ID and reference, reclaimed upon kernel release notification or context teardown. Input/output buffers and object references are converted separately, never treating a GP memory reference as a QTEE memory object. Callback output buffers belong exclusively to that invocation, remain live until `SUPPL_SEND` returns, and are then zeroed and freed. Transport errors are not retried automatically and do not assume QTEE dropped the callback; remaining references are reclaimed when the context closes. The root object is closed only after shutting down the sensor and TA and issuing the file-listener release. The callback thread is cancellable only while blocked in `SUPPL_RECV`, never while performing file I/O, sending replies, or holding userspace locks; teardown then joins the thread. Shared pages are protected by standard TEE memory references, so userspace unmapping does not bypass kernel or secure-world reference counting.
 
-### 共享内存与传感器控制
+### Shared Memory and Sensor Control
 
-原始 QTEE 共享内存分配器使用 `alloc_pages_exact()`，超过伙伴分配器
-支持的最大阶数时会报错。项目的
-[`0014-qcomtee-large-shared-memory.patch`](../../../patches/linux/7.3/0014-qcomtee-large-shared-memory.patch)
-让大缓冲区使用可回收的 CMA 连续内存，小缓冲区保留原来的路径，
-并继续登记和注销安全世界的共享内存桥。
-[`piano-cma.dtso`](../../../linux/dts/piano-cma.dtso) 将默认池从 36 MiB
-扩大到 256 MiB，保留原厂允许的分配地址范围。这部分内存空闲时仍能
-供 Linux 使用，不是永久划走的固件内存。
+The original QTEE shared-memory allocator uses `alloc_pages_exact()`, which fails when a request exceeds the buddy allocator's maximum order. The project's [`0014-qcomtee-large-shared-memory.patch`](../../../patches/linux/7.3/0014-qcomtee-large-shared-memory.patch) routes large buffers to reclaimable contiguous CMA memory while keeping the original path for small buffers, continuing to register and unregister the secure-world shared-memory bridge. [`piano-cma.dtso`](../../../linux/dts/piano-cma.dtso) expands the default pool from 36 MiB to 256 MiB while preserving the stock allowed allocation address range. When idle, this memory remains available to Linux rather than being permanently carved out for firmware.
 
-打包时停用没有主线消费者的 Android 动态可回收池，避免它们先占满
-4 GiB 以下的可用区，导致默认池创建失败并退回 32 MiB。固定分配、
-`no-map` 固件保留区和实际用于 FastRPC 的 ADSP 池不作回收。
+During packaging, Android dynamic reclaimable pools with no mainline consumers are disabled so they do not exhaust the region below 4 GiB first and cause default pool creation to fail and fall back to 32 MiB. Fixed allocations, `no-map` firmware reservations, and the ADSP pool actively used by FastRPC are not reclaimed.
 
-传感器控制依据[固定 MiCode 驱动](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71/drivers/input/fingerprint/mi_fp/fp_driver.c)
-提供供电、复位和中断：原厂 DT 指定 GPIO73 复位、GPIO85 IRQ，
-`fp_3v3_vreg-supply` 指向 PM-HUMU L9。认证数据由安全服务处理；
-Goodix 客户端使用 `QSEECom_send_modified_cmd()` 发送请求。
-[`0017-uio-piano-fingerprint-control.patch`](../../../patches/linux/7.3/0017-uio-piano-fingerprint-control.patch)
-提供内核供电、复位和中断控制，设备树位于
-[`piano-fingerprint.dtso`](../../../linux/dts/piano-fingerprint.dtso)。
-打开 `piano-goodix` UIO 设备时打开供电并释放复位，关闭时停止中断、
-拉低复位并归还电源引用；没有 MMIO 映射，也不把中断当成认证结果。
-原生客户端完成操作后关闭传感器及安全程序。桌面接口范围见下文的
-[Gatekeeper 与桌面认证](#gatekeeper-与桌面认证)。
+Sensor control provides power, reset, and interrupt handling based on the [pinned MiCode driver](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71/drivers/input/fingerprint/mi_fp/fp_driver.c): the stock DT assigns GPIO73 for reset, GPIO85 for IRQ, and `fp_3v3_vreg-supply` to PM-HUMU L9. Authentication data is processed by the secure service; the Goodix client submits requests with `QSEECom_send_modified_cmd()`. [`0017-uio-piano-fingerprint-control.patch`](../../../patches/linux/7.3/0017-uio-piano-fingerprint-control.patch) implements kernel power, reset, and IRQ control with its Device Tree overlay in [`piano-fingerprint.dtso`](../../../linux/dts/piano-fingerprint.dtso). Opening the `piano-goodix` UIO device enables power and deasserts reset; closing it disables the IRQ, asserts reset low, and drops the regulator reference. There is no MMIO mapping, and interrupts are never treated as authentication results. The native client shuts down the sensor and TA when an operation completes. For desktop integration scope, see [Gatekeeper and Desktop Authentication](#gatekeeper-and-desktop-authentication) below.
 
-UIO 仍是过渡路径。对照 [Linux 上游提交 `aacb77975041`](https://github.com/torvalds/linux/tree/aacb7797504183a90d66b19b1efb555cfe9b3eec)
-的设备模型，内核资源接口可以复用，但没有能直接替换这条控制路径的 QTEE 指纹 consumer：
+UIO remains a transitional path. Against the device model in [upstream Linux commit `aacb77975041`](https://github.com/torvalds/linux/tree/aacb7797504183a90d66b19b1efb555cfe9b3eec), kernel resource APIs are reusable, but no upstream QTEE fingerprint consumer can directly replace this control path:
 
-| 已有机制 | 可复用的部分 | 尚未连接的部分 |
+| Existing Mechanism | Reusable Parts | Unconnected Parts |
 | --- | --- | --- |
-| firmware、regulator、GPIO、IRQ、runtime PM | 内核驱动可用 `request_firmware()`、`devm_regulator_get()`、`devm_gpiod_get()`、`devm_request_threaded_irq()` 和 `pm_runtime_resume_and_get()` 管理板级资源 | 这些函数不负责选择 `gfpia` 对象、确认 1016 握手或跟踪用户空间认证操作；资源 API 的存在不等于已有传感器驱动 |
-| [TEE client 总线和 API](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/include/linux/tee_drv.h) | `tee_client_driver` 按 TA UUID 匹配；[OP-TEE](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/optee/device.c) 提供对应枚举实例 | QTEE 不枚举 `tee_client_device`；通用 `tee_client_open_session()`／`tee_client_invoke_func()` 也不是 QTEE 对象调用的内核入口 |
-| [QTEE 内核对象层](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/qcomtee_object.h) | `qcomtee_object_do_invoke()`、`qcomtee_object_get_service()` 和内核 callback 可承载 consumer 与安全服务的通信 | 声明仍在驱动内部，未导出供独立 consumer 模块使用；[primordial object](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/primordial_obj.c) 只实现内存映射、yield 和 sleep，不提供传感器资源服务 |
-| [QSEECom auxiliary client](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/firmware/qcom/qcom_qseecom.c) | 以已加载应用的 ID 建立内核子设备 | `qcom_qseecom_apps` 只有 `qcom.tz.uefisecapp`，不是当前 QSEECOMPAT 对象的固件加载或传感器绑定模型 |
-| [pwrseq](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/power/sequencing/core.c)、[device links](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/Documentation/driver-api/device_link.rst) | 内核 consumer 可请求电源时序，并以 `DL_FLAG_PM_RUNTIME` 维持资源依赖 | 不会将一个用户空间 TEE object 自动变成 consumer，也不传递 IRQ 确认；[`power/control=on`](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/Documentation/ABI/testing/sysfs-devices-power) 是设备级策略，不是随 fd 关闭释放的操作引用 |
+| firmware, regulator, GPIO, IRQ, runtime PM | Kernel drivers can manage board-level resources with `request_firmware()`, `devm_regulator_get()`, `devm_gpiod_get()`, `devm_request_threaded_irq()`, and `pm_runtime_resume_and_get()` | These functions do not select the `gfpia` object, acknowledge the 1016 handshake, or track userspace authentication operations; having resource APIs does not equal having a sensor driver |
+| [TEE client bus and API](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/include/linux/tee_drv.h) | `tee_client_driver` matches by TA UUID; [OP-TEE](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/optee/device.c) provides an enumeration example | QTEE does not enumerate `tee_client_device`; generic `tee_client_open_session()` / `tee_client_invoke_func()` are not kernel entry points for QTEE object invocation either |
+| [QTEE kernel object layer](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/qcomtee_object.h) | `qcomtee_object_do_invoke()`, `qcomtee_object_get_service()`, and kernel callbacks can carry consumer communication with secure services | Declarations remain internal to the driver and are not exported for standalone consumer modules; the [primordial object](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/primordial_obj.c) only implements memory mapping, yield, and sleep, not sensor resource services |
+| [QSEECom auxiliary client](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/firmware/qcom/qcom_qseecom.c) | Creates kernel child devices from loaded application IDs | `qcom_qseecom_apps` only lists `qcom.tz.uefisecapp`, which is not the firmware-loading or sensor-binding model used by current QSEECOMPAT objects |
+| [pwrseq](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/power/sequencing/core.c), [device links](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/Documentation/driver-api/device_link.rst) | Kernel consumers can request power sequencing and maintain resource dependencies with `DL_FLAG_PM_RUNTIME` | Neither automatically turns a userspace TEE object into a consumer nor propagates IRQ acknowledgments; [`power/control=on`](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/Documentation/ABI/testing/sysfs-devices-power) is a device-level policy, not an operation reference released on fd close |
 
-具体边界在 [`qcomtee/call.c`](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/call.c)：
-`qcomtee_context_add_qtee_object()`／`qcomtee_context_find_qtee_object()` 使用各 context 的 ID 表；
-`qcomtee_probe()` 注册通用 TEE 设备，没有传感器 DT、供电或 IRQ 关联。
-本地 `open_client()` 则先通过用户空间 loader 加载 TA，再单独打开控制器；
-`run_operation()` 在 1016 的阶段交换结束后才重新启用 IRQ。
-另开一个内核 context 不能直接使用这些用户空间对象 ID，单靠 runtime PM 也无法判断交换何时结束。
+The exact boundary lies in [`qcomtee/call.c`](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/tee/qcomtee/call.c): `qcomtee_context_add_qtee_object()` / `qcomtee_context_find_qtee_object()` use per-context ID tables, and `qcomtee_probe()` registers a generic TEE device with no sensor DT, power, or IRQ association. Locally, `open_client()` first loads the TA via the userspace loader and then opens the controller separately, while `run_operation()` re-enables the IRQ only after the 1016 stage exchanges finish. Opening a separate kernel context cannot reuse those userspace object IDs, and runtime PM alone cannot determine when an exchange finishes.
 
-可以据此设计内核 consumer，但还需明确 QTEE 内核对象调用入口、板级设备与 TA 的关联，
-以及业务仍在用户空间时 IRQ 完成和电源引用如何传递；现有上游实现尚未提供这套连接。
-将文件移到 `drivers/misc/` 不能补齐它：[misc 核心](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/char/misc.c)
-的 `misc_open()` 只是切换到驱动自带的 `file_operations`，并未定义指纹操作。
-GPIO character-device API 只管理引脚，evdev 也没有 QTEE 握手完成语义；拼接它们仍会把硬件时序留给用户空间。
-本机总线由安全世界管理，不声明为 AP 可访问的 spidev 或 USB 设备，也不新增 misc 私有协议冒充标准接口。
+A kernel consumer can be designed around this, but it still requires defining the QTEE kernel object invocation entry point, associating the board device with the TA, and specifying how IRQ completion and power references are passed while protocol logic stays in userspace; current upstream code does not provide this glue. Moving the driver to `drivers/misc/` does not close that gap: `misc_open()` in the [misc core](https://github.com/torvalds/linux/blob/aacb7797504183a90d66b19b1efb555cfe9b3eec/drivers/char/misc.c) merely dispatches to the driver's own `file_operations` without defining fingerprint operations. The GPIO character-device API manages pins only, and evdev carries no QTEE handshake-completion semantics; stitching them together still leaves hardware sequencing in userspace. The sensor bus on this device is managed by the secure world, so it is not exposed as an AP-accessible `spidev` or USB device, nor do we add a private `misc` protocol pretending to be a standard interface.
 
-原厂 `pm_humu_l9` 为 3.300 V。现有主线 PLDO 使用不同的离散电压档位；
-必须选择不超过原厂上限的 3.296 V。之前上取整到 3.304 V 时，
-`regulator_enable()` 尚未返回就发生系统复位；改用较低档位后，
-打开与关闭均已正常完成。不要为适应档位把原厂电压上限放宽。
+The stock `pm_humu_l9` rail is 3.300 V. The mainline PLDO driver uses different discrete voltage steps; the setting must be 3.296 V so it does not exceed the stock upper limit. Previously, rounding up to 3.304 V triggered a system reset before `regulator_enable()` even returned; switching to the lower step allows both open and close to complete normally. Do not relax the stock voltage ceiling to fit step sizes.
 
-Goodix 客户端的设备信息命令为路由 1、命令 1000，128 字节请求、
-64 字节响应，另带传感器共享缓冲区。Linux 能加载并正常关闭安全程序。
-QSEECOMPAT 的 lookup 返回 `architecture=2`，命令应使用 64 位地址，
-地址宽度按服务返回值选择；当前签名固件本身也是 ELF64。修正后传输层返回成功，
-最初响应中的缓冲区状态为 `-1`，原因是小缓冲区来自 4 GiB 以上的伙伴
-分配器。该安全程序接受的共享区域必须在 4 GiB 以下；使用默认 CMA
-池中的 4 KiB 缓冲区后，传输、应用和缓冲区状态均返回成功，
-传感器类型为 5。无需给每条命令申请大缓冲区，也无需为这个查询启动
-文件／时间监听服务。
+The Goodix client's device-info command is route 1, command 1000, with a 128-byte request, a 64-byte response, and a sensor shared buffer. Linux can load and cleanly close the trusted application. QSEECOMPAT lookup returns `architecture=2`, so commands must use 64-bit addresses—address width is selected from the service return value, and the signed firmware itself is ELF64. After fixing this, the transport layer succeeded, though the initial response returned buffer status `-1` because the small buffer came from the buddy allocator above 4 GiB. This TA requires shared regions below 4 GiB; using a 4 KiB buffer from the default CMA pool returned success for transport, application, and buffer status, reporting sensor type 5. Neither large buffers for every command nor file/time listener services are required for this query.
 
-[`0018` 内核修正](../../../patches/linux/7.3/0018-qcomtee-public-buffers-cma.patch)
-使应用共享内存使用设备树声明的连续内存池，保留驱动私有小消息的
-普通分配方式。地址范围由池的配置决定，不通过伪造指针或用户空间
-内存热补丁处理。
+Kernel fix [`0018`](../../../patches/linux/7.3/0018-qcomtee-public-buffers-cma.patch) allocates application shared memory from the Device Tree contiguous memory pool while keeping standard allocation for small driver-private messages. The address range is governed by pool configuration rather than forged pointers or userspace memory hot-patching.
 
-原生客户端位于
-[`piano-goodix.c`](../../../linux/userspace/fingerprint/piano-goodix.c)，
-使用标准 Linux TEE 对象传输与固定版本的 QCBOR，CLI 由共享运行时构建器
-静态编译；来源记录在
-[`config/fingerprint.json`](../../../config/fingerprint.json)。
-执行 `sudo piano-fingerprint-ctl info` 可查询设备信息，`--help` 不访问设备。
-签名程序按固件清单随镜像提供，不包含用户模板或密码。
+The native client lives in [`piano-goodix.c`](../../../linux/userspace/fingerprint/piano-goodix.c), using standard Linux TEE object transport and a pinned version of QCBOR. The CLI is statically compiled by the shared runtime builder; sources are tracked in [`config/fingerprint.json`](../../../config/fingerprint.json). Run `sudo piano-fingerprint-ctl info` to query device information; `--help` does not access the device. The signed TA is shipped in the image per the firmware manifest and contains no user templates or passwords.
 
-libfprint 在自己的构建中直接编译同一份后端和依赖源码，不再通过
-`piano-goodix.pc` 链接平台私有 `libpiano-goodix.a`。源码归档和补丁由运行时清单校验，
-Debian、SteamOS 和 Nyarch 各自使用目标发行版的头文件和库编译。
-Debian 构建依赖留在独立 rootfs，要求 libc／GLib 等开发包匹配目标运行库版本，
-依赖由 `dpkg-shlibdeps` 生成；安装前以目标 loader 核对新库和 fprintd 的符号解析。
-Debian 的 `SOURCE.json` 同时校验源码输入、目标 ABI、后端源码归档、二进制摘要、包身份和
-`Depends`；命中时不再创建构建 rootfs 或编译，仍执行目标链接检查与 APT 依赖模拟。
-Arch 系缓存同时核对配方摘要和运行库版本，不把另一套 ABI 的缓存直接安装。
-这仍是本地 libfprint 包；源码补丁进入仓库不等于上游已收录，更不等于发行版原版包
-已经提供此设备后端。传感器控制仍使用 UIO，原厂签名程序的业务命令和 HAT 协议没有改变。
-上游提交还需解决 UIO 控制模型、Gatekeeper／共享 RPMB 的录入策略及固件再分发授权。
-libfprint 的 [`HACKING.md`](https://gitlab.freedesktop.org/libfprint/libfprint/-/blob/80a4b5ec612892c5c056c48dddaa561452cf37ec/HACKING.md)
-不接受专有驱动集成；签名 TA 与模型是否符合其固件边界，也需维护者核对，不能凭源码开源或 OTA 摘要宣称符合。
+libfprint compiles the same backend and dependency sources directly within its own build rather than linking a platform-private `libpiano-goodix.a` via `piano-goodix.pc`. Source archives and patches are verified by the runtime manifest, and Debian, SteamOS, and Nyarch each build against their target distribution's headers and libraries. Debian build dependencies stay inside an isolated rootfs, requiring development packages such as libc/GLib to match target runtime library versions, with dependencies generated by `dpkg-shlibdeps`; before installation, the target loader verifies symbol resolution for the new library and `fprintd`. Debian's `SOURCE.json` validates source inputs, target ABI, backend source archive, binary digests, package identity, and `Depends`; on a cache hit, build rootfs creation and compilation are skipped while target link checks and APT dependency simulation still run. Arch-family caches check both recipe digests and runtime library versions, preventing installation of a cache built for a different ABI. This remains a local libfprint package: carrying source patches in-tree does not mean upstream acceptance, nor that stock distribution packages include this device backend. Sensor control still uses UIO, and the stock signed TA's business commands and HAT protocol are unchanged. Upstreaming still requires resolving the UIO control model, Gatekeeper/shared-RPMB enrollment policy, and firmware redistribution licensing. libfprint's [`HACKING.md`](https://gitlab.freedesktop.org/libfprint/libfprint/-/blob/80a4b5ec612892c5c056c48dddaa561452cf37ec/HACKING.md) rejects proprietary driver integration; whether the signed TA and models fit within its firmware boundary also requires maintainer review and cannot be claimed solely from open-source client code or OTA digests.
 
-签名程序与模型共用与内核 firmware loader 相同的搜索顺序：先读取已有的
-`/sys/module/firmware_class/parameters/path`，再查 `/lib/firmware/updates/<内核版本>/`、
-`/lib/firmware/updates/`、`/lib/firmware/<内核版本>/` 和 `/lib/firmware/`。
-因此 `firmware_class.path=/run/firmware` 也供客户端使用；该目录须在切换根系统后保留。
-客户端只读取此标准参数，不写 sysfs，也不要求固件必须位于 rootfs。
-TA 仍由安全世界验证原厂签名，模型保留现有大小和加载协议检查。拒绝符号链接、非普通文件和
-不可访问的高优先级文件，不用低优先级副本掩盖这些错误。
+The signed TA and models follow the same search order as the kernel firmware loader: first the existing `/sys/module/firmware_class/parameters/path`, then `/lib/firmware/updates/<kernel-version>/`, `/lib/firmware/updates/`, `/lib/firmware/<kernel-version>/`, and `/lib/firmware/`. Consequently, `firmware_class.path=/run/firmware` also works for the client; that directory must be preserved across root switch. The client only reads this standard parameter, never writes sysfs, and does not require firmware to reside in the rootfs. The TA's stock signature is still verified by the secure world, and models retain existing size and load-protocol checks. Symlinks, non-regular files, and inaccessible higher-priority files are rejected rather than masked by lower-priority copies.
 
-原生 API 位于 [`piano-goodix.h`](../../../linux/userspace/fingerprint/piano-goodix.h)，
-命令行与 libfprint 后端共用录入、验证、枚举和删除实现。以下以 Linux UID 1000
-和右食指为例；手指名称沿用 libfprint，也可用 1–10：
+The native API is declared in [`piano-goodix.h`](../../../linux/userspace/fingerprint/piano-goodix.h); the CLI and libfprint backend share the enrollment, verification, listing, and deletion implementations. The examples below use Linux UID 1000 and the right index finger; finger names follow libfprint conventions, and numeric IDs 1–10 are also accepted:
 
 ```sh
 sudo piano-fingerprint-ctl enroll 1000 right-index-finger
@@ -237,243 +107,107 @@ sudo piano-fingerprint-ctl list 1000
 sudo piano-fingerprint-ctl delete 1000 right-index-finger
 ```
 
-录入默认限时 120 秒，验证默认 30 秒，可在对应命令末尾指定秒数。Ctrl+C、
-SIGTERM 和 API 取消请求会先完成安全程序的取消与关闭，再返回；同步 QTEE 调用
-只能在返回后检查取消和时限。已保存的模板不会因随后收到取消而被回滚。
+Enrollment times out after 120 seconds by default and verification after 30 seconds; an optional timeout in seconds may be passed at the end of the command. Ctrl+C, SIGTERM, and API cancellation requests complete TA cancellation and shutdown before returning; synchronous QTEE calls can check cancellation and deadlines only after they return. Already-saved templates are not rolled back if a cancellation arrives afterward.
 
-`sudo piano-fingerprint-ctl initialize` 完成传感器初始化、原厂模型加载和
-交互策略设置，再正常关闭传感器。实机返回传感器类型 5、芯片类型 49、
-132 行 × 24 列阵列，以及 132 × 16 的导航区域。初始化响应中的芯片类型为零
-表示沿用设备查询值，与原厂 HAL 的处理一致，不代表未知芯片。
+`sudo piano-fingerprint-ctl initialize` performs sensor initialization, stock model loading, and interaction-policy setup, then cleanly shuts down the sensor. On hardware, it reports sensor type 5, chip type 49, a 132-row × 24-column array, and a 132 × 16 navigation area. A chip type of zero in the initialization response means keeping the value from the device-info query, matching the stock HAL's behavior rather than indicating an unknown chip.
 
-该设备要求防伪和识别模型，两者均从同版原厂 `libgf_hal.so` 的导出数据符号
-提取，属于通用算法参数，不是用户模板。CAP S／T 的选择依据设备返回的标志，
-芯片类型 49 使用 `DLWeightLightDubaiU4_12_10_14MisTouch`。
-提取器 [`import_ota.py`](../../../tools/firmware/import_ota.py) 按 ELF 导出符号查找模型，
-不会安装原厂可执行库。现有[`固件清单`](../../../vendor/firmware/hyperos4-fingerprint/manifest.json)
-记录 ROM、输出大小和校验值，未记录来源库摘要和逐模型偏移；不能将输出哈希当作这些来源字段。
-固件和模型的来源记录也不是再分发授权，许可范围见
-[`固件说明`](../../../vendor/firmware/hyperos4-fingerprint/README.md)。
+The device requires anti-spoofing and recognition models, both extracted from exported data symbols in the matching stock `libgf_hal.so`; they are generic algorithm parameters, not user templates. CAP S/T selection depends on flags returned by the device, and chip type 49 uses `DLWeightLightDubaiU4_12_10_14MisTouch`. The extractor [`import_ota.py`](../../../tools/firmware/import_ota.py) locates models by ELF exported symbols and never installs the stock executable library. The current [firmware manifest](../../../vendor/firmware/hyperos4-fingerprint/manifest.json) records the ROM, output sizes, and checksums, not the source library digest or per-model offsets; output hashes must not be mistaken for those source fields. Recording provenance for firmware and models does not grant redistribution rights either; see the [firmware README](../../../vendor/firmware/hyperos4-fingerprint/README.md) for licensing scope.
 
-本机原厂 HAL 的构建目标为 `xiaomi_P81_GF3656ZSCB_qsee5_sm8750_64bit_aidl_2025`。
-`gf_hal_show_version`（`0x1ed64`）给出包版本 `V1.0.6.0.0` 和软件版本
-`1.0.6.0.2.0`。当前国际版库与固件清单中的国内版库整文件摘要不同，但按 ELF
-导出符号提取的三份模型逐字节相同，因此不需要替换 Linux 模型。两份完整签名
-`gfpia` 的可加载代码和数据仅有三处构建时间字符串不同，另有对应签名元数据差异。
-这些静态比对不代替实际录入或认证测试。
+The stock HAL on this device is built for target `xiaomi_P81_GF3656ZSCB_qsee5_sm8750_64bit_aidl_2025`. `gf_hal_show_version` (`0x1ed64`) reports package version `V1.0.6.0.0` and software version `1.0.6.0.2.0`. Although the current Global variant library has a different whole-file digest from the CN variant library in the firmware manifest, all three models extracted by ELF exported symbols are byte-for-byte identical, so the Linux models do not need replacement. The loadable code and data of the two complete signed `gfpia` binaries differ only in three build-timestamp strings plus corresponding signature metadata. These static comparisons do not replace actual enrollment or authentication testing.
 
-协议顺序如下，所有命令都通过公开 QTEE 接口进入原厂签名程序：
+The protocol sequence is as follows; every command enters the stock signed TA through the public QTEE interface:
 
-| 命令 | 功能 |
+| Command | Function |
 | --- | --- |
-| 1000 | 查询传感器类型和功能标志 |
-| 1001 | 读取传感器参数与校准数据 |
-| 1113 | 分块加载防伪／识别模型；每块 511900 字节，逻辑模型命令为 1111 |
-| 1005、1109 | 完成初始化并应用交互策略 |
-| 1009 | 进入待机检测 |
-| 1016 | 读取并确认传感器中断 |
-| 1002 | 关闭传感器，随后关闭安全程序并归还供电 |
+| 1000 | Query sensor type and feature flags |
+| 1001 | Read sensor parameters and calibration data |
+| 1113 | Load anti-spoofing/recognition models in 511900-byte chunks; logical model command is 1111 |
+| 1005, 1109 | Complete initialization and apply interaction policy |
+| 1009 | Enter standby detection |
+| 1016 | Read and acknowledge sensor interrupts |
+| 1002 | Shut down sensor, then close TA and release power |
 
-`sudo piano-fingerprint-ctl watch 30` 在限定时间内监听 UIO 中断，最多 120 秒。
-事件接口位于 [`piano-goodix-events.c`](../../../linux/userspace/fingerprint/piano-goodix-events.c)，
-由现有客户端调用；它将传输错误与安全程序返回的采集状态分开，保留事件包推进
-阶段 4、5，完成后才重新启用 IRQ。输出包括事件标志、中断计数、操作、阶段和
-应用状态，不保存或输出图像、模板 ID 和认证令牌。普通阶段 2 保留原包继续一次；
-导航阶段 8 清除已消费的导航区后继续，不生成键盘或认证事件。匹配重试状态 1064
-按原厂协议重新交换，每次调用只发送一条命令，供调用者检查取消和时限。
-`watch` 只观察事件；`enroll` 根据设备功能标志选择普通或扩展采集包。
-收到认证成功的安全程序响应时，诊断客户端也会取消，
-不代替真正认证客户端执行收尾或报告匹配成功。超时、Ctrl+C 和错误
-退出都先执行真实取消，再关闭安全程序及 UIO。这里的时限在每条同步 QTEE 命令
-返回后检查，不能中断一条尚未返回的安全调用。
+`sudo piano-fingerprint-ctl watch 30` monitors UIO interrupts for a bounded duration up to 120 seconds. The event interface lives in [`piano-goodix-events.c`](../../../linux/userspace/fingerprint/piano-goodix-events.c) and is called by the existing client; it separates transport errors from capture statuses returned by the TA, retains the event packet to advance stages 4 and 5, and re-enables the IRQ only after completion. Output includes event flags, interrupt count, operation, stage, and application status, without saving or printing images, template IDs, or authentication tokens. Standard stage 2 retains the packet and continues once; navigation stage 8 clears the consumed navigation region and continues without generating keyboard or authentication events. Match-retry status 1064 re-exchanges per the stock protocol, sending one command per call so callers can check cancellation and deadlines. `watch` only observes events; `enroll` selects the standard or extended capture packet based on device feature flags. Even if the TA responds with authentication success, the diagnostic client cancels rather than finalizing or reporting a match on behalf of a real authentication client. Timeouts, Ctrl+C, and error exits all execute a real cancel before closing the TA and UIO. Deadlines are checked after each synchronous QTEE command returns and cannot preempt an in-flight secure call.
 
-上述字段来自原厂 Milan 函数表 `gf_hal_milan_function_customize`（`0x3f778`）：
-取消函数 `0x40188` 发送命令 1009、`0x70` 字节；IRQ 函数 `0x41390` 发送
-1016、`0xd134` 字节，设置 `+0x98=1`、`+0xa8=512`、`+0x2c5=0x02000000`。
-响应的 `+0x6c` 是事件位图、`+0x70` 是操作、`+0x98` 是处理阶段。
-`0x415a4–0x41610` 在阶段 4、5 保留原包再次调用 1016。阶段 2 的普通路径同样
-保留原包继续 1016；特定录入模式将包扩至 `0x10e9e0` 字节。阶段 8 在处理导航
-通知后清零 `+0x2f4` 起 `0x5a20` 字节，再继续交换。原生状态机处理普通阶段 2、
-导航交换和设备要求的扩展录入包，匹配由原厂签名安全程序完成。
-`+0x2c5` 是输出硬件认证令牌（HAT）中的大端 `authenticator_type`，数值表示指纹类型 2，
-不是可替代录入授权的令牌。`libgf_ca.so:gf_ca_invoke_command`（`0x4170`）将
-64 字节响应中的第一个字作为应用状态返回，第二个字单独表示共享缓冲区错误；
-不能把所有非零应用状态都当成 QTEE 传输失败。
+These fields come from the stock Milan function table `gf_hal_milan_function_customize` (`0x3f778`): the cancel function `0x40188` sends command 1009 (`0x70` bytes); the IRQ function `0x41390` sends command 1016 (`0xd134` bytes) with `+0x98=1`, `+0xa8=512`, and `+0x2c5=0x02000000`. In the response, `+0x6c` is the event bitmap, `+0x70` is the operation, and `+0x98` is the processing stage. `0x415a4–0x41610` retains the packet to invoke 1016 again for stages 4 and 5. The standard stage 2 path likewise retains the packet to continue 1016; specific enrollment modes expand the packet to `0x10e9e0` bytes. Stage 8 zeroes `0x5a20` bytes starting at `+0x2f4` after handling the navigation notification, then continues the exchange. The native state machine handles standard stage 2, navigation exchanges, and device-required extended enrollment packets, while matching is performed by the stock signed TA. `+0x2c5` is the big-endian `authenticator_type` inside the output Hardware Authentication Token (HAT)—its value represents fingerprint type 2 and is not a token that can substitute for enrollment authorization. `libgf_ca.so:gf_ca_invoke_command` (`0x4170`) returns the first word of the 64-byte response as the application status and uses the second word separately for shared-buffer errors; non-zero application statuses must not all be treated as QTEE transport failures.
 
-每个 Linux 用户的数据放在 `/var/lib/piano-goodix/<uid>/`：
+Per-user Linux data is stored under `/var/lib/piano-goodix/<uid>/`:
 
 ```text
-gatekeeper/   独立随机凭据及安全程序返回的凭据句柄
-fpdata/       Goodix 安全程序密封的模板与算法文件
-profile       Linux UID、分组、安全用户 ID（SID）和手指名称到模板 ID 的映射
+gatekeeper/   Independent random credential and credential handle returned by the TA
+fpdata/       Templates and algorithm files sealed by the Goodix TA
+profile       Mapping of Linux UID, group, Secure User ID (SID), and finger names to template IDs
 ```
 
-目录权限为 0700，文件为 0600，均由 root 管理。`list` 在命令 1014 选择该用户分组后，
-通过 1015 核对安全程序中的模板，只返回 Linux 元数据登记且仍存在的手指。
-保存中断时也只恢复已记录的待提交 ID，不收集或删除未知模板。
+Directories have mode `0700` and files `0600`, all managed by root. After selecting the user's group with command 1014, `list` cross-checks templates inside the TA via command 1015 and returns only fingers registered in Linux metadata that still exist. Interrupted saves likewise recover only the recorded pending ID rather than harvesting or deleting unknown templates.
 
-`storage-probe --state-dir <empty-directory> <group>` 显式启动受限 FS/GPFS
-服务，初始化传感器并选择分组，随后关闭安全程序和服务。目录必须是新建的
-Linux 空目录；服务将安全程序使用的虚拟路径映射到这里，不访问原厂目录。
-初始化会在该目录生成校准文件，所以这是带本地写入的探测，不是只读查询。
-命令不复制模板、不录入、不认证，也不执行删除或重命名。
+`storage-probe --state-dir <empty-directory> <group>` explicitly starts the restricted FS/GPFS service, initializes the sensor, selects the group, and then shuts down the TA and service. The directory must be a newly created empty Linux directory; the service maps the TA's virtual paths there without accessing stock directories. Initialization creates calibration files in that directory, making this a probe with local writes rather than a read-only query. The command does not copy templates, enroll, authenticate, delete, or rename.
 
-文件服务位于 [`piano-goodix-storage.c`](../../../linux/userspace/fingerprint/piano-goodix-storage.c)。
-普通 FS 提供只读打开、关闭和错误状态；GPFS 提供读取、按偏移写入、备份、重命名和
-删除。安全程序的 `/data/vendor_de/0/fpdata/` 虚拟路径映射到所选 Linux 用户的
-`fpdata/`，拒绝目录穿越、符号链接、硬链接和外部文件描述符。写入保留未覆盖的数据，
-要求备份时先落盘同目录 `.bak`，再原子替换主文件并同步文件和目录。
-这些回调随原生操作建立和释放，不另加指纹守护进程。
+The file service is implemented in [`piano-goodix-storage.c`](../../../linux/userspace/fingerprint/piano-goodix-storage.c). Plain FS provides read-only open, close, and error status; GPFS provides reads, offset writes, backups, renames, and deletes. The TA's `/data/vendor_de/0/fpdata/` virtual path maps to the selected Linux user's `fpdata/`, rejecting directory traversal, symlinks, hard links, and external file descriptors. Writes preserve untouched bytes; when backup is requested, a `.bak` file in the same directory is flushed first, followed by atomic replacement of the primary file and fsync of both file and directory. These callbacks are created and torn down per native operation without adding a separate fingerprint daemon.
 
-FS／GPFS 布局取自公开 Qualcomm listener 头文件，仅保留本后端使用的消息。
-它们在 [`piano-goodix-storage-protocol.h`](../../../linux/userspace/fingerprint/piano-goodix-storage-protocol.h)
-中按原始尺寸描述，保留来源与许可，不依赖外部 listener 服务或 Mink 头文件。
+The FS/GPFS layouts are taken from public Qualcomm listener headers, retaining only the messages used by this backend. They are defined at their original sizes in [`piano-goodix-storage-protocol.h`](../../../linux/userspace/fingerprint/piano-goodix-storage-protocol.h) with attribution and license preserved, without depending on external listener services or Mink headers.
 
-`sudo piano-fingerprint-ctl prepare-auth` 初始化传感器并完成 Keymaster 到
-Goodix 的认证数据绑定。没有录入或认证操作，也不输出绑定数据。
-这一步已在重新启动后的 Linux 上独立完成，不依赖 Android 先运行指纹服务。
+`sudo piano-fingerprint-ctl prepare-auth` initializes the sensor and completes Keymaster-to-Goodix authentication data binding. It performs neither enrollment nor authentication and prints no binding data. This step has completed independently on Linux after reboot without requiring Android to run fingerprint services first.
 
-原厂加载的 64 位 `keymaster64` 报告 API 5.3／TA 5.3000。
-同版 `libkeymasterdeviceutils.so` 和 `libqtikeymint.so` 表明，原生服务 151
-打开指定安全应用的环境，应用内服务 150 提供命令接口。客户端执行
-`0x200`／`0x207` 协商；需要时通过 `0x220e` 取得测试启动的共享参数，
-用 `0x220f` 完成 HMAC sharing。请求保留准确 CBOR 长度，不把对齐填充算入协议。
+The stock-loaded 64-bit `keymaster64` reports API 5.3 / TA 5.3000. The matching `libkeymasterdeviceutils.so` and `libqtikeymint.so` show that native service 151 opens the target secure app's environment, and in-app service 150 provides the command interface. The client performs `0x200`/`0x207` negotiation; when needed, it fetches test-boot sharing parameters via `0x220e` and completes HMAC sharing with `0x220f`. Requests preserve exact CBOR lengths without counting alignment padding as protocol payload.
 
-绑定请求仍沿用原厂 CA 的 `0x205, 2` 和 256 字节响应，再通过 Goodix 路由 2、
-命令 109 传入签名安全程序。Goodix 必须先加载并初始化；之前在它尚未加载时
-查询，会得到另一个错误。只有明确返回 `-10020` 时才初始化测试启动的
-sharing key，已有绑定可用时直接使用，避免重置其他客户端的有效会话。
-响应的偏移和长度均检查边界，临时参数和加密绑定数据在结束时清零。
-绑定临时参数与 HAT 不落盘；独立 Linux 凭据和密封模板按上述目录分别保存。
+The binding request retains the stock CA's `0x205, 2` and 256-byte response, then passes it to the signed TA via Goodix route 2, command 109. Goodix must already be loaded and initialized; querying before it is loaded yields a different error. The test-boot sharing key is initialized only on an explicit `-10020` return; when an existing binding is already valid, it is reused directly to avoid resetting other clients' active sessions. Response offsets and lengths are bounds-checked, and temporary parameters and encrypted binding data are zeroed on completion. Binding temporaries and HATs are never written to disk; independent Linux credentials and sealed templates are stored separately in the directories above.
 
-GPFS 与 RPMB 都是签名程序要求的回调，但用途不同：前者保存 Linux 目录中的密封模板，
-后者访问同机安全存储，不能用另一个普通目录替代。
+Both GPFS and RPMB are callbacks required by the signed TA, but with different roles: GPFS stores sealed templates in a Linux directory, whereas RPMB accesses the device's shared secure storage and cannot be substituted with another plain directory.
 
-录入和认证的入口布局已由原厂 `libgf_hal.so` 静态确认，均使用路由 1：
+Enrollment and authentication entry layouts were statically confirmed from stock `libgf_hal.so`, all on route 1:
 
-| 操作 | 函数与命令 | 共享包内容 |
+| Operation | Function and Command | Shared Packet Contents |
 | --- | --- | --- |
-| 生成录入挑战 | `gf_hal_common_pre_enroll`，`0x2115c`，1006／`0x78` 字节 | 挑战位于 `+0x70` |
-| 开始录入 | `gf_hal_common_enroll`，`0x2161c`，1007／`0xbc` 字节 | 分组 `+0x6c`，真实的 69 字节 HAT 位于 `+0x76` |
-| 结束录入 | `gf_hal_common_post_enroll`，`0x219b4`，1008／`0x6c` 字节 | 结束该次录入流程 |
-| 开始认证 | `gf_hal_common_authenticate`，`0x21a18`，1010／`0x80` 字节 | 分组 `+0x6c`，操作 ID `+0x70`，`+0x78=-1` |
-| 保存模板 | `gf_hal_save`，`0x20a74`，1012／`0x78` 字节 | 分组、模板 ID 位于 `+0x6c`、`+0x70` |
-| 删除模板 | `gf_hal_common_remove`，`0x21f34`，1013／`0xcc` 字节 | 分组、模板 ID 位于 `+0x6c`、`+0x70`；`+0xc8` 为删除后的剩余总数 |
+| Generate enrollment challenge | `gf_hal_common_pre_enroll`, `0x2115c`, 1006 / `0x78` bytes | Challenge at `+0x70` |
+| Start enrollment | `gf_hal_common_enroll`, `0x2161c`, 1007 / `0xbc` bytes | Group at `+0x6c`, real 69-byte HAT at `+0x76` |
+| End enrollment | `gf_hal_common_post_enroll`, `0x219b4`, 1008 / `0x6c` bytes | Terminates the enrollment session |
+| Start authentication | `gf_hal_common_authenticate`, `0x21a18`, 1010 / `0x80` bytes | Group at `+0x6c`, operation ID at `+0x70`, `+0x78=-1` |
+| Save template | `gf_hal_save`, `0x20a74`, 1012 / `0x78` bytes | Group and template ID at `+0x6c`, `+0x70` |
+| Remove template | `gf_hal_common_remove`, `0x21f34`, 1013 / `0xcc` bytes | Group and template ID at `+0x6c`, `+0x70`; `+0xc8` holds remaining count after deletion |
 
-成功结果由 Milan 结果分发函数 `0x42308` 判断：应用状态为零后，再区分操作。
-操作 1、2 的认证结果携带分组、模板 ID（`+0x80`、`+0x84`）及 HAT
-（`+0x2ac`，69 字节）；`0x42774` 将这些字段交给认证成功回调。
-`gf_hal_common_authenticate_success`（`0x248b4`）使用同样布局。录入操作 0
-则读取剩余次数 `+0x88`，归零后必须经 1012 保存，不能仅凭手指中断或
-进度归零报告录入成功。客户端在 1012 成功、Linux 手指映射落盘且完成 1008 后
-才返回录入成功。删除只使用该 UID 已登记的模板 ID，1013 成功后再用 1015 确认
-目标消失，最后更新 Linux 映射，不执行全局清空。
+Success is determined by Milan result dispatcher `0x42308`: once application status is zero, it dispatches by operation. Authentication results for operations 1 and 2 carry group, template ID (`+0x80`, `+0x84`), and HAT (`+0x2ac`, 69 bytes); `0x42774` passes these fields to the authentication-success callback. `gf_hal_common_authenticate_success` (`0x248b4`) uses the same layout. Enrollment operation 0 reads the remaining step count at `+0x88`; once it reaches zero, the template must be saved via 1012—enrollment success must never be reported solely from finger interrupts or zero remaining steps. The client reports enrollment success only after 1012 succeeds, the Linux finger mapping is persisted, and 1008 completes. Deletion uses only template IDs registered to that UID, confirms removal via 1015 after 1013 succeeds, and updates the Linux mapping last without performing a global wipe.
 
-匹配重试状态 1064（`GF_ERROR_MATCH_FAIL_AND_RETRY`）需要将 `+0x98` 的
-64 位值设为 2 并继续 1016。认证成功还需完成原厂的策略更新 1109，以及
-`GF_CMD_AUTHENTICATE_FINISH`（1086、`0x148` 字节）；后者不是可省略的日志命令。
-原生验证只有完成这两步才返回匹配成功，并核对分组、已登记模板 ID、SID 和挑战。
-未匹配返回 `-EACCES`，与采集质量重试、取消和超时分别处理。
-认证操作 1、2 收到图像结果状态 1006 或 1119 时，按原厂
-`gf_hal_common_authenticate_not_match`（`0x24c98`）读取同一 1016 返回包的
-`+0x79` 字节：非零表示误触采集提示（acquired 1028），继续当前认证；
-为零才作为未匹配处理。该分支不改变匹配阈值或成功结果的身份校验。
-操作 4（FIDO 认证）的原厂路径同样执行 1086，但未作为本项目的认证入口。
+Match-retry status 1064 (`GF_ERROR_MATCH_FAIL_AND_RETRY`) requires setting the 64-bit value at `+0x98` to 2 and continuing 1016. A successful match also requires the stock policy update 1109 and `GF_CMD_AUTHENTICATE_FINISH` (1086, `0x148` bytes); the latter is not an optional logging command. Native verification returns match success only after both steps complete and after validating group, registered template ID, SID, and challenge. A non-match returns `-EACCES`, handled distinctly from capture-quality retries, cancellation, and timeouts. When authentication operations 1 or 2 receive image result status 1006 or 1119, the client follows stock `gf_hal_common_authenticate_not_match` (`0x24c98`) by reading byte `+0x79` of the same 1016 response packet: non-zero indicates an accidental-touch capture hint (acquired 1028) and continues the current authentication, whereas zero is treated as a non-match. This branch does not alter matching thresholds or identity checks on success. Operation 4 (FIDO authentication) also runs 1086 in the stock path, though it is not exposed as an authentication entry point in this project.
 
-### Gatekeeper 与桌面认证
+### Gatekeeper and Desktop Authentication
 
-原厂 `libqtigatekeeper.so` 与 `libkeymasterdeviceutils.so` 表明，Gatekeeper 与
-上述 Keymaster 共用 service 151 → `keymaster64` → service 150 链路。
-本机 5.3 版本使用现代 CBOR 协议：请求是 32 位命令号后接准确长度的 CBOR，
-响应是有符号状态、32 位长度和 CBOR。正状态值表示需等待的重试时间，不是
-传输错误。版本命令 `0x200` 和握手 `0x207` 仍用各自的固定二进制格式。
+Stock `libqtigatekeeper.so` and `libkeymasterdeviceutils.so` show that Gatekeeper shares the same service 151 → `keymaster64` → service 150 chain as Keymaster above. Version 5.3 on this device uses the modern CBOR protocol: requests consist of a 32-bit command number followed by exact-length CBOR, and responses contain a signed status, a 32-bit length, and CBOR. Positive status values indicate a retry throttle delay rather than a transport error. Version command `0x200` and handshake `0x207` still use their fixed binary formats.
 
-| 操作 | 命令 | 请求 CBOR 字段 |
+| Operation | Command | Request CBOR Fields |
 | --- | --- | --- |
-| 建立独立凭据 | `0x21001` | `3`：UID，`8`：新凭据；更换时另带 `5`：旧 handle、`7`：旧凭据 |
-| 校验凭据 | `0x21002` | `3`：UID，`4`：挑战，`6`：handle，`9`：凭据 |
+| Create independent credential | `0x21001` | `3`: UID, `8`: new credential; when updating, also `5`: old handle, `7`: old credential |
+| Verify credential | `0x21002` | `3`: UID, `4`: challenge, `6`: handle, `9`: credential |
 
-Linux 用 `0x40000000 | LinuxUID` 作为 Gatekeeper UID 和 Goodix 分组，
-接受的 Linux UID 范围为 `0`–`0x0fffffff`。凭据是客户端生成并持久保存的随机值，
-不是用户的登录口令；已完成的凭据直接复用，不重新创建或替换 SID。
-不读取或复制 Android 文件系统中的密码句柄和指纹模板，也不运行 Android gatekeeperd。
+Linux uses `0x40000000 | LinuxUID` as both the Gatekeeper UID and Goodix group, accepting Linux UIDs in the range `0`–`0x0fffffff`. The credential is a client-generated random value persisted on disk rather than the user's login password; an existing completed credential is reused directly without recreating or replacing the SID. Neither password handles nor fingerprint templates are read or copied from the Android filesystem, and Android's `gatekeeperd` is not run.
 
-录入用 Goodix 1006 返回的挑战执行 Gatekeeper 校验，再将其
-69 字节 HAT 原样交给 Goodix 1007。令牌中的类型和时间戳保留网络字节序，MAC
-必须为 32 字节；不能用 Linux 密码校验或自行生成的 HMAC 代替。
-原厂 Keymaster 绑定、独立凭据创建、挑战校验和 Goodix 授权录入均已在实机完成。
+Enrollment runs Gatekeeper verification with the challenge returned by Goodix 1006, then passes the resulting 69-byte HAT verbatim to Goodix 1007. Token type and timestamp preserve network byte order, and the MAC must be 32 bytes; neither Linux password verification nor a locally forged HMAC can substitute for it. Stock Keymaster binding, independent credential creation, challenge verification, and Goodix authorized enrollment have all been completed on hardware.
 
-签名程序自身也检查录入令牌，不只是 Linux 客户端检查包格式。
-针对固件清单中的 `gfpia.elf`，动态符号表和可执行段给出以下位置；该文件的
-可执行 `PT_LOAD` 从文件偏移 `0x1000` 映射到虚拟地址 `0`，所以下表地址加
-`0x1000` 即该指令的文件偏移。
+The signed TA itself validates the enrollment token—not just the Linux client checking packet structure. For `gfpia.elf` in the firmware manifest, the dynamic symbol table and executable segment give the following locations; its executable `PT_LOAD` maps file offset `0x1000` to virtual address `0`, so adding `0x1000` to any address below yields the instruction's file offset.
 
-| 符号与虚拟地址 | 行为 |
+| Symbol and Virtual Address | Behavior |
 | --- | --- |
-| `gf_config_init_by_chip_type`，`0x420`，写入点 `0x4b0` | 将 `g_config+0x60` 设为 1，启用正常配置的令牌检查 |
-| `gf_ta_enroll`，`0x45160`，检查段 `0x45320–0x4538c` | 按配置检查 HAT 版本、挑战，再复制 69 字节令牌，将 MAC 字段清零并计算期望 HMAC；比较原请求中的 32 字节 MAC |
-| `gf_ta_enroll`，错误段 `0x45494–0x454f4`、`0x45390–0x453c0` | 版本、挑战、MAC 错误分别返回 1055、1056、1057；MAC 错误日志为 `token authenticate failed` |
-| `gf_generate_hmac_enroll`，`0x4fe30` → `gf_generate_hmac`，`0x4ff30` | 对令牌前 37 字节计算 HMAC，将结果写入后 32 字节 |
+| `gf_config_init_by_chip_type`, `0x420`, write at `0x4b0` | Sets `g_config+0x60` to 1, enabling token checks in the normal configuration |
+| `gf_ta_enroll`, `0x45160`, check block `0x45320–0x4538c` | Checks HAT version and challenge per config, copies the 69-byte token, zeroes the MAC field, computes the expected HMAC, and compares it against the 32-byte MAC in the request |
+| `gf_ta_enroll`, error blocks `0x45494–0x454f4`, `0x45390–0x453c0` | Returns 1055, 1056, and 1057 for version, challenge, and MAC errors respectively; MAC failure logs `token authenticate failed` |
+| `gf_generate_hmac_enroll`, `0x4fe30` → `gf_generate_hmac`, `0x4ff30` | Computes HMAC over the first 37 bytes of the token and writes the result to the final 32 bytes |
 
-这些指令可以在不调用安全世界的情况下从仓库固件只读复核；它们不证明每种固件配置
-都强制检查，但足以说明不能把正常录入协议改成挑战值、零 MAC 或自制令牌。
-[`goodix_operation_start_enroll()`](../../../linux/userspace/fingerprint/piano-goodix-operations.c)
-只作挑战、SID 和类型的结构检查，MAC 的真实性仍由原厂签名程序判定。
+These instructions can be verified read-only against the repository firmware without invoking the secure world; while they do not prove every firmware configuration enforces the check, they are sufficient to show that the normal enrollment protocol cannot be replaced with a raw challenge, zero MAC, or self-generated token. [`goodix_operation_start_enroll()`](../../../linux/userspace/fingerprint/piano-goodix-operations.c) only performs structural validation of the challenge, SID, and type; MAC authenticity is still judged by the stock signed TA.
 
-[`piano-goodix-rpmb.c`](../../../linux/userspace/fingerprint/piano-goodix-rpmb.c)
-通过 UFS BSG 的 `SG_IO` 提供回放保护存储（RPMB）通道。原厂读请求使用协议版本
-`0`，认证写请求使用 `0x100`；两者共用 24 字节请求头、512 字节帧和 20 字节响应头，
-响应保留请求版本。独立 Linux 凭据已通过该通道创建并持久保存。
-通道只转发计数器读取和认证读写，写后的结果查询由主机生成，拒绝密钥烧录、purge、配置写及
-未知版本／帧。写入或响应传输失败后停止该会话，不自动重试。
+[`piano-goodix-rpmb.c`](../../../linux/userspace/fingerprint/piano-goodix-rpmb.c) provides the Replay Protected Memory Block (RPMB) channel via `SG_IO` on UFS BSG. Stock read requests use protocol version `0` and authenticated write requests use `0x100`; both share a 24-byte request header, 512-byte frames, and a 20-byte response header that echoes the request version. Independent Linux credentials have been created and persisted through this channel. The channel forwards only write-counter reads and authenticated reads/writes, with post-write result queries generated by the host; it rejects key provisioning, purge, configuration writes, and unknown versions or frames. Any write or response transport failure terminates the session without automatic retry.
 
-录入期间，FS、GPFS 和 RPMB 三个回调由同一个对象管理。只有匹配所选高位 UID 的
-`0x21001` 创建或 `0x21002` 校验同步调用期间开放 RPMB；传感器初始化、挑战获取、
-采样、模板保存和关闭时均关闭。普通指纹验证、枚举和删除不打开 RPMB 后端。
-共享请求先复制到主机私有缓冲区，再校验和提交，回复后清零；日志只记录命令与
-帧结构状态，不输出数据、MAC、nonce、计数器、凭据或 HAT。
+During enrollment, the FS, GPFS, and RPMB callbacks are managed by the same object. RPMB is opened only during synchronous `0x21001` create or `0x21002` verify calls matching the selected high-bit UID; it remains closed during sensor initialization, challenge retrieval, capture, template saving, and shutdown. Regular fingerprint verification, listing, and deletion do not open the RPMB backend. Shared requests are copied into a host-private buffer before validation and submission, then zeroed after replying; logs record only command and frame-structure status, never payload data, MACs, nonces, counters, credentials, or HATs.
 
-对同机签名 `keymaster64` 的静态分析已确认 Gatekeeper 的记录管理：现代
-请求解析器拒绝超出 32 位的 UID，查找时比较完整 UID，不截断或取模。46 个记录槽
-仅从空槽分配，满表拒绝新建，不淘汰旧用户。验证失败计数和时间戳更新选中的记录；
-底层写回 512 字节扇区时会重算同扇区的 HMAC，不更改相邻记录的 UID、SID 或失败计数。
-共用的启动初始化会更新非零时间戳，不会清除失败计数。
+Static analysis of the device's signed `keymaster64` confirmed Gatekeeper record management: the modern request parser rejects UIDs exceeding 32 bits and compares the full UID on lookup without truncation or modulo. The 46 record slots allocate strictly from empty slots and reject new entries when full without evicting existing users. Failure counts and timestamps update only the selected record; writing back the underlying 512-byte sector recomputes that sector's HMAC without altering adjacent records' UIDs, SIDs, or failure counts. Shared boot initialization updates non-zero timestamps without clearing failure counts.
 
-RPMB 与 Android 共用，包含全局写计数器、启动记录和安全存储目录元数据。
-回调协议没有 TA 身份或 UID，主机不能按 Linux UID 过滤认证写，也不能从加密帧识别
-安全程序内部的全局目录更新。UID 隔离依赖上述原厂签名 Keymaster 的实现；
-命令白名单和短暂开放时段不等于独立的物理 RPMB。Linux 客户端不调用凭据删除或
-全局重置命令，Goodix 模板的普通文件则保存在独立的 Linux `fpdata/`。
+RPMB is shared with Android and contains the global write counter, boot records, and secure-storage directory metadata. Because the callback protocol carries no TA identity or UID, the host cannot filter authenticated writes by Linux UID or identify internal global directory updates inside encrypted frames. UID isolation relies on the stock signed Keymaster implementation above; command allowlisting and brief open windows do not amount to an isolated physical RPMB. The Linux client never invokes credential deletion or global reset commands, while regular Goodix template files reside in the separate Linux `fpdata/` directory.
 
-因此，禁止修改 RPMB 时不能测试新录入，也不能仅凭“已有 Linux 凭据”就执行
-Gatekeeper 校验来取得新 HAT：`piano_goodix_enroll()` 经 `goodix_gatekeeper_create()`、
-`goodix_gatekeeper_verify()` 调用 `gatekeeper_command()`，后者在同步调用期间允许
-RPMB 认证读写。已有凭据可避免重复创建 SID，但校验和启动记录仍可能更新共享安全存储。
-HAT 绑定当前录入挑战，不落盘供下一次录入复用。
-[Android Gatekeeper 规范](https://source.android.com/docs/security/features/authentication/gatekeeper#request-throttling)
-要求验证前写入失败计数、成功后清除，所以不能把正常校验改成只读来绕过防重试保护。
-高位 UID 与独立模板目录可以隔离用户记录，但不改变共享存储这一事实。
+Therefore, when RPMB writes are disallowed, you cannot test new enrollments or invoke Gatekeeper verification to obtain a fresh HAT on the assumption that a Linux credential already exists: `piano_goodix_enroll()` calls `gatekeeper_command()` via `goodix_gatekeeper_create()` and `goodix_gatekeeper_verify()`, which enables RPMB authenticated reads/writes during the synchronous call. An existing credential avoids creating a new SID, but verification and boot records can still update shared secure storage. HATs are bound to the current enrollment challenge and are not persisted for reuse in a later enrollment. The [Android Gatekeeper specification](https://source.android.com/docs/security/features/authentication/gatekeeper#request-throttling) requires writing the failure count before verification and clearing it on success, so normal verification cannot be made read-only to bypass throttling protection. High-bit UIDs and separate template directories isolate user records, but do not change the fact that the underlying storage is shared.
 
-现有 `piano_goodix_verify()`、`piano_goodix_list()`、`piano_goodix_delete()` 使用
-`session_start(..., 0)`，只注册 FS／GPFS，不打开本项目的 RPMB 后端；其中认证复用
-Linux profile 中的 SID 和模板，验证的是 Goodix 返回的指纹 HAT，不再获取 Gatekeeper HAT。
-这是可保留的普通认证路径。`TEE_IOC_VERSION` 只确认内核接口能力，不验证指纹采集、
-匹配或模板持久化；删除操作仍会更改 Linux 模板。
+The existing `piano_goodix_verify()`, `piano_goodix_list()`, and `piano_goodix_delete()` functions call `session_start(..., 0)`, registering only FS/GPFS without opening this project's RPMB backend; authentication reuses the SID and templates from the Linux profile and validates the fingerprint HAT returned by Goodix without requesting a Gatekeeper HAT. This is the regular authentication path that can be preserved. `TEE_IOC_VERSION` confirms only kernel interface capability and does not test capture, matching, or template persistence; deletion still modifies Linux templates.
 
-[标准 fprintd 录入接口](https://fprint.freedesktop.org/fprintd-dev/Device.html)
-只接收手指名称，由 Polkit 授权，不提供 Gatekeeper 凭据或 HAT。
-[`本地 libfprint 后端`](../../../patches/libfprint/1.94.100/series.json)
-直接编译同一原生实现，提供录入、单手指验证、多指识别、枚举、按 UID 删除和取消；
-后端的设备私有数据只保存 Linux UID 和手指名称。fprintd 管理标准用户记录，
-密封模板仍由设备端存储管理。
-GNOME 账户设置通过标准 fprintd 接口录入，锁屏认证使用标准 PAM 链路。
+The [standard fprintd enrollment interface](https://fprint.freedesktop.org/fprintd-dev/Device.html) accepts only a finger name, authorized via Polkit, without supplying Gatekeeper credentials or a HAT. The [local libfprint backend](../../../patches/libfprint/1.94.100/series.json) compiles the same native implementation directly, providing enrollment, single-finger verification, multi-finger identification, listing, per-UID deletion, and cancellation; the backend's device-private data stores only the Linux UID and finger name. `fprintd` manages standard user records while sealed templates remain in device-side storage. GNOME account settings enroll through the standard fprintd interface, and lock-screen authentication uses the standard PAM stack.
 
-`fprintd` 的 `any` 请求在登记多根手指后使用标准 `IDENTIFY`，可识别该用户的任一
-已登记手指。后端按图库中的 Linux UID 分组，每次只选择一个用户的 QTEE 分组，
-调用原生 `verify <uid> any`，继续校验分组、模板 ID、挑战、SID 和认证类型，
-再将结果对应回请求图库中的原始记录。指定手指的 `VERIFY` 仍只接受该手指。
+`fprintd`'s `any` request uses standard `IDENTIFY` once multiple fingers are enrolled, recognizing any enrolled finger for that user. The backend groups gallery prints by Linux UID, selects only one user's QTEE group at a time, invokes native `verify <uid> any`, continues validating group, template ID, challenge, SID, and authenticator type, and maps the result back to the original entry in the requested gallery. Single-finger `VERIFY` still accepts only the specified finger.
 
-fprintd 在新录入前通过同一接口检查重复指纹。跨用户图库按 UID 依次执行独立采样，
-前一个用户完成不匹配后，才尝试下一个用户，因此可能需要再次轻触；认证数据错误、
-存储错误、超时和取消不会被当成不匹配继续。图库为空时会先枚举 Linux 自有记录，
-让 fprintd 识别并清理丢失主机登记信息的指纹，Android 的分组不参与识别。
+`fprintd` uses the same interface to check for duplicate prints before a new enrollment. Cross-user galleries perform independent captures per UID in sequence, trying the next user only after the previous user finishes with a non-match, so an additional touch may be required; authentication-data errors, storage errors, timeouts, and cancellations are not treated as non-matches to continue past. When the gallery is empty, the backend first enumerates Linux's own records so `fprintd` can recognize and clean up fingerprints missing host registration metadata; Android groups do not participate in identification.

@@ -1,29 +1,42 @@
 # Piano ADSP — HyperOS 4
 
-来自官方完整 OTA `OS4.0.6.0.XPYCNXM` 的 `modem` 分区 `/image`，
-vendor 标识为 `OS4.0.6.0.XPYCN`。提取结果与升级到同一版本的设备上
-`/vendor/firmware_mnt/image` 的 461 个文件逐一比对，全部一致。
+Extracted from `/image` on the `modem` partition of the official full OTA
+`OS4.0.6.0.XPYCNXM` (vendor tag `OS4.0.6.0.XPYCN`). All 461 extracted files
+match `/vendor/firmware_mnt/image` byte-for-byte on a device updated to the
+same version.
 
-包含完整 ADSP、ADSP-DTB 与三个服务描述文件，保持原始字节和文件名。
-`manifest.json` 记录每个文件的大小及 SHA256。构建时成套覆盖上游旧版
-ADSP，不改其他设备固件，也不写入 Android 固件分区。
+Contains the full ADSP firmware, ADSP-DTB, and three service descriptor files,
+preserving original bytes and filenames. `manifest.json` records the size and
+SHA256 of each file. At build time, this bundle replaces the older upstream
+ADSP set as a unit without modifying other device firmware or writing to
+Android firmware partitions.
 
-配套 MCA PD 协议为版本 2：HyperOS 4 在 `0x2100b` 插入了属性，
-后续 PD 档位查询、PPS 选择和固定电压请求的编号相应增加 1。
-`piano-board-identity.dtso` 声明所用协议版本，内核 `piano_mca`
-统一转换请求编号；不要将本组固件与只支持旧协议的充电驱动混用。
+The paired MCA PD protocol is version 2: HyperOS 4 inserts a property at
+`0x2100b`, shifting subsequent property IDs for PD capability queries, PPS
+selection, and fixed-voltage requests up by 1. `piano-board-identity.dtso`
+declares the protocol version in use, and the kernel `piano_mca` driver
+translates request IDs centrally; do not mix this firmware set with charging
+drivers that only support the older protocol.
 
-设备上已确认新版驱动可以读到正确的 PDO（充电器提供的电压／电流档位），
-同一条 5 V 连接的输入电流从约 0.5 A 恢复到 1.49 A；原厂同线约为
-1.59 A。这是普通 PD 充电修复，不代表已测得小米高压快充。
+On-device testing confirms that the updated driver reads valid PDOs
+(voltage/current profiles advertised by the charger), restoring input current
+over the same 5 V connection from ~0.5 A to 1.49 A (compared to ~1.59 A on
+stock OS with the same cable). This is a standard PD charging fix and does not
+indicate that Xiaomi high-voltage fast charging has been verified.
 
-默认内核的 MiPPS 认证位于
-[`0027-power-piano-mipps-authentication.patch`](../../../patches/linux/7.3/0027-power-piano-mipps-authentication.patch)。
-它在现有充电工作队列内完成 HMAC-SHA256 挑战应答，使用标准
-`power_supply` 的 `authentic` 属性报告结果，不另装认证服务。固件漏报身份时，
-仅用真实挑战的应答恢复并校验 ID；无法认证就继续普通 PD/PPS。
-认证与电压请求沿用同一个固件协议版本转换，不改动充电电流和温控上限。
-命令顺序、来源和限制见[内核说明](../../../docs/devel/linux/kernel.md#usb-type-c)。
+MiPPS authentication in the default kernel is implemented in
+[`0027-power-piano-mipps-authentication.patch`](../../../patches/linux/7.3/0027-power-piano-mipps-authentication.patch).
+It performs the HMAC-SHA256 challenge-response within the existing charging
+workqueue and reports the result through the standard `power_supply`
+`authentic` property, without requiring a separate authentication daemon. When
+the firmware omits identity reporting, the ID is recovered and verified solely
+from a real challenge response; if authentication fails, charging falls back to
+standard PD/PPS. Authentication and voltage requests share the same firmware
+protocol version translation and do not alter charging current or thermal
+limits. See the [kernel notes](../../../docs/devel/linux/kernel.md#usb-type-c)
+for command ordering, provenance, and limitations.
 
-这些文件是 Qualcomm／小米的专有固件，不适用 SunUEFI 的源码许可。
-未取得额外再分发授权；保留原权利人的权利，仅用于该设备的硬件运行。
+These files are proprietary Qualcomm/Xiaomi firmware and are not covered by
+SunUEFI's source license. No additional redistribution license has been
+granted; all rights remain with the original rights holders, and the files are
+intended solely for operating hardware on this device.

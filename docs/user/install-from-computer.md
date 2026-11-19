@@ -1,26 +1,26 @@
-# 从电脑刷写镜像
+# Flashing Images from a Computer
 
-这是备用方式：在电脑上用原厂 Fastboot 更新平板里已有的 `sunuefi_esp` 和 `sunuefi_root` 分区。日常安装请用平板上的引导助手，步骤见 https://github.com/slwyts/Project-SunUEFI/blob/main/docs/user/install-from-artifact.md 。
+This is a fallback method for updating existing `sunuefi_esp` and `sunuefi_root` partitions on the tablet using stock Fastboot from a computer. For routine installation, use the Boot Helper on the tablet; see https://github.com/slwyts/Project-SunUEFI/blob/main/docs/user/install-from-artifact.md .
 
 > [!WARNING]
-> 刷写 `sunuefi_root` 会覆盖独立系统里的所有文件，先备份自己的数据。不要把这些镜像刷进 Android 的其他分区。
+> Flashing `sunuefi_root` overwrites all files on the dedicated system partition; back up your data first. Never flash these images to any other Android partitions.
 
-## 准备
+## Prerequisites
 
-* 平板已解锁 Bootloader，并且用引导助手创建过独立分区，也就是已有 `sunuefi_esp` 和 `sunuefi_root`。没有的话先在助手的 **存储** 页点 **创建独立分区**。
-* 电脑装有 Android platform-tools（`adb` 和 `fastboot`），并有一根 USB-C 数据线。
-* 从同一次 [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml) 下载 `SunUEFI-ESP` 和所需的 `SunUEFI-Root-发行版`，解压得到 `esp.sparse.img` 和 `root-发行版.sparse.img`。它们是 Android 稀疏镜像，只能用原厂 Fastboot 刷写，不能直接用 `dd`。
+* The tablet has an unlocked bootloader and dedicated partitions (`sunuefi_esp` and `sunuefi_root`) already created with the Boot Helper. If not, tap **Create Dedicated Partitions** on the **Storage** tab in the Boot Helper first.
+* A computer with Android platform-tools (`adb` and `fastboot`) installed and a USB-C data cable.
+* Download `SunUEFI-ESP` and your desired `SunUEFI-Root-<distro>` from the same [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml) run, and extract `esp.sparse.img` and `root-<distro>.sparse.img`. These are Android sparse images and must be flashed with stock Fastboot—do not write them directly with `dd`.
 
-## 刷写
+## Flashing
 
-1. 在 Android 里打开 USB 调试，连接电脑，进入原厂 Fastboot 并查看设备序列号：
+1. Enable USB debugging in Android, connect the tablet to your computer, reboot into stock Fastboot, and check the device serial number:
 
    ```sh
    adb reboot bootloader
    fastboot devices
    ```
 
-2. 把下面命令里的 `SERIAL` 换成上一步看到的序列号，root 文件名换成下载的发行版：
+2. Replace `SERIAL` below with the serial number from the previous step, and replace the root image filename with the distribution you downloaded:
 
    ```sh
    fastboot -s SERIAL -S 128M flash sunuefi_root root-debian-gnome.sparse.img
@@ -28,12 +28,12 @@
    fastboot -s SERIAL reboot
    ```
 
-引导本身仍通过平板上的助手安装和维护，这里不处理。
+The boot setup itself is still installed and maintained through the Boot Helper on the tablet and is not handled here.
 
-## 怎样确认成功
+## Verifying the Installation
 
-平板重启回到 Android 后，在助手的 **启动** 页选 **UEFI** 和 **Linux**，保存并重启。Linux 首次启动会自动把根文件系统扩展到分区大小，蓝牙地址由系统自动读取。登录用户名是 `piano`，密码是 `piano123456`。
+After the tablet reboots into Android, select **UEFI** and **Linux** on the **Boot** tab in the Boot Helper, then save and reboot. On first boot, Linux automatically expands the root filesystem to fill the partition and reads the Bluetooth address automatically. The login username is `piano` and the password is `piano123456`.
 
-## 出问题怎么办
+## Troubleshooting
 
-启动失败或想回 Android，见 https://github.com/slwyts/Project-SunUEFI/blob/main/docs/user/recovery.md 。
+If boot fails or you want to return to Android, see https://github.com/slwyts/Project-SunUEFI/blob/main/docs/user/recovery.md .

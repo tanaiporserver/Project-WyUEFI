@@ -1,15 +1,15 @@
-# Piano 产品静态输入
+# Piano Static Product Inputs
 
-这里保存产品运行时加载的13个 Foundation 原厂 PE/原始 DEPEX、1个早期 DXE 驱动 EnvDxeEnhanced、清理后的板级 DTB，以及从 xbl_config 提取的配置 DTB。manifest 使用相对路径、长度和 SHA256，保留原始来源与派生说明。产品输入不包含 GPT 快照、整份固件采集、14MiB测试区备份、日志、个人路径或运行时 seed。
+This directory stores the 13 stock Foundation PE/raw DEPEX binaries loaded at product runtime, 1 early DXE driver (EnvDxeEnhanced), the sanitized board DTB, and the configuration DTB extracted from xbl_config. The manifest uses relative paths, lengths, and SHA256 hashes, preserving original provenance and derivation notes. Product inputs exclude GPT snapshots, full firmware dumps, 14 MiB test-region backups, logs, personal paths, and runtime seeds.
 
-[`backups/`](backups/) 另存本机分区备份，不在产品 manifest 中，也不参与构建或打包。
+[`backups/`](backups/) separately stores local partition backups; it is not included in the product manifest and does not participate in builds or packaging.
 
-板级描述来自 piano/SM8750P 的16GiB测试机。清理 DTB 仅移除 root/chosen 的身份、种子、启动参数和快照地址，硬件节点及保留区不变；它不能证明每个硬件/SKU版本适用，也不能授予实时内存所有权。
+The board description comes from a 16 GiB piano/SM8750P test unit. DTB sanitization removes only identity, seeds, boot arguments, and snapshot addresses from `root`/`chosen`, leaving hardware nodes and reserved regions unchanged; it neither proves suitability for every hardware/SKU revision nor grants live memory ownership.
 
-历史 GPT 采集仅作测试材料，不属于产品构建输入。产品读取当前设备的 GPT，不与历史整表快照比对；关键原厂分区的只读保护继续有效。
+Historical GPT captures serve only as test material and are not product build inputs. The product reads the current device's GPT instead of comparing against historical full-table snapshots; read-only protection for critical stock partitions remains active.
 
-`tools/piano_vendor_inputs.py` 固定 manifest 身份，核对所用固件文件、ARM64 PE、DEPEX 和 DTB。ClockDxe 保留原始字节，由现有严格派生工具生成产品兼容副本。
+`tools/piano_vendor_inputs.py` pins the manifest identity and verifies the referenced firmware files, ARM64 PEs, DEPEX sections, and DTBs. ClockDxe retains its original bytes, and the existing strict derivation tool generates the product-compatible copy.
 
-`early-dxe/EnvDxeEnhanced/` 保留原始 PE、DEPEX 和原有二进制 INF，`provenance.json` 记录原厂 `uefi_a.img` 身份、文件 GUID、长度和 SHA256。产品准备核对后复制到构建副本的 Stage0 路径，继续通过 FV/DXE APRIORI 自动执行，不加入 Foundation 的运行时加载表。
+`early-dxe/EnvDxeEnhanced/` preserves the original PE, DEPEX, and stock binary INF, while `provenance.json` records the stock `uefi_a.img` identity, file GUID, length, and SHA256. After verification during product preparation, it is copied to the Stage0 path of the build copy and continues to execute automatically via FV/DXE APRIORI without being added to Foundation's runtime load table.
 
-原厂二进制与派生材料的公开分发许可尚未完成核对；本目录不声明已经取得开放二进制的许可。
+Public redistribution licensing for stock binaries and derived materials has not yet been cleared; this directory does not claim that permission to distribute open binaries has been obtained.

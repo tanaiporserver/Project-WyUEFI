@@ -1,82 +1,77 @@
-# 启动架构与系统交接
+# Boot Architecture & System Handoff
 
-本页说明从按下电源键到进入 Linux 桌面的整个启动链条，涵盖合体 BOOT、EDK2 UEFI 固件、存储分区与系统交接。
+This page explains the complete boot chain from pressing the power button to entering the Linux desktop, covering Combined BOOT, EDK2 UEFI firmware, storage partitions, and system handoff.
 
-## 开机启动链
+## Boot Chain
 
 ```
-按下电源
+Power button pressed
   │
   ▼
-原厂引导程序 (XBL / ABL)
-  │  按 BOOT 分区的 kernel_size 整段加载内核与 SunUEFI
+Stock bootloader (XBL / ABL)
+  │  Loads kernel and SunUEFI as a single block per BOOT partition kernel_size
   ▼
-合体 BOOT 选择器 (3 秒倒计时)
-  ├── 选 Android ──► 跳到原厂内核入口 ──► HyperOS
-  └── 选 UEFI ─────► 进入 EDK2 UEFI 核心 (PianoUEFI-product.img)
-                       │
-                       ├─► 常驻 USB Fastboot 服务 (SunUEFI-piano)
-                       ├─► 显示 SimpleInit 图形菜单
-                       │
-                       ▼ 无操作五秒，或手动启动 Linux
-                     systemd-boot 自动发现版本化 UKI
-                       │ systemd-stub → Linux EFI stub
-                       │
-                       ▼ ExitBootServices 安全退出
-                     释放 USB 控制器、UFS、时钟与 SMMU
-                       │
-                       ▼
-                     Linux 内核 (Image) + 设备树 (board.dtb) + initramfs
-                       │
-                       ▼
-                     挂载根文件系统 (sunuefi_root, ext4)
-                       │
-                       ▼
-                     进入 Linux 桌面 (GNOME / KDE / SteamOS)
+Combined BOOT selector (3-second countdown)
+  ├── Select Android ──► Jump to stock kernel entry ──► HyperOS
+  └── Select UEFI ─────► Enter EDK2 UEFI core (PianoUEFI-product.img)
+                           │
+                           ├─► Resident USB Fastboot service (SunUEFI-piano)
+                           ├─► Display SimpleInit graphical menu
+                           │
+                           ▼ 5 seconds idle, or manual Linux boot
+                         systemd-boot auto-discovers versioned UKIs
+                           │ systemd-stub → Linux EFI stub
+                           │
+                           ▼ ExitBootServices safe exit
+                         Release USB controller, UFS, clocks, and SMMU
+                           │
+                           ▼
+                         Linux kernel (Image) + Device Tree (board.dtb) + initramfs
+                           │
+                           ▼
+                         Mount root filesystem (sunuefi_root, ext4)
+                           │
+                           ▼
+                         Enter Linux desktop (GNOME / KDE / SteamOS)
 ```
 
-## 核心机制
+## Core Mechanisms
 
-### 合体 BOOT
+### Combined BOOT
 
-原厂 ABL 在 Recovery 自带内核时不会加载 `pvmfw`，直接替换内核会导致 Recovery 无法启动。SunUEFI 把原厂 Android 内核留在原位，只把入口跳转改向一个小选择器，选择器和 UEFI 核心接在内核之后由 ABL 一同载入内存。选择 Android 时跳回原厂内核，选择 UEFI 时进入 EDK2。原理见[合体 BOOT 详细说明](boot/combined-boot.md)。
+Stock ABL does not load `pvmfw` when Recovery carries its own kernel, so replacing the kernel directly prevents Recovery from booting. SunUEFI leaves the stock Android kernel in place and only redirects the entry jump to a small selector; the selector and UEFI core are appended after the kernel and loaded into memory together by ABL. Selecting Android jumps back to the stock kernel, while selecting UEFI enters EDK2. See [Combined BOOT Details](boot/combined-boot.md) for how it works.
 
-### 启动路线记忆
+### Boot Route Persistence
 
-在 Android 引导助手中选择的系统会被保存为默认启动路线，开机时临时用音量键改选不会改变默认值。Android 槽位（A/B）直接读取高通 GPT 的活动槽位属性。在 Linux 下运行 `piano-next-boot android --reboot` 即可切回 Android。
+The OS selected in the Android Boot Helper is saved as the default boot route; temporarily changing the selection with volume keys at startup does not alter the default. The Android slot (A/B) is read directly from Qualcomm's GPT active slot attribute. From Linux, run `piano-next-boot android --reboot` to switch back to Android.
 
-### 两个 Fastboot
+### Two Fastboot Services
 
-SunUEFI 提供与原厂 Bootloader 不同的 Fastboot 服务：
+SunUEFI provides a separate Fastboot service distinct from the stock bootloader:
 
-| 服务 | 设备序列号 | 阶段 | 能力 |
+| Service | Device Serial | Stage | Capabilities |
 | --- | --- | --- | --- |
-| 原厂 Bootloader Fastboot | 平板真实序列号 | ABL 阶段 | 允许刷写与擦除分区 |
-| UEFI Fastboot | `SunUEFI-piano` | UEFI 运行期间 | 读日志、截图、只读读取分区；拒绝刷写和擦除 |
+| Stock bootloader Fastboot | Tablet's real serial number | ABL stage | Allows flashing and erasing partitions |
+| UEFI Fastboot | `SunUEFI-piano` | During UEFI execution | Read logs, take screenshots, read-only partition access; refuses flashing and erasing |
 
-详细命令见 [UEFI Fastboot](../user/fastboot.md)。
+See [UEFI Fastboot](../user/fastboot.md) for detailed commands.
 
-## 存储布局
+## Storage Layout
 
-内部存储划分两个专用分区，不破坏 Android 原有分区：
+Internal storage is partitioned with two dedicated partitions without touching stock Android partitions:
 
-* `sunuefi_esp`（512 MiB，FAT32，4 KiB 逻辑扇区）：存放 Linux 启动文件；
-* `sunuefi_root`（可自选大小，ext4）：存放 Linux 根文件系统。
+* `sunuefi_esp` (512 MiB, FAT32, 4 KiB logical sectors): stores Linux boot files;
+* `sunuefi_root` (customizable size, ext4): stores the Linux root filesystem.
 
 ```
 sunuefi_esp/
 ├── EFI/
 │   ├── BOOT/BOOTAA64.EFI
 │   ├── systemd/systemd-bootaa64.efi
-│   └── Linux/linux-<release>.efi   # 内核、initramfs、DTB、启动参数
+│   └── Linux/linux-<release>.efi   # Kernel, initramfs, DTB, boot arguments
 └── loader/loader.conf
 ```
 
-四个产品发行版共用上面的初装 ESP。systemd-boot 识别 `EFI/Linux/` 中
-UKI 的系统信息和内核版本；发行版更新通过标准钩子生成自己的 UKI，
-不要求使用固定文件名或产品 rootfs。
+All four production distributions share the initial ESP layout above. `systemd-boot` reads the OS metadata and kernel version from UKIs under `EFI/Linux/`; distribution updates generate their own UKIs through standard hooks without requiring fixed filenames or a specific production rootfs.
 
-旧的 Linux `boot.img` 和分文件 BLS 配置不再是产品入口，更新固件时需同步
-更新启动镜像（ESP），不必覆盖已有 root。UEFI 自动适配本次启动的内存布局，
-不按 12/16 GB 制作 UKI。内存与退出身份的处理见
-[UEFI 核心](uefi-core.md#esp-启动文件与系统交接)。
+The legacy Linux `boot.img` and split-file BLS entries are no longer production entry points. When updating firmware, update the boot image (ESP) alongside it without overwriting an existing root partition. UEFI automatically adapts to the memory layout of each boot, so UKIs are not built separately for 12 GB vs. 16 GB models. For memory and exit-identity handling, see [UEFI Core](uefi-core.md#esp-boot-files-and-os-handoff).

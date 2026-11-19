@@ -1,151 +1,106 @@
-# UEFI 产品核心实现
+# UEFI Product Core Implementation
 
-本项目维护唯一的 UEFI 产品核心，编译生成产物 `artifacts/product/PianoUEFI-product.img`。合体 BOOT、`fastboot boot` 临时启动以及系统安装工具使用同一份核心，不再维护多套测试固件。
+This project maintains a single UEFI product core, compiled to produce `artifacts/product/PianoUEFI-product.img`. Combined BOOT, temporary `fastboot boot`, and the OS installation tools all share this same core; multiple test firmware variants are no longer maintained.
 
-## 固件构建与组装
+## Firmware Build and Assembly
 
-固件通过 `./build.sh uefi` 构建。其流程在 `build/firmware-workspace/` 独立工作区中进行，不改动 `upstream/` 中的上游子模块：
+The firmware is built via `./build.sh uefi`. The build runs in an isolated workspace under `build/firmware-workspace/` without modifying the upstream submodules in `upstream/`:
 
-1. `tools/apply_firmware_patches.py` 应用 `patches/firmware/series.json` 中的补丁；
-2. `tools/prepare_product_handoff.py`、`prepare_product_pump.py`、`prepare_product_ui.py`、`prepare_nv_runtime_guard.py` 注入晚期身份检查、事件 pump、菜单界面与变量运行保护；
-3. `tools/build_simpleinit.sh --product-gui-pump` 编译 SimpleInit 图形菜单；
-4. `tools/prepare_product.py` 以 `uefi/platforms/pianoProbePkg` 为基线，组装 `uefi/core/` 与 `uefi/components/` 的源文件，生成 `pianoProductPkg`；
-5. `tools/build_stage0.sh product` 编译生成固件，`tools/build_integrity.py` 核对输入输出完整性，由 `tools/package_product.py` 封装生成产品镜像。
+1. `tools/apply_firmware_patches.py` applies the patches listed in `patches/firmware/series.json`;
+2. `tools/prepare_product_handoff.py`, `prepare_product_pump.py`, `prepare_product_ui.py`, and `prepare_nv_runtime_guard.py` inject late identity verification, the event pump, the menu UI, and runtime variable protection;
+3. `tools/build_simpleinit.sh --product-gui-pump` compiles the SimpleInit graphical menu;
+4. `tools/prepare_product.py` uses `uefi/platforms/pianoProbePkg` as the baseline and assembles the source files from `uefi/core/` and `uefi/components/` to generate `pianoProductPkg`;
+5. `tools/build_stage0.sh product` compiles the firmware, `tools/build_integrity.py` verifies input and output integrity, and `tools/package_product.py` packages the final product image.
 
-## 固件启动流程
+## Firmware Boot Flow
 
-驻留产品核心校验原厂传入的设备树，接管显示，启动后台 USB 服务，发布 UFS
-块设备并恢复保存的设置。然后进入固件启动顺序、一次性启动选择或固件设置。
-启动操作系统和整个固件重启都回到驻留核心，由它完成对应的资源退出。
+The resident product core validates the stock-supplied Device Tree, takes over the display, starts the background USB service, exposes UFS block devices, and restores saved settings. It then proceeds to the firmware boot order, one-time boot selection, or firmware setup. Both OS booting and full firmware reboot return control to the resident core, which handles the corresponding resource teardown.
 
-核心从同一次启动载荷检查取得设备树和启动目标。临时启动只在设备树声明且
-完整映射的 initrd 范围内查找 SimpleInit；合体 BOOT 使用选择器传来的载荷范围。
-两条路径都核对固件内置的应用摘要和 ARM64 EFI 格式。真正加载 SimpleInit 前
-仍独立复查交接记录和应用，不沿用初始化时的验证结果。
+The core obtains both the Device Tree and the boot target from the same boot payload check. Temporary boot searches for SimpleInit only within the initrd range declared in the Device Tree and completely mapped in memory; Combined BOOT uses the payload range passed by the selector. Both paths verify the firmware-embedded application digest and the ARM64 EFI format. Before actually loading SimpleInit, the core still independently re-verifies the handoff record and the application rather than reusing validation results from initialization.
 
-## UFS 写入
+## UFS Writes
 
-标准 Block I/O 以只读方式发布原厂 UFS。固件变量文件的写入范围见
-[变量持久化](boot/uefi-console.md#persist-中的-uefi-变量)。
+Standard Block I/O exposes the stock UFS read-only. For the write scope of the firmware variable file, see [Variable Persistence](boot/uefi-console.md#uefi-variables-in-persist).
 
-Fastboot 只对刷写 `sunuefi_esp` 和 `sunuefi_root` 启用写入。写前按 GPT 名称
-定位并复核介质标识、GUID 和范围，再卸载目标文件系统。每段写入后读回比较，
-最后同步设备缓存。Android sparse 镜像先检查整个结构，空洞保留原有数据。
+Fastboot enables writes only for flashing `sunuefi_esp` and `sunuefi_root`. Before writing, it locates the partition by GPT name, re-verifies the media identifier, GUID, and range, and unmounts the target filesystem. Each written chunk is read back and compared, followed by a device cache sync. Android sparse images are structurally validated in full beforehand, and holes preserve existing data.
 
-GPT 检查结构、CRC、分区重叠和逻辑边界。查询、扫描和启动探测只读取磁盘。
+GPT validation checks structure, CRC, partition overlap, and logical boundaries. Queries, scans, and boot probing only read from disk.
 
-## 安全退出 ExitBootServices
+## Safe ExitBootServices
 
-启动 Linux、软件重启或关机前，驻留核心按同一顺序关闭硬件，再退出 Boot Services。
+Before booting Linux, performing a software reboot, or shutting down, the resident core shuts down hardware in the same fixed order before exiting Boot Services:
 
-1. 先关闭触屏的 GPI 通道和事件环，确认串行引擎停止，再释放 DMA 缓冲区及 SMMU 域，恢复寄存器、引脚和时钟。它占用前的无效 SMMU 路由也必须恢复，以免改变 USB／UFS 的退出校验。
-2. 停止 DWC3 端点传输，清空事件环，释放 USB DMA 缓冲区；USB 口处于主机模式时，先断开 USB 设备驱动，停止并复位 xHCI。
-3. 完成 UFS 已排队的传输，同步缓存，安全断开存储通道。USB 和 UFS 各自在停止 DMA 后解绑地址映射并释放页表。
-4. 关闭物理按键和磁吸键盘输入协议，让键盘 MCU 回到复位，恢复 L11B/L14B 的 RPMh 投票、引脚和 SE6 寄存器，释放 QUP1 时钟引用，最后释放显示时钟。
+1. Close the touchscreen GPI channels and event rings, confirm the serial engine has stopped, release DMA buffers and the SMMU domain, and restore registers, pins, and clocks. The invalid SMMU routing that existed prior to touchscreen acquisition must also be restored so it does not alter USB/UFS exit checks.
+2. Stop DWC3 endpoint transfers, drain the event ring, and release USB DMA buffers; if the USB port is in host mode, disconnect USB device drivers first, then stop and reset xHCI.
+3. Complete queued UFS transfers, synchronize caches, and safely disconnect the storage channel. USB and UFS each unmap address translations and free page tables after stopping DMA.
+4. Close the physical button and official magnetic keyboard input protocols, place the keyboard MCU back into reset, restore RPMh votes for L11B/L14B, pins, and SE6 registers, release QUP1 clock references, and finally release display clocks.
 
-任何一步无法确认外设已经停止时，固件保留可能仍被 DMA 使用的内存，拒绝继续。整机重启和关机在 `ExitBootServices` 成功后调用 `ResetSystem`。具体实现见[触屏实现](boot/uefi-console.md#触屏)与[电源动作](boot/uefi-console.md#电源动作与退出)。
+If any step cannot confirm that a peripheral has stopped, the firmware retains memory that may still be in use by DMA and refuses to proceed. Full system reboot and shutdown invoke `ResetSystem` only after `ExitBootServices` succeeds. For implementation details, see [Touchscreen Implementation](boot/uefi-console.md#touchscreen) and [Power Actions](boot/uefi-console.md#power-actions-and-exit).
 
-DWC3 停机时先结束活动端点传输，再清除 `RUN_STOP`。等待 `DEVCTRLHLT` 时持续
-确认事件缓冲区中的事件，不再处理新请求或提交 TRB；USB2 PHY 在整个停机过程中
-保持唤醒。只有收到控制器停止确认后，才归还 DMA 缓冲区并释放 SMMU 与时钟。
+During DWC3 shutdown, active endpoint transfers are ended first before clearing `RUN_STOP`. While waiting for `DEVCTRLHLT`, the firmware continues acknowledging events in the event buffer without processing new requests or submitting TRBs; the USB2 PHY stays awake throughout shutdown. Only after receiving controller halt confirmation does it return DMA buffers and release the SMMU and clocks.
 
-## 常驻 USB Fastboot 服务
+## Resident USB Fastboot Service
 
-固件运行期间在后台常驻 USB Fastboot 服务（序列号固定为 `SunUEFI-piano`），在固件菜单、设置和 Shell 界面中均保持在线。它支持以下调试操作：
+While the firmware is running, a USB Fastboot service stays resident in the background (with fixed serial number `SunUEFI-piano`) and remains online across the firmware menu, setup, and Shell interfaces. It supports the following debugging operations:
 
-* `oem help`：列出当前模式可用的命令；
-* `getvar product` / `version` / `storage-policy`：查询固件状态；
-* `oem status` / `oem ramlog`：导出内存诊断日志（最多 256 KiB）；
-* `oem screenshot`：读取帧缓冲截图（24 位 BMP）；
-* `fetch`：按后端提供的上限只读读取分区内容（产品每次最多 256 KiB）；
-* `flash` / `erase`：按准确的 GPT 名称写入或清零指定分区；
-* `oem boot-stable`：按固件的启动顺序尝试已安装的系统；
-* `reboot` / `continue`：保存设置，同步存储，完成安全退出后重启。
+* `oem help`: list commands available in the current mode;
+* `getvar product` / `version` / `storage-policy`: query firmware state;
+* `oem status` / `oem ramlog`: export in-memory diagnostic logs (up to 256 KiB);
+* `oem screenshot`: read a framebuffer screenshot (24-bit BMP);
+* `fetch`: read partition contents read-only up to the backend limit (up to 256 KiB per request on product builds);
+* `flash` / `erase`: write or zero a specified partition by exact GPT name;
+* `oem boot-stable`: attempt to boot an installed OS following the firmware boot order;
+* `reboot` / `continue`: save settings, sync storage, complete safe exit, and reboot.
 
-刷写前只卸载目标文件系统。后续每段写入都会重新确认目标未被挂载、介质与分区未变，写完读回校验，最后同步才报告成功。产品 UFS 每条读写命令最多传输 1 MiB，分成至多四个 256 KiB 的 DMA 段；Fastboot 单次 `fetch` 仍最多返回 256 KiB。
+Before flashing, only the target filesystem is unmounted. Each subsequent write chunk re-verifies that the target remains unmounted and that the media and partition have not changed; after writing, data is read back for verification, and success is reported only after syncing. Each product UFS read/write command transfers up to 1 MiB, split into at most four 256 KiB DMA segments; a single Fastboot `fetch` still returns at most 256 KiB.
 
-产品的 USB 批量数据用 64 KiB DMA 缓冲，命令仍只占一个 USB 包。USB 事件优先处理，键盘和触屏在批次间继续读取；下载、刷写或擦除时，SimpleInit 的自动启动倒计时暂停。电脑中止读取时，固件等待旧回复结束，确认端点停止后才接受新命令。命令用法见 [UEFI Fastboot](../user/fastboot.md)。
+Product USB bulk transfers use a 64 KiB DMA buffer, while commands still occupy a single USB packet. USB events are processed with priority, and keyboard and touchscreen inputs continue to be polled between batches; SimpleInit's auto-boot countdown pauses during download, flashing, or erase. If the host aborts a read, the firmware waits for the previous reply to finish and confirms the endpoint has stopped before accepting new commands. For command usage, see [UEFI Fastboot](../user/fastboot.md).
 
-Type-C 重插后，固件确认新方向，等当前命令结束并停稳原连接的 DMA，
-再切换 USB3 通道。高速通道初始化失败时会尝试恢复原设置，保留 USB2 连接。
+After a Type-C replug, the firmware confirms the new orientation, waits for the current command to finish and DMA on the old connection to come to a clean stop, and then switches the USB3 lanes. If high-speed lane initialization fails, it attempts to restore the previous configuration and keep the USB2 connection active.
 
-错误提示页仅在 BootServices、USB 设备及其 SMMU 资源仍有效时运行诊断循环。
-循环绕过启动策略、输入和 USB 角色切换，只处理现有 USB 设备；输入退出失败
-仍可保留健康的 USB 会话。Fastboot 提供状态、日志、截图和快照上传。固件确认
-资源仍可安全退出时才接受重启。具体重启、清理失败和连接
-保留条件见[电源动作与退出](boot/uefi-console.md#电源动作与退出)。状态查询只
-输出保存的镜像、设备树、内存和退出检查结果，不重新探测失败的硬件。
+The error screen runs its diagnostic loop only while BootServices, the USB device, and its SMMU resources remain valid. The loop bypasses boot policy, input handling, and USB role switching, servicing only the existing USB device; a failure during input teardown can still preserve a healthy USB session. Fastboot provides status, logs, screenshots, and snapshot uploads. The firmware accepts a reboot only when it confirms resources can still be safely exited. For detailed conditions on reboot, teardown failures, and connection preservation, see [Power Actions and Exit](boot/uefi-console.md#power-actions-and-exit). Status queries output only the saved image, Device Tree, memory, and exit check results without re-probing failed hardware.
 
-## SimpleInit 图形菜单与启动画面
+## SimpleInit Graphical Menu and Boot Splash
 
-固件整合了定制的 SimpleInit 图形菜单，针对 3200×2136 分辨率的平板屏幕进行四倍字体放大：
+The firmware integrates a customized SimpleInit graphical menu with 4x font scaling for the 3200×2136 tablet display:
 
-* **交互操作**：音量＋/－键移动焦点，电源键确认，同时按两侧音量键返回。其他输入的使用限制见[已知问题](../user/known-issues.md#uefi-菜单与-usb)，后台初始化和标准协议见 [UEFI 设置页面](boot/uefi-console.md#官方磁吸键盘与触控板)；
-* **菜单选项**：默认选择“启动 Linux”；“从文件启动”可选择 EFI 应用，另有固件设置、UEFI Shell、文件管理器、工具、UEFI 启动项及电源操作；
-* **进度显示**：启动画面实时显示底层硬件初始化的分阶段进度，避免长时间黑屏。
+* **Controls**: Volume +/- moves focus, Power confirms, and pressing both Volume buttons simultaneously goes back. For limitations of other input methods, see [Known Issues](../user/known-issues.md#uefi-menu-and-usb); for background initialization and standard protocols, see [UEFI Setup Page](boot/uefi-console.md#official-magnetic-keyboard-and-touchpad);
+* **Menu Options**: "Boot Linux" is selected by default; "Boot from File" lets you choose an EFI application, alongside firmware setup, UEFI Shell, file manager, tools, UEFI boot entries, and power actions;
+* **Progress Display**: The boot splash shows real-time staged progress of low-level hardware initialization to avoid prolonged black screens.
 
-## ESP 启动文件与系统交接
+## ESP Boot Files and OS Handoff
 
-控制台初始化后先启动驻留核心，完成设备初始化、变量恢复和安全退出协议安装，
-再选择系统。固件读取标准 `Boot####`：先消费一次性 `BootNext`，
-再按 `BootOrder` 尝试启用的启动项。SimpleInit 也是普通启动项，通过固定的固件卷
-GUID 定位，没有用户排序时排在首位；已有排序不会因固件启动而重排。
-启动时按 Esc 打开本次启动选择，选定或取消都不改 `BootOrder`，F12 进入固件设置。
-设备路径由上游 UEFI BootManager 库展开，
-支持 GPT 短路径、文件路径和标准 `EFI/BOOT/BOOTAA64.EFI` 后备入口。
-没有匹配的文件系统时，调用同一路径的标准 `EFI_LOAD_FILE_PROTOCOL`。
-固件不限定分区标签、UFS LUN 或 systemd-boot 文件名；不自动创建名为 Linux 的
-固件内部替代项。
+After console initialization, the resident core starts first to complete device initialization, variable restoration, and safe-exit protocol installation before selecting an OS. The firmware reads standard `Boot####` variables: it consumes one-time `BootNext` first, then tries enabled entries in `BootOrder`. SimpleInit is also a regular boot entry located via a fixed firmware volume GUID; it ranks first when no user ordering exists, and an existing order is never rearranged by firmware boot. Pressing Esc at startup opens the one-time boot menu without modifying `BootOrder` whether an entry is selected or canceled; pressing F12 enters firmware setup. Device paths are expanded by the upstream UEFI BootManager library, supporting GPT short-form paths, file paths, and the standard `EFI/BOOT/BOOTAA64.EFI` fallback path. When no matching filesystem exists, the standard `EFI_LOAD_FILE_PROTOCOL` on the same path is invoked. The firmware does not restrict partition labels, UFS LUNs, or systemd-boot filenames, and does not automatically synthesize an internal firmware fallback entry named Linux.
 
-产品 ESP 默认安装 systemd-boot。没有注册普通启动项时使用标准后备文件。
-systemd-boot 默认使用分开的内核、initramfs 和设备树，也能发现版本化 UKI。
-SimpleInit 默认选择“启动 Linux”，无操作五秒后按启动顺序寻找系统，跳过 SimpleInit 自身；
-随后 systemd-boot 菜单停留三秒，可选择旧内核。
-自动启动找不到可用项时返回菜单。系统引导程序返回错误后，只有应用已卸载、
-固件服务仍可用且没有新的退出请求，才继续尝试顺序中的下一项。
-手动指定的启动项失败，或尝试完仍无法启动时，显示错误并保留故障恢复入口。
-运行系统引导程序前开启五分钟的 UEFI watchdog。程序退出或固件完成系统交接检查后关闭计时器。
-引导程序超时时，固件保留仍在使用的资源，提示长按电源重启，再按音量上进入 Android。
-完整文件布局见[启动架构](architecture.md#存储布局)。
+The product ESP installs systemd-boot by default. When no regular boot entry is registered, the standard fallback file is used. systemd-boot uses separate kernel, initramfs, and Device Tree files by default, and can also discover versioned UKIs. SimpleInit selects "Boot Linux" by default and, after five seconds of inactivity, searches for an OS following the boot order while skipping SimpleInit itself; the systemd-boot menu then stays open for three seconds to allow choosing an older kernel. If auto-boot finds no usable entry, it returns to the menu. After an OS bootloader returns an error, the firmware continues to the next entry in the order only if the application has been unloaded, firmware services remain available, and no new exit request is pending. If a manually selected boot entry fails, or if all attempts fail to boot, an error is displayed while keeping recovery access available. A five-minute UEFI watchdog is started before launching an OS bootloader and is disabled once the application exits or the firmware completes OS handoff checks. If the bootloader times out, the firmware retains resources still in use and prompts you to hold the power button to reboot, then press Volume Up to enter Android. For the complete file layout, see [Boot Architecture](architecture.md#storage-layout).
 
-固件通过 `EFI_DT_FIXUP_PROTOCOL` 为装载的设备树应用同次启动的内存、面板与 Gunyah 修正，并检查保留区。Linux EFI stub 负责填写 EFI 内存图和 initrd 信息。SEC 从本次 ABL 传入的最终设备树读取完整 RAM，结合 SMEM、原生固件区域和冷启动对象生成内存表；新增普通 RAM 保持为 `EfiLoaderData`，不进入固件分配池。退出前再次核对真实 EFI/GCD 描述符及页表的恒等映射和缓存属性，再交给 Linux 回收。
+The firmware applies per-boot memory, panel, and Gunyah fixups to the loaded Device Tree via `EFI_DT_FIXUP_PROTOCOL` and validates reserved regions. The Linux EFI stub populates the EFI memory map and initrd details. SEC reads the full RAM layout from the final Device Tree passed in by ABL for the current boot and builds the memory table together with SMEM, native firmware regions, and cold-boot objects; newly added conventional RAM remains `EfiLoaderData` and does not enter the firmware allocation pool. Before exit, the core re-verifies the actual EFI/GCD descriptors as well as identity mappings and cache attributes in the page tables before handing them over for Linux to reclaim.
 
-`PianoProductMemoryApplyDtb()` 使用带 CRC 与同次启动标识的早期采集结果，替换 Linux DTB 的 `/memory/reg`、DDR 容量／厂商／类型和 `/ddr-regions`，移除多余的 memory 节点。DTB 在内存中经标准协议修正，不按内存容量制作镜像，也不在安装时改写 ESP。Linux 的硬件节点、CMA 请求与保留区保持原样；交接前的检查会拒绝不兼容的保留区，而不是把 EFI 空闲页误当作物理总内存。
+`PianoProductMemoryApplyDtb()` uses the early-collected result—protected by a CRC and per-boot identifier—to replace `/memory/reg`, DDR size/vendor/type, and `/ddr-regions` in the Linux DTB, removing extraneous memory nodes. The DTB is fixed up in memory via the standard protocol rather than building per-RAM-size images or rewriting the ESP during installation. Linux hardware nodes, CMA requests, and reserved regions are left intact; pre-handoff checks reject incompatible reserved regions instead of mistaking free EFI pages for total physical RAM.
 
-启动镜像由构建器生成，写入 FAT 后读回核对。选择 UKI 时，用 `ukify` 打包
-并核对 `.linux`、`.initrd`、`.dtb` 和 `.cmdline` 各段。内核没有内建命令行或
-后备值。安装后的内核更新由发行版软件包维护，不需要重新刷写整个 ESP。
+The boot image is produced by the builder, written to FAT, and read back for verification. When UKI mode is selected, `ukify` packages the image and verifies the `.linux`, `.initrd`, `.dtb`, and `.cmdline` sections. The kernel has no built-in command line or fallback values. Post-install kernel updates are maintained by distribution packages and do not require reflashing the entire ESP.
 
-`ExitBootServices` 使用当前最内层启动应用的句柄，并核对它到所选 EFI
-应用的父链、外层应用的加载身份和来源设备。父链最多 32 层，子加载器可以打开
-其他卷，但不能借用另一条启动链的镜像身份。systemd-stub 直接调用内核时
-会复用 UKI 句柄，外层 systemd-boot 的身份保持不变。
-外层应用的父句柄和来源设备在整个启动过程中保持不变。开始关闭资源前的拒绝可以正常返回；
-进入关闭流程后，除内存图过期外的错误都会停止执行。首次调用通过身份与
-内存检查后即关闭资源，即使传入的 MapKey 已过期，也不把关闭动作留到下一次
-调用。Linux 刷新内存图后重试，不再分配、访问文件或重复关闭硬件。
+`ExitBootServices` uses the handle of the currently running innermost boot application and verifies its parent chain up to the selected EFI application, the loaded identity of the outer application, and its source device. The parent chain is capped at 32 levels; child loaders may open other volumes, but cannot borrow an image identity from a different boot chain. When systemd-stub invokes the kernel directly, it reuses the UKI handle while the outer systemd-boot identity remains unchanged. The outer application's parent handle and source device remain invariant throughout the boot process. Rejections before hardware teardown begins can return normally; once teardown has started, any error other than a stale memory map halts execution. On the first call, once identity and memory checks pass, the firmware immediately tears down resources—even if the supplied MapKey is already stale—rather than deferring teardown to a subsequent call. Linux refreshes the memory map and retries without performing allocations, file accesses, or duplicate hardware shutdowns.
 
-`PianoRawLinuxBoot.c` 仅保留已确认 USB 下载的诊断启动，不读取 ESP，也不作为
-UKI 失败后的后备。它与产品 UKI 共用资源退出检查；UEFI Fastboot 的单次
-下载上限仍为 64 MiB。
+`PianoRawLinuxBoot.c` retains only diagnostic booting from a verified USB download; it does not read the ESP and does not serve as a fallback when UKI boot fails. It shares the resource exit checks with product UKI booting; the single-download limit for UEFI Fastboot remains 64 MiB.
 
-固件的四个 EFI 时间调用返回 `EFI_UNSUPPORTED`，并通过 `EFI_RT_PROPERTIES_TABLE` 报告；不发布占位 EFI RTC。Linux 使用 PMIC RTC，UEFI 只读原厂 `persist/time/ats_2`，通过保留内存中的标准 NVMEM 单元传入日历偏移，见 [RTC 与原厂时间](hardware/sleep.md#rtc-与原厂时间)。
+All four EFI time services return `EFI_UNSUPPORTED` and are advertised as such via `EFI_RT_PROPERTIES_TABLE`; no placeholder EFI RTC is exposed. Linux uses the PMIC RTC, while UEFI reads only the stock `persist/time/ats_2` file and passes the calendar offset via a standard NVMEM cell in reserved memory; see [RTC and Stock Time](hardware/sleep.md#rtc-and-stock-time).
 
-## UEFI 核心代码结构
+## UEFI Core Code Structure
 
-| 目录 | 职责 |
+| Directory | Responsibility |
 | --- | --- |
-| `uefi/core/` | 产品核心逻辑：入口控制、硬件状态观察、只读块设备、USB 服务、按键处理与启动策略 |
-| `uefi/components/os-boot/` | 操作系统启动文件解析、内存租用与启动会话控制 |
-| `uefi/components/linux-loader/` | Linux 内核与设备树装载器 |
-| `uefi/components/product-handoff/` | 固件交接、晚期内存验证与退出钩子 |
-| `uefi/components/pogo-product/` | 官方磁吸键盘与触控板：QUP1 SE6 I²C、MCU 固件下载、标准输入协议与退出前释放 |
-| `uefi/components/touch-product/` | 触屏：QUP1 SE2 SPI、触控固件下载、原始矩阵到触点、`AbsolutePointer` 与退出前释放 |
-| `uefi/components/product-support/` | GOP 显示适配、内存日志打印与 BDS 支持库 |
-| `uefi/components/usb-host/` | USB 主机模式：Type-C 状态读取、xHCI 与 DMA |
-| `uefi/components/simple-init/` | SimpleInit 菜单与图形渲染组件 |
-| `uefi/handoff/bootselect/` | 合体 BOOT 开机前置选择器与按键捕获 |
-| `uefi/handoff/bootshim/` | 引导垫片与早期内存环境搭建 |
-| `uefi/handoff/early-memory/` | 冷启动对象扫描与早期内存描述符解析 |
-| `uefi/platforms/pianoPkg/` | 基础平台描述与组件基准引用 |
-| `uefi/platforms/pianoProbePkg/` | 诊断平台与产品固件组装模板 |
+| `uefi/core/` | Product core logic: entry control, hardware state observation, read-only block devices, USB service, button handling, and boot policy |
+| `uefi/components/os-boot/` | OS boot file parsing, memory leasing, and boot session control |
+| `uefi/components/linux-loader/` | Linux kernel and Device Tree loader |
+| `uefi/components/product-handoff/` | Firmware handoff, late memory validation, and exit hooks |
+| `uefi/components/pogo-product/` | Official magnetic keyboard and touchpad: QUP1 SE6 I²C, MCU firmware download, standard input protocols, and pre-exit release |
+| `uefi/components/touch-product/` | Touchscreen: QUP1 SE2 SPI, touch firmware download, raw matrix to touch contacts, `AbsolutePointer`, and pre-exit release |
+| `uefi/components/product-support/` | GOP display adaptation, in-memory log printing, and BDS support library |
+| `uefi/components/usb-host/` | USB host mode: Type-C state reading, xHCI, and DMA |
+| `uefi/components/simple-init/` | SimpleInit menu and graphical rendering components |
+| `uefi/handoff/bootselect/` | Combined BOOT pre-boot selector and key capture |
+| `uefi/handoff/bootshim/` | Boot shim and early memory environment setup |
+| `uefi/handoff/early-memory/` | Cold-boot object scanning and early memory descriptor parsing |
+| `uefi/platforms/pianoPkg/` | Base platform description and baseline component references |
+| `uefi/platforms/pianoProbePkg/` | Diagnostic platform and product firmware assembly template |

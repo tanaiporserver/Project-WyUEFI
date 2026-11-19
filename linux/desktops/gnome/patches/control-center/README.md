@@ -1,13 +1,8 @@
-# GNOME 系统信息
+# GNOME System Info
 
-`0001-about-gunyah-primary-domain.patch` 区分高通的主系统域和普通客户虚拟机。
-只有设备树同时声明 Gunyah 和 Qualcomm HLOS 的 VMID 3 时，才隐藏
-GNOME “关于”页面的通用 `vm-other` 行。未知域和其他虚拟化类型保留原有展示。
+`0001-about-gunyah-primary-domain.patch` distinguishes Qualcomm's primary system domain from standard guest virtual machines.
+It hides the generic `vm-other` row on the GNOME "About" page only when the Device Tree declares both Gunyah and Qualcomm HLOS VMID 3. Unknown domains and other virtualization types retain their original display.
 
-这是桌面展示调整。内核设备树、systemd 的 `Virtualization` 属性、
-`systemd-detect-virt` 和 Gunyah 驱动接口都不改变。不能删掉固件节点来影响识别，
-这些节点也是虚拟化驱动发现资源管理器的依据。
+This is a desktop display adjustment only. The kernel Device Tree, systemd's `Virtualization` property, `systemd-detect-virt`, and the Gunyah driver interfaces remain unchanged. Do not delete firmware nodes to alter detection, as virtualization drivers also rely on these nodes to discover the Resource Manager.
 
-Nyarch 使用旁边 `arch/control-center` 的完整 GNOME 51.1 包配方，
-由 `tools/build_nyarch_rootfs.py` 放入构建。源码来自 GNOME 正式发布归档，
-保留发行版原有功能、翻译和拆分的软件包。Debian 的 GNOME 48 包尚待接入。
+Nyarch uses the full GNOME 51.1 package recipe in the adjacent `arch/control-center` directory, staged into the build by `tools/build_nyarch_rootfs.py`. Sources come from official GNOME release archives, preserving the distribution's original features, translations, and split packages. Packaging for Debian's GNOME 48 is still pending integration.

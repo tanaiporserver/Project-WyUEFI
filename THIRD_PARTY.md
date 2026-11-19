@@ -1,125 +1,124 @@
-# 第三方来源与本地材料
+# Third-Party Sources and Local Materials
 
-SunUEFI 站在这些项目之上：EDK2 / Mu-Silicium 提供 UEFI 基础和高通平台集成，simple-init 提供 UEFI 里的图形菜单，linux-piano 与 Linux 内核提供板级驱动，debian-piano、Mesa、piano-sensors 提供根系统、GPU 用户空间和传感器通信，设备固件取自官方 OTA，MiCode 与本机原厂系统用作对照参考。各项目负责什么、我们增加了什么，见[上游项目](docs/devel/upstreams.md)。
+SunUEFI builds on top of these projects: EDK2 / Mu-Silicium provide the UEFI foundation and Qualcomm platform integration, simple-init provides the graphical menu in UEFI, linux-piano and the Linux kernel provide board-level drivers, debian-piano, Mesa, and piano-sensors provide the rootfs, GPU userspace, and sensor communication, device firmware is sourced from official OTA packages, and MiCode along with the device's stock OS serve as comparison references. For what each project provides and what we added, see [Upstream Projects](docs/devel/upstreams.md).
 
-本页是精确来源索引：固定的提交、使用它们的脚本和已知的许可线索。完整提交号以链接的锁文件和脚本为准。许可线索来自仓库中的文件声明，没有逐一重新核对上游许可正文。
+This page is the exact provenance index: pinned commits, the scripts that consume them, and known license pointers. Full commit hashes are authoritative in the linked lock files and scripts. License pointers are taken from in-repository file notices and have not been individually re-verified against upstream license texts.
 
-## 源码依赖
+## Source Dependencies
 
-| 组件 | 来源与固定身份 | 本仓库使用方式 / 工具 | 许可核对位置与当前范围 |
+| Component | Source & Pinned Identity | Usage / Tools in This Repo | License Verification Location & Current Scope |
 | --- | --- | --- | --- |
-| Mu-Silicium | [Project-Silicium/Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium)，`3ec9169f308c01030a7e698072aca5acb2c0a144` | [prepare_piano.py](tools/dev/prepare_piano.py) 派生 OnePlus 模板；[build_stage0.sh](tools/build_stage0.sh) 编译 | 上游许可与文件声明；[DeviceBuild.py](uefi/platforms/pianoPkg/DeviceBuild.py) 保留 Microsoft 版权/BSD-2-Clause-Patent。 |
-| mu_wide_platforms（移植参考） | [sunflower2333/mu_wide_platforms](https://github.com/sunflower2333/mu_wide_platforms)，查阅提交 `3e1d052064beb6e59cda3cfba87d50e6cc088174` 的 [Piano 平台](https://github.com/sunflower2333/mu_wide_platforms/tree/3e1d052064beb6e59cda3cfba87d50e6cc088174/Platforms/PakalaPkg/Device/xiaomi-piano) | 同机 Project Mu UEFI、平台初始化与 ACPI 的参考资料；现有构建依赖见上方 Mu-Silicium 条目 | 仓库标注 BSD-2-Clause；具体源码及附带二进制按各自声明处理。 |
-| Mu_Basecore、Mu Plus、Mu OEM Sample、Silicium-ACPI、Device-Binaries | URL/commit 见 [sources.lock.json](sources.lock.json) | Mu 构建树及 [product hooks](tools/prepare_product_pump.py) | 各来源的许可/版权；Device-Binaries 还需按二进制材料核对。 |
-| dtc | [dgibson/dtc](https://github.com/dgibson/dtc)，`f3451d12532b9d382707c458a2ae2e5aa0e1eee4` | `upstream/dtc`、DTB 工具 | 上游固定提交的许可和文件声明。 |
-| simple-init | [BigfootACA/simple-init](https://github.com/BigfootACA/simple-init)，`3d66a6e78d519dd050fbebde4db6c5ac933f9aa4` | [prepare_simpleinit.py](tools/prepare_simpleinit.py)、[build_simpleinit.sh](tools/build_simpleinit.sh) | 上游声明；[本地 runtime](uefi/components/product-pump/simple-init/src/gui/piano_product_runtime.c) / 头文件为 LGPL-3.0-or-later。 |
-| lwext4 | [gkostka/lwext4](https://github.com/gkostka/lwext4)，固定来源和归档摘要见 [uefi-ext4.json](config/uefi-ext4.json) | [prepare_ext4.py](tools/firmware/prepare_ext4.py) 暂存标准 ext4 库，UEFI 文件协议适配在 `uefi/components/ext4/`；不编译格式化或分区工具 | 多数文件 BSD-3-Clause；`ext4_extent.c`、`ext4_xattr.c` 含 GPL-2.0，组合库按 GPL-2.0 处理，保留源码版权与许可。 |
-| f2fs-tools | 官方 1.17.0，来源与保留布局扩容补丁见 [series.json](patches/f2fs-tools/1.17.0/series.json) | Android 模块内静态 `fsck.f2fs`／`resize.f2fs`，由 [build_f2fs_tools.py](tools/android/build_f2fs_tools.py) 构建 | GPL-2.0；模块附带 COPYING、源码来源和本地补丁。 |
-| Linux / linux-piano | [blu-sharky/linux-piano](https://github.com/blu-sharky/linux-piano)、[torvalds/linux](https://github.com/torvalds/linux)；救援 pin 见 [kernel-profiles.json](linux/kernel-profiles.json) | [build_kernel.py](tools/build_kernel.py)；完整基线见 [full builder](tools/build_piano_full_kernel.py) / [next builder](tools/build_piano_next_full.py) | 选定内核的 `COPYING`、`LICENSES/` 和文件声明；不改变主机脚本的许可。 |
-| BigfootACA 高通显示补丁（Junhao Xie） | [PLL 初始化 `67b3cbd4bab5`](https://github.com/BigfootACA/linux/commit/67b3cbd4bab5687c3aa3c9fe5a14c37433e28bbf)、[DPU 停止顺序 `8f353c130fee`](https://github.com/BigfootACA/linux/commit/8f353c130fee0fcf09afbe10e7fc58f901931418)、[PHY 运行时接口时钟 `b95037aef0a0`](https://github.com/BigfootACA/linux/commit/b95037aef0a0bf5cd612e7517a67644887e9fd5d) | 默认内核补丁 `0024`、`0026`、`0034`；分别修正 PLL 初始化、视频流水线停止顺序和 PHY 接口时钟的运行时管理 | 保留原作者与 Signed-off-by；沿用相应 Linux 源文件的 SPDX 和内核许可。PHY 补丁仅调整本地已有恢复辅助代码附近的上下文。 |
-| MiCode 板级资料 / 公开内核 | [MiCode/Xiaomi_Kernel_OpenSource](https://github.com/MiCode/Xiaomi_Kernel_OpenSource)，`45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71`；DTS pin 见 [来源集](docs/archive/linux-bringup/piano-full-linux-candidate.md) | [PianoKeys.c](uefi/core/PianoKeys.c) 等注明参考来源 | 原声明保留；本地 Keys 为 GPL-2.0-only，TouchProbe 为 GPL-2.0-or-later。 |
-| Debian/Piano 用户态、Mesa、固件 | 组件/精确 commit 见 [Linux 来源集](docs/archive/linux-bringup/piano-full-linux-candidate.md) | [stage_piano_full_userspace.py](tools/stage_piano_full_userspace.py) 等暂存到派生根系统 | 包、服务源码、Mesa 与固件按各自通知处理。 |
-| libcamera | [发布源码与 Debian 配方](config/libcamera.json)、[Hans de Goede 的 CAMSS 系列与本地 PIX 补丁](patches/libcamera/0.8.0/series.json) | `./build.sh libcamera` 生成 Debian ARM64 原生包 | 核心和 CAMSS 为 LGPL-2.1-or-later；工具、IPA 等按上游 [COPYING.rst](https://github.com/libcamera-org/libcamera/blob/v0.8.0/COPYING.rst) 和各文件声明，Debian 包保留版权清单。 |
-| xiaomi-sheng-thp 笔解算 | [ianchb/xiaomi-sheng-thp](https://github.com/ianchb/xiaomi-sheng-thp)，`34046210932d654a4c0df0121ecc31c008f8148c` | [Piano 参数化核心](linux/userspace/pen/piano-pen-core.h) 从独立矩阵解算与滤波代码派生，读取本机实际校准配置；不启动上游的第二个触控服务 | Apache-2.0；保留 [完整许可证](linux/userspace/pen/Apache-2.0.txt)、源文件 SPDX 和 [来源／修改说明](linux/userspace/pen/OPEN_CORE_ORIGIN.txt)。当前仅完成真实配置和压力报告处理，坐标仍需实际笔矩阵验证。 |
+| Mu-Silicium | [Project-Silicium/Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium), `3ec9169f308c01030a7e698072aca5acb2c0a144` | [prepare_piano.py](tools/dev/prepare_piano.py) derives from the OnePlus template; [build_stage0.sh](tools/build_stage0.sh) compiles | Upstream licenses and file notices; [DeviceBuild.py](uefi/platforms/pianoPkg/DeviceBuild.py) retains Microsoft copyright / BSD-2-Clause-Patent. |
+| mu_wide_platforms (porting reference) | [sunflower2333/mu_wide_platforms](https://github.com/sunflower2333/mu_wide_platforms), referenced [Piano platform](https://github.com/sunflower2333/mu_wide_platforms/tree/3e1d052064beb6e59cda3cfba87d50e6cc088174/Platforms/PakalaPkg/Device/xiaomi-piano) at commit `3e1d052064beb6e59cda3cfba87d50e6cc088174` | Reference material for Project Mu UEFI, platform initialization, and ACPI on the same device; for active build dependencies, see the Mu-Silicium entry above | Repository specifies BSD-2-Clause; individual source files and bundled binaries follow their respective notices. |
+| Mu_Basecore, Mu Plus, Mu OEM Sample, Silicium-ACPI, Device-Binaries | URLs/commits in [sources.lock.json](sources.lock.json) | Mu build tree and [product hooks](tools/prepare_product_pump.py) | Licenses/copyrights of each source; Device-Binaries must additionally be verified per binary artifact. |
+| dtc | [dgibson/dtc](https://github.com/dgibson/dtc), `f3451d12532b9d382707c458a2ae2e5aa0e1eee4` | `upstream/dtc`, DTB tools | License and file notices at the pinned upstream commit. |
+| simple-init | [BigfootACA/simple-init](https://github.com/BigfootACA/simple-init), `3d66a6e78d519dd050fbebde4db6c5ac933f9aa4` | [prepare_simpleinit.py](tools/prepare_simpleinit.py), [build_simpleinit.sh](tools/build_simpleinit.sh) | Upstream notices; [local runtime](uefi/components/product-pump/simple-init/src/gui/piano_product_runtime.c) / headers are LGPL-3.0-or-later. |
+| lwext4 | [gkostka/lwext4](https://github.com/gkostka/lwext4), pinned source and archive digest in [uefi-ext4.json](config/uefi-ext4.json) | [prepare_ext4.py](tools/firmware/prepare_ext4.py) stages the standard ext4 library, UEFI file protocol adapter lives in `uefi/components/ext4/`; formatting and partitioning tools are not built | Most files are BSD-3-Clause; `ext4_extent.c` and `ext4_xattr.c` contain GPL-2.0, so the combined library is treated as GPL-2.0, retaining source copyrights and licenses. |
+| f2fs-tools | Official 1.17.0, source and layout-preserving resize patches in [series.json](patches/f2fs-tools/1.17.0/series.json) | Static `fsck.f2fs` / `resize.f2fs` inside the Android module, built by [build_f2fs_tools.py](tools/android/build_f2fs_tools.py) | GPL-2.0; module includes COPYING, source origin, and local patches. |
+| Linux / linux-piano | [blu-sharky/linux-piano](https://github.com/blu-sharky/linux-piano), [torvalds/linux](https://github.com/torvalds/linux); rescue pins in [kernel-profiles.json](linux/kernel-profiles.json) | [build_kernel.py](tools/build_kernel.py); full baselines in [full builder](tools/build_piano_full_kernel.py) / [next builder](tools/build_piano_next_full.py) | `COPYING`, `LICENSES/`, and file notices of the selected kernel; does not change the license of host scripts. |
+| BigfootACA Qualcomm display patches (Junhao Xie) | [PLL initialization `67b3cbd4bab5`](https://github.com/BigfootACA/linux/commit/67b3cbd4bab5687c3aa3c9fe5a14c37433e28bbf), [DPU stop sequence `8f353c130fee`](https://github.com/BigfootACA/linux/commit/8f353c130fee0fcf09afbe10e7fc58f901931418), [PHY runtime interface clock `b95037aef0a0`](https://github.com/BigfootACA/linux/commit/b95037aef0a0bf5cd612e7517a67644887e9fd5d) | Default kernel patches `0024`, `0026`, and `0034`; fix PLL initialization, video pipeline stop ordering, and runtime management of the PHY interface clock respectively | Original author and Signed-off-by preserved; follows the SPDX and kernel license of the respective Linux source files. The PHY patch only adjusts context around existing local recovery helper code. |
+| MiCode board data / public kernel | [MiCode/Xiaomi_Kernel_OpenSource](https://github.com/MiCode/Xiaomi_Kernel_OpenSource), `45fb9bd6ae5ba2942fc1d53e4b6b46ef76992f71`; DTS pin in [source set](docs/archive/linux-bringup/piano-full-linux-candidate.md) | [PianoKeys.c](uefi/core/PianoKeys.c) and related files note the reference source | Original notices retained; local Keys is GPL-2.0-only, TouchProbe is GPL-2.0-or-later. |
+| Debian/Piano userspace, Mesa, firmware | Components / exact commits in [Linux source set](docs/archive/linux-bringup/piano-full-linux-candidate.md) | [stage_piano_full_userspace.py](tools/stage_piano_full_userspace.py) and related scripts stage into derived rootfs | Packages, service sources, Mesa, and firmware follow their respective notices. |
+| libcamera | [Release source and Debian recipe](config/libcamera.json), [Hans de Goede's CAMSS series and local PIX patches](patches/libcamera/0.8.0/series.json) | `./build.sh libcamera` produces native Debian ARM64 packages | Core and CAMSS are LGPL-2.1-or-later; tools, IPAs, etc. follow upstream [COPYING.rst](https://github.com/libcamera-org/libcamera/blob/v0.8.0/COPYING.rst) and per-file notices; Debian packages retain the copyright manifest. |
+| xiaomi-sheng-thp stylus solver | [ianchb/xiaomi-sheng-thp](https://github.com/ianchb/xiaomi-sheng-thp), `34046210932d654a4c0df0121ecc31c008f8148c` | [Piano parameterized core](linux/userspace/pen/piano-pen-core.h) is derived from the standalone matrix solver and filtering code and reads the device's actual calibration config; does not launch the upstream second touch daemon | Apache-2.0; retains [full license](linux/userspace/pen/Apache-2.0.txt), source file SPDX, and [origin / modification notes](linux/userspace/pen/OPEN_CORE_ORIGIN.txt). Currently only real config loading and pressure reporting are complete; coordinates still require verification against an actual stylus matrix. |
 
-`sources.lock.json` 只覆盖部分依赖，其他 pin 仍在脚本中。内核 linked-worktree 获取方式见 [内核复现说明](docs/archive/linux-bringup/linux-reproducible-builds.md)。
+`sources.lock.json` only covers part of the dependencies; other pins remain in scripts. For how kernel linked-worktrees are fetched, see [Kernel Reproducible Builds](docs/archive/linux-bringup/linux-reproducible-builds.md).
 
-小米平板相关参考还包括 [code002-2/Xiaomi-pad-6s-pro-Linux](https://github.com/code002-2/Xiaomi-pad-6s-pro-Linux/tree/053169b1ed48335d8139694ea6ccaacf52462dd9) 及其引用的 [debian-sheng](https://github.com/ianchb/debian-sheng)、[xiaomi-mipps-auth](https://github.com/ianchb/xiaomi-mipps-auth/tree/9176efbdf276b874fc0a97912a914449a88155fb) 和 [xiaomi-sheng-fingerprint](https://github.com/ianchb/xiaomi-sheng-fingerprint/tree/76e7301163b0e708f609c9864b3e5833e9f57402)。分别用于多发行版集成、MiPPS 认证和标准 libfprint/fprintd 接入的参考。指纹项目使用 FPC1553，Piano 原厂使用 Goodix，不能直接互换传感器协议。MiPPS 工具标注 GPL-2.0-only；指纹后端为 Apache-2.0，libfprint/fprintd 补丁及 QTEE 依赖遵循各自许可。
+Additional Xiaomi Pad references include [code002-2/Xiaomi-pad-6s-pro-Linux](https://github.com/code002-2/Xiaomi-pad-6s-pro-Linux/tree/053169b1ed48335d8139694ea6ccaacf52462dd9) and the repositories it references: [debian-sheng](https://github.com/ianchb/debian-sheng), [xiaomi-mipps-auth](https://github.com/ianchb/xiaomi-mipps-auth/tree/9176efbdf276b874fc0a97912a914449a88155fb), and [xiaomi-sheng-fingerprint](https://github.com/ianchb/xiaomi-sheng-fingerprint/tree/76e7301163b0e708f609c9864b3e5833e9f57402). These serve as references for multi-distro integration, MiPPS authentication, and standard libfprint/fprintd integration, respectively. The fingerprint project targets FPC1553, whereas Piano uses a stock Goodix sensor, so sensor protocols are not directly interchangeable. The MiPPS tool is licensed under GPL-2.0-only; the fingerprint backend is Apache-2.0, while libfprint/fprintd patches and QTEE dependencies follow their respective licenses.
 
-内核 MiPPS [补丁](patches/linux/7.3/0027-power-piano-mipps-authentication.patch)移植了上述 `xiaomi-mipps-auth` 的协议常量和摘要计算，并参考 [blu-sharky/piano-mipps-auth](https://github.com/blu-sharky/piano-mipps-auth) 对 Piano 固件漏报充电器身份的处理及原厂命令顺序，保留 GPL-2.0-only。认证在内核工作队列中完成，不安装上游的用户空间服务、状态文件和通知。来源提交记录在[内核补丁清单](patches/linux/7.3/series.json)的 `mipps_authentication` 中，协议与限制见[内核说明](docs/devel/linux/kernel.md#usb-type-c)。
+The kernel MiPPS [patch](patches/linux/7.3/0027-power-piano-mipps-authentication.patch) ports the protocol constants and digest calculation from `xiaomi-mipps-auth` above, and references [blu-sharky/piano-mipps-auth](https://github.com/blu-sharky/piano-mipps-auth) for handling Piano firmware omitting charger identity reports and the stock command sequence, retaining GPL-2.0-only. Authentication runs in a kernel workqueue without installing upstream userspace services, state files, or notifications. Source commits are recorded under `mipps_authentication` in the [kernel patch manifest](patches/linux/7.3/series.json); protocol details and limitations are documented in the [kernel documentation](docs/devel/linux/kernel.md#usb-type-c).
 
-SM8750 温区的 include 方案参考 Cryolitia 的
-[Piano TSENS overlay](https://github.com/Cryolitia/nixos-config/blob/096e88bfc641784cc291dfe54695c4811d8c61e5/hosts/xiaomi-piano/piano-tsens-temperatures.dts)，
-沿用 BSD-3-Clause。温区内容在打包时直接取自锁定内核的 `sm8750.dtsi`，
-生成的 include 保留 Qualcomm 版权和原文件许可，不维护第二份传感器表。
+The SM8750 thermal zone include approach references Cryolitia's
+[Piano TSENS overlay](https://github.com/Cryolitia/nixos-config/blob/096e88bfc641784cc291dfe54695c4811d8c61e5/hosts/xiaomi-piano/piano-tsens-temperatures.dts)
+and retains BSD-3-Clause. Thermal zone definitions are extracted directly from the pinned kernel's `sm8750.dtsi`
+at packaging time; the generated include preserves Qualcomm's copyright and the original file's license without maintaining a second sensor table.
 
-HyperOS 4 的 [ADSP](vendor/firmware/hyperos4-adsp/README.md) 和
-[CDSP](vendor/firmware/hyperos4-cdsp/README.md) 固件来自本机原厂固件分区，
-保留原始签名、文件名和逐文件 SHA256，按清单装入四个发行版。
-它们属于 Qualcomm／小米专有固件，不适用本项目的源码许可。
+HyperOS 4 [ADSP](vendor/firmware/hyperos4-adsp/README.md) and
+[CDSP](vendor/firmware/hyperos4-cdsp/README.md) firmware come from the device's stock firmware partition,
+preserving original signatures, filenames, and per-file SHA-256 digests, and are installed into all four distributions according to the manifest.
+They are proprietary Qualcomm / Xiaomi firmware and are not covered by this project's source license.
 
-原生 Goodix 客户端通过 Linux TEE 对象 ioctl 自行实现传输，不链接 MinkIPC 或 quic-teec。
-Object C 参数布局与 FS／GPFS 消息参考 [Qualcomm MinkIPC](https://github.com/qualcomm/minkipc)，
-对应文件保留 Qualcomm 版权和 BSD-3-Clause／BSD-3-Clause-Clear 许可。
-CBOR 编解码使用 [QCBOR](https://github.com/laurencelundblade/QCBOR) 的公开源码。
-精确提交、源码许可和构建输入记录在
-[`config/fingerprint.json`](config/fingerprint.json) 及镜像内的
-`/usr/share/piano-provenance/fingerprint.json`；相应许可证随静态客户端安装。
-本项目独立实现本机 Goodix 命令封装，通过现有 UIO 控制器和标准 Linux TEE 对象接口通信，
-不使用 GP 会话；UIO 控制器及 libfprint 后端仍是本地适配。
-原厂签名程序，以及从本机 `libgf_hal.so` 提取的通用防伪和识别模型参数，
-均保留原字节，作为硬件固件提供，不包含用户指纹模板。提取器按导出符号定位模型，
-输出校验值记录在固件清单中；现有清单未记录逐模型偏移和来源库摘要。
-原厂可执行库不随系统安装。来源记录不构成程序或模型的再分发授权，来源与范围见
-[固件说明](vendor/firmware/hyperos4-fingerprint/README.md)。
+The native Goodix client implements its own transport via the Linux TEE object ioctl and does not link against MinkIPC or quic-teec.
+Object C argument layouts and FS/GPFS messages reference [Qualcomm MinkIPC](https://github.com/qualcomm/minkipc),
+with the corresponding files retaining Qualcomm copyright and BSD-3-Clause / BSD-3-Clause-Clear licenses.
+CBOR encoding and decoding use the public source of [QCBOR](https://github.com/laurencelundblade/QCBOR).
+Exact commits, source licenses, and build inputs are recorded in
+[`config/fingerprint.json`](config/fingerprint.json) and
+`/usr/share/piano-provenance/fingerprint.json` inside the image; corresponding licenses are installed alongside the static client.
+This project independently implements native Goodix command framing, communicating through the existing UIO controller and the standard Linux TEE object interface
+without using GP sessions; the UIO controller and libfprint backend remain local adaptations.
+The stock signed program, as well as the generic anti-spoofing and recognition model parameters extracted from the device's `libgf_hal.so`,
+are preserved byte-for-byte and provided as hardware firmware without containing any user fingerprint templates. The extractor locates models by exported symbols
+and records output checksums in the firmware manifest; the current manifest does not record per-model offsets or source library digests.
+Stock executable libraries are not installed in the system. Provenance records do not grant redistribution authorization for the program or models; see the
+[firmware notes](vendor/firmware/hyperos4-fingerprint/README.md) for origin and scope.
 
-Gunyah 的 Android 驱动与主线接口适配来自
-[code002-2/librevm](https://github.com/code002-2/librevm/tree/56918558e2c4303cda803a655ea716869c551b71/packaging/gunyah-driver-7.2)
-整理的补丁包，原适配来自
-[SuperTurtleDev/iceland-mainline-kernel-linux](https://github.com/SuperTurtleDev/iceland-mainline-kernel-linux/tree/fd503a492d381687c143b7085ea79ebce58dcdc7)。
-驱动上游为 Android common `android17-6.18-2026-06_r1`，提交
-`30c0eaeef78d5c19f687ad8418c27b76353ab261`。本地
-[`0006-gunyah.patch`](patches/linux/7.3/0006-gunyah.patch)保留原作者、
-版权和 GPL-2.0-only 等逐文件声明；未引入其他平板的设备树或内存预留。
-它们用于接入设备已有的 Gunyah 固件，不替换高通 Hypervisor。
+The Android Gunyah driver and mainline interface adaptations come from the patchset assembled by
+[code002-2/librevm](https://github.com/code002-2/librevm/tree/56918558e2c4303cda803a655ea716869c551b71/packaging/gunyah-driver-7.2),
+originally adapted from
+[SuperTurtleDev/iceland-mainline-kernel-linux](https://github.com/SuperTurtleDev/iceland-mainline-kernel-linux/tree/fd503a492d381687c143b7085ea79ebce58dcdc7).
+The upstream driver is Android common `android17-6.18-2026-06_r1`, commit
+`30c0eaeef78d5c19f687ad8418c27b76353ab261`. Local
+[`0006-gunyah.patch`](patches/linux/7.3/0006-gunyah.patch) preserves original authors,
+copyrights, and per-file notices such as GPL-2.0-only; no Device Trees or memory reservations from other tablets are imported.
+These changes interface with the device's existing Gunyah firmware and do not replace Qualcomm's Hypervisor.
 
-BORE 6.8.0 来自 Masahito Suzuki 的调度器实现，以及
-[CachyOS/kernel-patches](https://github.com/CachyOS/kernel-patches/blob/6266b5f33f4e8caaa452174f0132c8c82f919267/7.3/sched/0001-bore-cachy.patch)
-中 Piotr Gorski 整理的 Linux 7.3 补丁。本地
-[`0007-bore.patch`](patches/linux/7.3/0007-bore.patch)只调整了
-`CONFIG_CACHY` 专用默认值的上下文及空白格式，保留 BORE 算法和运行参数默认值。
-代码沿用 Linux 内核许可；原始补丁校验值和提交记录在
-[`series.json`](patches/linux/7.3/series.json)中。MGLRU、ZRAM、
-`schedutil` 与抢占机制属于 Linux 自身功能，不作为 CachyOS 独有改动介绍。
+BORE 6.8.0 comes from Masahito Suzuki's scheduler implementation and the Linux 7.3 patch maintained by Piotr Gorski in
+[CachyOS/kernel-patches](https://github.com/CachyOS/kernel-patches/blob/6266b5f33f4e8caaa452174f0132c8c82f919267/7.3/sched/0001-bore-cachy.patch).
+Local [`0007-bore.patch`](patches/linux/7.3/0007-bore.patch) only adjusts
+context around `CONFIG_CACHY`-specific defaults and whitespace formatting, preserving the BORE algorithm and default runtime parameters.
+The code follows the Linux kernel license; original patch checksums and commits are recorded in
+[`series.json`](patches/linux/7.3/series.json). MGLRU, ZRAM,
+`schedutil`, and preemption mechanisms are standard Linux features and are not presented as CachyOS-exclusive changes.
 
-FastRPC 的 DSP 重启清理修复参考高通 Jianping Li 提交的
-[三个上游补丁](https://github.com/qualcomm-linux/kernel/pull/1212)，
-本地适配为 [`0011-fastrpc-drain-ssr-invokes.patch`](patches/linux/7.3/0011-fastrpc-drain-ssr-invokes.patch)。
-修复设备开放时的初始化顺序、轮询调用的退出通知，以及活动调用尚未退出就拆除 DMA 映射的竞态。
-原始提交记录在补丁正文与内核来源清单中，沿用 Linux 源文件的 GPL-2.0-only 许可。
-这些改动处理 DSP 崩溃后的清理，不代表已经解决 DSP 最初的崩溃原因。
+FastRPC DSP restart cleanup fixes reference
+[three upstream patches](https://github.com/qualcomm-linux/kernel/pull/1212) submitted by Qualcomm's Jianping Li,
+adapted locally as [`0011-fastrpc-drain-ssr-invokes.patch`](patches/linux/7.3/0011-fastrpc-drain-ssr-invokes.patch).
+They fix initialization ordering on device open, exit notifications for polled invokes, and a race where DMA mappings are torn down before active invokes exit.
+Original commits are recorded in the patch body and kernel provenance manifest, following the Linux source file's GPL-2.0-only license.
+These changes handle post-crash DSP cleanup and do not imply that the underlying cause of the initial DSP crash is resolved.
 
-SteamOS 根系统提取使用 [hashtagbasit/SteamOS-ARM-Port](https://github.com/hashtagbasit/SteamOS-ARM-Port/tree/e54dac93afccf76e5fefe998399b6c1b1a23f3a1) 的 `scripts/extract_rootfs.py`（GPL-2.0）。提交与文件 SHA256 固定在 `config/steamos.json`，下载时保留源文件通知。该项目提供提取方法和移植参考，SunUEFI 使用自己的启动器、设备内核与 BSP。Valve ARM64 根系统与公开 Steam 客户端分别记录在 `config/steamos.json`、`config/steam-client.json`，继续适用各组件的原有许可，不因提取脚本采用 GPL 而改变。FFmpeg 使用既有 BSP 补丁，构建为匹配 SteamOS 库 ABI 的 pacman 包，保留完整编解码配置与许可文件。
+SteamOS rootfs extraction uses `scripts/extract_rootfs.py` (GPL-2.0) from [hashtagbasit/SteamOS-ARM-Port](https://github.com/hashtagbasit/SteamOS-ARM-Port/tree/e54dac93afccf76e5fefe998399b6c1b1a23f3a1). The commit and file SHA-256 are pinned in `config/steamos.json`, preserving source file notices on download. That project provides the extraction method and porting reference; SunUEFI uses its own bootloader, device kernel, and BSP. The Valve ARM64 rootfs and public Steam client are recorded in `config/steamos.json` and `config/steam-client.json` respectively, and remain under each component's original license—unaffected by the extraction script being GPL. FFmpeg uses existing BSP patches and is built as a pacman package matching the SteamOS library ABI, retaining full codec configuration and license files.
 
-SteamOS 的 Gamescope 采用同一固定 `SteamOS-ARM-Port` 提交中
-`external-and-mods/gamescope` 的移动设备适配源码，保留其逐文件版权及
-Gamescope 的 BSD-2-Clause 许可。依赖子项目取自 Valve Gamescope 3.16.30
-（`ad2763da1c48860f649abfe842a087188dcb6e20`），保留各自许可；
-原参考脚本指定的 `6edb42b...` 对象无法取得，因此不依赖该对象。
-本项目增加[渲染与显示节点分离修正](patches/gamescope/0001-drm-separate-render-and-display.patch)，
-使 Adreno 渲染设备与独立 DPU 显示控制器可以一起工作。
-构建来源记录在 `tools/build_steamos_gamescope.py` 和生成的 `SOURCE.json`。
+SteamOS Gamescope uses the mobile adaptation source under
+`external-and-mods/gamescope` from the same pinned `SteamOS-ARM-Port` commit, preserving per-file copyrights and
+Gamescope's BSD-2-Clause license. Subproject dependencies are sourced from Valve Gamescope 3.16.30
+(`ad2763da1c48860f649abfe842a087188dcb6e20`), retaining their respective licenses;
+the `6edb42b...` object referenced by the original script is unavailable, so it is not depended upon.
+This project adds a [render/display node separation fix](patches/gamescope/0001-drm-separate-render-and-display.patch)
+so that the Adreno render device and the standalone DPU display controller can operate together.
+Build provenance is recorded in `tools/build_steamos_gamescope.py` and the generated `SOURCE.json`.
 
-SteamOS 缺少的 KDE 组件取自 [KDE 官方发行归档](https://download.kde.org/stable/)。
-版本、URL、SHA-256 和依赖写在 `config/steamos.json` 的 `kde_packages` 中，
-按 Valve ARM64 系统现有 ABI 构建，保留每个组件的 `LICENSES/`。
+KDE components missing from SteamOS are sourced from the [official KDE release archive](https://download.kde.org/stable/).
+Versions, URLs, SHA-256 digests, and dependencies are listed under `kde_packages` in `config/steamos.json`,
+built against the existing Valve ARM64 system ABI while preserving each component's `LICENSES/`.
 
-SteamOS Manager 使用 [Valve 26.4.1 源码](https://gitlab.steamos.cloud/holo/steamos-manager/-/tree/a0d399defebd60db30ba38325d9cf47dbda49bee)，
-保留 MIT 许可；本项目的补丁使可选内核日志跟踪失败时仍能提供平台管理。
-源码、Rust 工具链和补丁摘要由 `tools/build_steamos_manager.py` 固定。
+SteamOS Manager uses [Valve 26.4.1 source](https://gitlab.steamos.cloud/holo/steamos-manager/-/tree/a0d399defebd60db30ba38325d9cf47dbda49bee),
+retaining its MIT license; this project's patch allows platform management to remain operational when optional kernel log tracking fails.
+Source, Rust toolchain, and patch digests are pinned by `tools/build_steamos_manager.py`.
 
-预装兼容工具取自 [GE-Proton11-11 ARM64 发布](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/GE-Proton11-11)，
-容器运行时取自 [Valve Steam Linux Runtime 4.0 ARM64](https://repo.steampowered.com/steamrt4/images/4.0.20260928.262390/)。
-二进制与其附带的 Wine、FEX、DXVK、vkd3d-proton 和其他组件保留各自许可、
-版权和源码提供方式，不改变为本仓库许可。下载身份、摘要及关键源提交固定在
-`config/steam-runtime.json`；构建直接提取公开工具包，不复制用户的 Steam 账户数据。
+Preinstalled compatibility tools are sourced from the [GE-Proton11-11 ARM64 release](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/GE-Proton11-11),
+and the container runtime comes from [Valve Steam Linux Runtime 4.0 ARM64](https://repo.steampowered.com/steamrt4/images/4.0.20260928.262390/).
+The binaries along with their bundled Wine, FEX, DXVK, vkd3d-proton, and other components retain their respective licenses,
+copyrights, and source availability terms, and are not relicensed under this repository's license. Download identities, digests, and key source commits are pinned in
+`config/steam-runtime.json`; the build extracts public toolkits directly and never copies user Steam account data.
 
-## 字体、图标与显示资源
+## Fonts, Icons, and Display Assets
 
-| 资源 | 身份与使用 | 通知 / 尚需核对 |
+| Asset | Identity & Usage | Notices / Verification Needed |
 | --- | --- | --- |
-| Noto CJK | [prepare_simpleinit.py](tools/prepare_simpleinit.py) 提取主机字体的 SC 字面；主机包版本未锁定 | 实际 hash 写入 `source-manifest.json`；字体许可/通知来自取得包。 |
-| Noto Sans CJK SC 设置页字形 | [prepare_product_console.py](tools/prepare_product_console.py) 从 SC 字面生成 16×19 位图，以标准 HII 字体包提供中文 | SIL OFL 1.1；[完整通知](uefi/components/product-support/Library/ConsoleScale/OFL.txt) 随模块和安装包附带，字体与生成数据的 hash 记入产品构建清单。 |
-| Font Awesome | 同一脚本下载 `FortAwesome/Font-Awesome` `5.15.4` 字体 | 记录实际 hash，下载前未锁内容 hash；核对该版本字体通知。 |
-| AOSP bitmap font | [Font.h](uefi/platforms/pianoProbePkg/Library/RamLogSerialPortLib/Font.h) | 文件头已保存 AOSP 版权及源码/二进制分发条款；发布时保留适用通知。 |
-| TianoCore 标志与品牌文字 | [ProductSplashAssets.h](uefi/components/product-support/Library/ProductBootManagerLib/ProductSplashAssets.h) 描述为六辐标志的向量解释 | 保留来源说明，品牌使用范围另核对。 |
+| Noto CJK | [prepare_simpleinit.py](tools/prepare_simpleinit.py) extracts the SC face from host fonts; host package version is not pinned | Actual hash is written to `source-manifest.json`; font license/notices come from the fetched package. |
+| Noto Sans CJK SC setup page glyphs | [prepare_product_console.py](tools/prepare_product_console.py) generates 16×19 bitmaps from the SC face to provide Chinese glyphs via a standard HII font package | SIL OFL 1.1; [full notice](uefi/components/product-support/Library/ConsoleScale/OFL.txt) is bundled with the module and installer package, and hashes of the font and generated data are recorded in the product build manifest. |
+| Font Awesome | Same script downloads `FortAwesome/Font-Awesome` `5.15.4` fonts | Actual hash is recorded; content hash is not pinned prior to download; verify font notices for this version. |
+| AOSP bitmap font | [Font.h](uefi/platforms/pianoProbePkg/Library/RamLogSerialPortLib/Font.h) | File header retains AOSP copyright and source/binary distribution terms; keep applicable notices on release. |
+| TianoCore logo and brand text | [ProductSplashAssets.h](uefi/components/product-support/Library/ProductBootManagerLib/ProductSplashAssets.h) describes a vector interpretation of the six-spoke logo | Retain provenance notes; verify trademark usage scope separately. |
 
-`build_simpleinit.sh` 会把字体所在 rootfs 生成链接对象，因此它们可能进入二进制，通知核对不能只限于 Git 中的源码文件。
+`build_simpleinit.sh` compiles the rootfs containing fonts into linked objects, so they may end up in binaries; notice verification cannot be limited to source files tracked in Git.
 
-## 原机固件与二进制发布边界
+## Stock Device Firmware and Binary Redistribution Boundaries
 
-原生 PE/DEPEX、boot/DTB、厂商模块及固件保存在被忽略的本地目录，取得与输入限制见 [本地输入](docs/devel/local-inputs.md)。
+Native PE/DEPEX modules, boot/DTB images, vendor modules, and firmware are stored in gitignored local directories; see [Local Inputs](docs/devel/local-inputs.md) for acquisition and input constraints.
 
-[inventory_native_drivers.py](tools/dev/inventory_native_drivers.py) 清点提取模块；[prepare_product.py](tools/prepare_product.py) 校验并嵌入 FV；[piano_inherited_clock.py](tools/piano_inherited_clock.py) 产生固定 ROM ClockDxe 兼容派生。
+[inventory_native_drivers.py](tools/dev/inventory_native_drivers.py) inventories extracted modules; [prepare_product.py](tools/prepare_product.py) validates and embeds them into the FV; [piano_inherited_clock.py](tools/piano_inherited_clock.py) generates a compatible derivative of the fixed-ROM ClockDxe.
 
-这些材料的二进制再分发条件**未审查**；hash 只证明身份，不授予分发许可。未来 Release 按实际内容核对来源与通知，本页不作合法性或兼容性结论。
+Binary redistribution terms for these materials are **unreviewed**; hashes only prove identity and do not grant distribution rights. Future releases must verify provenance and notices against actual release contents; this page makes no legal or compatibility determinations.

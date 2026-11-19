@@ -1,64 +1,62 @@
-# 已知问题
+# Known Issues
 
-按使用中遇到的现象排列，每项写明影响和绕过办法。功能范围见[项目状态](../status.md)。
+Organized by user-facing symptoms, listing the impact and workaround for each item. For overall feature coverage, see [Project Status](../status.md).
 
-## 首次分区
+## First-Time Partitioning
 
-引导助手提供 **创建独立分区**，但新平板上的首次分区还没有在设备上验证过。平板上已经有 `sunuefi_esp` 和 `sunuefi_root` 时，直接选择镜像安装即可，不需要重新分区。分区过程中遇到问题，先回到 Android，再按[故障恢复](recovery.md)处理。
+The Boot Helper provides **Create Dedicated Partitions**, but first-time partitioning on a fresh tablet has not yet been verified on hardware. If `sunuefi_esp` and `sunuefi_root` already exist on your tablet, select and flash the images directly without repartitioning. If you run into issues during partitioning, return to Android first and follow [Recovery](recovery.md).
 
-**删除并归还 Android 空间** 需要支持早期 init 配置的 SukiSU；其他管理器下按钮会禁用并显示原因。确认删除后，点 **重启完成空间归还**，早期维护会扩大文件系统并继续启动 Android。旧模块已删除分区但容量未增加时，更新模块后使用同一个按钮继续，不要格式化或重复删除。
+**Delete & Reclaim Android Space** requires SukiSU with early-init configuration support; under other managers, the button is disabled and displays the reason. After confirming deletion, tap **Reboot to Finish Reclaiming Space**; early maintenance will expand the filesystem and continue booting Android. If an older module already deleted the partitions without increasing Android storage capacity, update the module and use the same button to complete the process—do not format or delete again.
 
-## UEFI 菜单与 USB
+## UEFI Menu and USB
 
-SimpleInit 菜单和 TianoCore 设置页可以显示，用音量键移动、电源键确认。
-官方键盘已能在固件设置中操作；UEFI 触屏、触控板及 USB Host 还不能作为
-日常输入和外设连接方式使用。UEFI Fastboot 在菜单、固件设置和 Shell 里保持连接。
+The SimpleInit menu and TianoCore setup screens render properly; use the volume keys to navigate and the power button to confirm. The official keyboard already works in firmware setup, while UEFI touchscreen, touchpad, and USB Host are not yet usable for regular input or external peripherals. UEFI Fastboot remains connected across the menu, firmware setup, and UEFI Shell.
 
-电脑能识别 UEFI 设备时，可以查询固件：
+When a computer detects the UEFI device, you can query the firmware:
 
 ```sh
 fastboot -s SunUEFI-piano getvar product
 ```
 
-返回 `piano-sunuefi` 说明固件在运行。之后可以用 `oem boot-stable` 启动 Linux，或用 `reboot` 回 Android，见 [UEFI Fastboot](fastboot.md)。电脑看不到设备时，见[故障恢复](recovery.md)。
+Returning `piano-sunuefi` confirms that the firmware is running. You can then run `oem boot-stable` to boot Linux or `reboot` to return to Android; see [UEFI Fastboot](fastboot.md). If the computer does not detect the device, see [Recovery](recovery.md).
 
-## 电源和睡眠
+## Power and Sleep
 
-* 日常使用挂起，不启用磁盘休眠、混合睡眠和先挂起后休眠。
-* 关机偶尔会回到 Android，原因还没查明。
-* 原装小米充电器直连时会自动完成快充认证，实际功率随电量和温度调整。高电量时使用 9 V、最高 2.5 A 的降压充电通路，不会持续输入铭牌上的 67 W。游戏耗电超过输入功率时仍会掉电，退出游戏、等待降温可减轻这种情况。
+* Use suspend for daily sleep; hibernate (suspend-to-disk), hybrid sleep, and suspend-then-hibernate are disabled.
+* Shutting down occasionally reboots into Android instead; the root cause is not yet known.
+* When connected directly to a stock Xiaomi charger, fast-charging authentication completes automatically, and actual power adjusts with battery level and temperature. At high battery levels, charging switches to a 9 V / up to 2.5 A buck path rather than sustaining the rated 67 W. Battery drain can still occur if gaming load exceeds input power; exiting the game and letting the tablet cool down mitigates this.
 
-## 显示和图形
+## Display and Graphics
 
-* 默认 3200×2136、120 Hz；可切换刷新率和低分辨率源模式。面板传输仍为原生尺寸、10 位，没有其他传输位深选项。
-* KDE 桌面可以切换 HDR 和广色域，默认关闭。EDR 是另一项亮度策略，不是 HDR 模式；12 位 FRC 和 8／10／12 位选择尚未提供。
-* 部分 GTK 窗口连续缩放时帧率偏低，约每秒提交 30 帧。
-* 夜灯使用通用 sRGB 配置，不是原厂校准的颜色。
+* Defaults to 3200×2136 at 120 Hz; refresh rates and lower-resolution source modes can be switched. Panel transport remains native resolution at 10-bit, with no other transport bit-depth options.
+* KDE Plasma can toggle HDR and wide color gamut (both off by default). EDR is a separate brightness policy rather than an HDR mode; 12-bit FRC and 8/10/12-bit selection are not yet available.
+* Some GTK windows drop to a low frame rate (around 30 frames committed per second) while continuously resizing.
+* Night Light uses a generic sRGB profile rather than stock factory color calibration.
 
-## 触控笔
+## Stylus
 
-Focus Pen Pro 在 120 Hz 下支持定位和压感书写。笔由内核直接上报，GNOME 的原生数位板页提供显示映射与校准，KDE 提供显示映射、两个笔身按钮和压力曲线设置，不需要另装配置程序。使用触控笔时请选择 120 Hz；144 Hz 下仍可能没有笔输入。
+Focus Pen Pro supports positioning and pressure-sensitive writing at 120 Hz. The stylus is reported directly by the kernel; GNOME's native Drawing Tablet settings provide display mapping and calibration, and KDE provides display mapping, both barrel buttons, and pressure curve settings, with no extra configuration tool required. Select 120 Hz when using the stylus; pen input may still be unavailable at 144 Hz.
 
-如果落笔打出小键盘 `+`，请更新 BlueZ。Debian 运行 `sudo apt update` 后照常升级；Nyarch 和 Arch Denial 的旧系统需要运行一次 `sudo pacman -Syu sunuefi/bluez-sunuefi`，并确认替换 `bluez`。配对数据保留；如果改过 `/etc/bluetooth/` 下的配置，把 pacman 留下的 `.pacsave` 合并回去。新镜像预装修复包，之后照常更新。SteamOS 继续使用 Valve 的 BlueZ。
+If touching the pen to the screen types a numpad `+`, update BlueZ. On Debian, run `sudo apt update` and upgrade as usual; on older Nyarch and Arch Denial installations, run `sudo pacman -Syu sunuefi/bluez-sunuefi` once and confirm replacing `bluez`. Pairing data is preserved; if you modified configs under `/etc/bluetooth/`, merge back any `.pacsave` files created by `pacman`. Newer images ship with the fixed package preinstalled and update normally thereafter. SteamOS continues using Valve's BlueZ.
 
-短按轻捏、长按、双击和笔身滑动的事件映射已保留，但新内核下还没有逐项完成物理操作检查。完整掌压、弱悬停、四边和倾角精度也没有完成对照；绘画时仍可能受到手掌触碰或边缘定位的影响。普通 Focus Pen 的旧版镜像支持悬停、定位、压感和侧键，新内核还缺少普通笔的实机覆盖。KDE 设置已在 SteamOS 完整镜像上检查，按钮动作与压力曲线对书写的影响还没有逐项实测。
+Event mappings for short squeeze, long squeeze, double tap, and barrel swipe are retained, but have not yet been individually verified physically on the new kernel. Full palm rejection, weak hover, edge tracking, and tilt accuracy have also not yet been benchmarked, so drawing may still be affected by palm touches or edge inaccuracies. Older images supported hover, positioning, pressure, and side buttons on the standard Focus Pen, but the new kernel still lacks hardware test coverage with the standard pen. KDE settings have been checked on the full SteamOS image, though the effects of button actions and pressure curves on writing have not been tested individually.
 
-## 相机和其他硬件
+## Camera and Other Hardware
 
-* 两路手电筒和 V4L2 短闪都已实测出光。普通相机应用还不能自动使用闪光，桌面没有预装常亮开关。
-* Linux 不沿用 Android 的指纹。Debian KDE 可以在系统设置录入指纹，并用它解锁 Plasma 锁屏；SDDM 登录仍使用密码。
-* 常见 Windows 游戏（如《原神》）若需特定参数，属于游戏和运行库自身的机制，与固件或系统无关。
-* Windows / WinPE 是目标，还不能启动。
+* Both torch channels and V4L2 strobe flash have been verified to emit light. Standard camera apps cannot trigger the flash automatically yet, and no constant-on torch toggle is preinstalled on the desktop.
+* Linux does not share fingerprints enrolled in Android. On Debian KDE, you can enroll fingerprints in System Settings and use them to unlock the Plasma lock screen; SDDM login still requires a password.
+* Any special launch parameters required by Windows games (such as *Genshin Impact*) stem from the game or runtime itself and are unrelated to the firmware or OS.
+* Windows / WinPE support is a project goal and does not boot yet.
 
-## 外接存储
+## External Storage
 
-* U 盘、移动硬盘和读卡器在 Linux 里可用，FAT32、exFAT 和 NTFS 都支持读写。
-* 早期镜像只带 FAT32 支持。插上 exFAT 或 NTFS 介质时设备能识别、分区能看到，但打开会提示 `Filesystem type ... not configured in kernel`，换成包含该支持的镜像即可。不是介质或接口的问题。
+* USB flash drives, external hard drives, and card readers work in Linux with full read/write support for FAT32, exFAT, and NTFS.
+* Earlier images only included FAT32 support. Connecting exFAT or NTFS media detects the device and shows partitions, but opening them fails with `Filesystem type ... not configured in kernel`; switching to a newer image with this support resolves it. This is not a media or port defect.
 
-## 其他
+## Other
 
-* 新装系统需要自己通过 NetworkManager 保存 Wi-Fi。
-* Recovery 里的独立 SunUEFI 镜像已放弃，见[故障恢复](recovery.md#原厂-recovery)。
-* 桌面和硬件功能主要在 CSOT 面板的 `25091RP04C` 上验证。
-* `debian-kde` 由 CI 构建，实机上的桌面和硬件功能没有像 GNOME 那样逐项验证。
-* SteamOS 是实验版，游戏兼容性因游戏而异，见 [SteamOS](steamos.md)。
+* On a fresh installation, configure and save your Wi-Fi network manually through NetworkManager.
+* The standalone SunUEFI image in Recovery has been dropped; see [Recovery](recovery.md#stock-recovery).
+* Desktop and hardware features are primarily verified on the `25091RP04C` variant with a CSOT panel.
+* `debian-kde` is built by CI; its desktop and hardware features have not been verified item-by-item on hardware as thoroughly as GNOME.
+* SteamOS is experimental, and game compatibility varies by title; see [SteamOS](steamos.md).

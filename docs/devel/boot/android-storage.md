@@ -1,83 +1,78 @@
-# Android 存储扩容
+# Android Storage Expansion
 
-删除独立存储分区并把空间归还 Android，需要扩大 GPT 分区表中 `userdata` 的范围，再扩大其中的 F2FS 文件系统。引导助手通过 SukiSU 的早期 init 入口完成第二步，不依赖原厂自动扩容。仅删除 `sunuefi_esp`、`sunuefi_root`，或只改变分区结束位置，Android 可用容量都不会自动增加。
+Deleting the dedicated storage partitions and returning space to Android requires expanding the `userdata` range in the GPT partition table, then expanding the F2FS filesystem inside it. Boot Helper performs the second step through SukiSU's early init hook rather than relying on stock automatic expansion. Merely deleting `sunuefi_esp` and `sunuefi_root`, or only changing the partition end boundary, does not automatically increase usable capacity in Android.
 
-## 加密与容量调整
+## Encryption and Capacity Resizing
 
-本机 `/data` 使用 F2FS，挂载在名为 `userdata` 的 device-mapper 设备上。原厂 fstab 同时启用了文件加密（FBE）和元数据加密，vold 在启动期间加载原有密钥并建立解密后的块设备，然后再挂载 `/data`。
+On this device, `/data` uses F2FS and is mounted on a device-mapper device named `userdata`. The stock fstab enables both File-Based Encryption (FBE) and metadata encryption; during boot, `vold` loads the existing keys and sets up the decrypted block device before mounting `/data`.
 
-因此，分区调整不需要关闭 FBE、重建密钥或格式化 Android。文件系统工具必须使用 vold 建立的解密块设备，不能直接把物理 `userdata` 当作明文 F2FS。模块的只读检查确认该映射只有一个 `userdata` 后端、从零偏移开始；设备映射参数中的密钥不输出、不保存。
+Therefore, resizing the partition does not require disabling FBE, regenerating keys, or formatting Android. Filesystem tools must operate on the decrypted block device set up by `vold`, not treat the physical `userdata` partition directly as plaintext F2FS. The module's read-only checks confirm that the mapping has a single `userdata` backing device starting at offset zero; keys in the device-mapper parameters are never printed or saved.
 
-F2FS 内核的在线容量调整接口可用于缩小已挂载的 `/data`，不支持在线扩大。扩大容量必须在正常卸载文件系统后运行 `resize.f2fs`。重启可以重建完整映射，但不能保证原厂系统会运行扩容工具。
+The F2FS kernel online resize interface can shrink a mounted `/data`, but does not support online expansion. Expanding capacity requires cleanly unmounting the filesystem and running `resize.f2fs`. Rebooting rebuilds the full mapping, but does not guarantee that the stock system will run the resize tool.
 
-## 原厂启动期间的扩容
+## Expansion During Stock Boot
 
-HyperOS 的 `libfs_mgr.so` 包含小米增加的 F2FS 扩容代码，但存在代码、工具或字符串，不表示当前 `/data` 路径会执行它。HyperOS `OS4.0.5.0.XPYCNXM` 对 `/dev/block/dm` 开头的路径跳过 `resize.f2fs`，恰好包括 vold 为元数据加密建立的映射。启动日志只有文件系统检查和挂载，没有扩容调用。
+HyperOS's `libfs_mgr.so` contains Xiaomi-added F2FS expansion code, but the presence of code, binaries, or strings does not mean the current `/data` path executes it. HyperOS `OS4.0.5.0.XPYCNXM` skips `resize.f2fs` for paths starting with `/dev/block/dm`, which includes the mapping `vold` sets up for metadata encryption. Boot logs show only filesystem check and mount, with no resize invocation.
 
-同机二进制的分析依据：
+Analysis basis from binaries on the same device:
 
-| 文件 | SHA-256 |
+| File | SHA-256 |
 | --- | --- |
 | `/system/lib64/libfs_mgr.so` | `aa0a9ee08340310992c77df3fad679c51c81761ba4ccddda3311333f9dfd9094` |
-| `/system/bin/fsck.f2fs`（`resize.f2fs` 的目标） | `fce9b89bc35ee1d8160007406caa402a00bbbae94d662a1ccddd8d129171dc24` |
+| `/system/bin/fsck.f2fs` (target of `resize.f2fs`) | `fce9b89bc35ee1d8160007406caa402a00bbbae94d662a1ccddd8d129171dc24` |
 
-ARM64 反汇编在 `0x3d82c` 附近检查设备路径，匹配 `/dev/block/dm` 时跳至 `0x3dc78`，绕过扩容。旧版 HyperOS 的扩容调用记录不能代替当前版本、当前设备路径的验证。模块使用独立的早期维护入口，不修改系统库、fstab 或加密配置来强行进入原厂扩容分支。
+ARM64 disassembly checks the device path near `0x3d82c` and branches to `0x3dc78` when matching `/dev/block/dm`, bypassing expansion. Resize invocation logs from older HyperOS versions cannot substitute for verifying the current version and device path. The module uses a standalone early maintenance hook and does not modify system libraries, fstab, or encryption configuration to force entry into the stock expansion branch.
 
-元数据加密的设备建立和挂载顺序见 [AOSP MetadataCrypt.cpp](https://android.googlesource.com/platform/system/vold/+/refs/heads/android16-release/MetadataCrypt.cpp)；`resize.f2fs` 的离线操作和参数见 [AOSP f2fs-tools](https://android.googlesource.com/platform/external/f2fs-tools/+/refs/heads/android16-release/fsck/main.c)。
+See [AOSP MetadataCrypt.cpp](https://android.googlesource.com/platform/system/vold/+/refs/heads/android16-release/MetadataCrypt.cpp) for metadata encryption device setup and mount ordering, and [AOSP f2fs-tools](https://android.googlesource.com/platform/external/f2fs-tools/+/refs/heads/android16-release/fsck/main.c) for offline `resize.f2fs` operations and options.
 
-## SukiSU 早期维护
+## SukiSU Early Maintenance
 
-模块的 `initrc/storage.rc` 导入 `/metadata/sunuefi/storage-early.rc`。SukiSU 将模块 init 配置拼入第二阶段 init，导入的 `late-fs` 动作排在原厂 vendor 配置之后：此时 vold 已建立并挂载解密映射，但 `post-fs-data`、APEX 数据挂载、应用和 KSU 的数据监测尚未启动。普通 `post-fs-data.sh` 比 KSU 数据监测更晚，不能代替这个入口。接入使用 SukiSU 自带的模块接口，不修改 BOOT；不支持该接口的管理器仍可使用引导功能，但不能发起空间归还。
+The module's `initrc/storage.rc` imports `/metadata/sunuefi/storage-early.rc`. SukiSU splices module init configs into second-stage init so the imported `late-fs` action runs after stock vendor configs: at that point `vold` has already set up and mounted the decrypted mapping, while `post-fs-data`, APEX data mounts, apps, and KSU's data monitor have not started yet. A regular `post-fs-data.sh` script runs later than KSU's data monitor and cannot replace this hook. Integration uses SukiSU's built-in module interface without modifying BOOT; managers that do not support this interface can still use boot features, but cannot initiate space reclamation.
 
-静态维护程序和 F2FS 工具保存在 `persist/sunuefi/storage/`，不依赖早期尚未就绪的动态链接环境。`/metadata/sunuefi/` 只保存 init 配置，vold 的原有密钥和其他目录保持不变。安装时原子更新程序和配置，预览、执行与重启前核对早期程序内容和管理器生成的导入项。
+The static maintenance binary and F2FS tools are stored in `persist/sunuefi/storage/`, avoiding any dependency on the dynamic linker environment that is not ready at this early stage. `/metadata/sunuefi/` stores only the init config; `vold`'s existing keys and other directories remain untouched. Installation atomically updates the binaries and config, and preview, execution, and pre-reboot checks verify the early binary contents and the manager-generated import entries.
 
-确认归还后，程序从已有操作记录提取任务编号和目标容量，核对当前明文 F2FS 的 UUID，写入一个仅 root 可读写的一次性请求。下次启动由 init 同步执行：
+After reclamation is confirmed, the program extracts the task ID and target capacity from the existing operation record, verifies the current plaintext F2FS UUID, and writes a root-only one-shot request. On the next boot, init executes it synchronously:
 
-1. 在 `late-fs` 核对请求、不同的启动编号、原文件系统 UUID、完整零偏移解密映射及目标容量。进入 `post-fs-data` 后拒绝执行。
-2. 把模块内的静态 F2FS 工具复制到内存目录，验证工具可运行，保存 `/data` 的挂载参数。
-3. 同步并正常卸载 `/data`，要求明文设备可以独占打开。不能使用 lazy／force 卸载，不停止或卸载 KSU。
-4. 先只读检查文件系统和目标布局，再用 `resize.f2fs -k -t 目标扇区数` 沿用原有元数据区扩大容量。保留数据区起点、节点位置、NAT/SIT 位图和检查点载荷，仅初始化新增空闲段，不搬移已有文件块。不使用忽略错误或强制选项。
-5. 再次只读检查文件系统，确认双超级块一致、UUID 未变且 F2FS 覆盖目标容量，按原参数挂回 `/data`，继续 Android 启动。模块的启动服务只读检查结果，确认后清除待完成记录。
+1. In `late-fs`, verify the request, a different boot ID, the original filesystem UUID, a full zero-offset decrypted mapping, and the target capacity. Refuse to run once `post-fs-data` has started.
+2. Copy the static F2FS tools from the module into an in-memory directory, verify that the tools can execute, and save `/data`'s mount options.
+3. Sync and cleanly unmount `/data`, requiring exclusive open access to the plaintext device. Never use lazy or force unmount, and never stop or unload KSU.
+4. Run a read-only check on the filesystem and target layout first, then run `resize.f2fs -k -t <target-sectors>` to expand capacity while reusing the existing metadata area. This preserves the data area start address, node locations, NAT/SIT bitmaps, and checkpoint payload, initializing only newly added free segments without moving existing file blocks. Never use flags that ignore errors or force execution.
+5. Run a read-only check on the filesystem again to confirm both superblocks match, the UUID is unchanged, and F2FS covers the target capacity; remount `/data` with its original options and continue Android boot. The module's boot service inspects the result read-only and clears the pending record once confirmed.
 
-F2FS 工具基于官方 1.17.0 构建，来源和补丁见[系列清单](../../../patches/f2fs-tools/1.17.0/series.json)。在线缩容保留的 SIT 和 SSA 区域必须仍能覆盖归还后的容量，GPT 写入前与早期维护时都会检查。沿用这些区域可避免重新计算布局时让 `main_blkaddr` 向前移动；不搬移文件块也保留了 Android 元数据加密与文件加密各自的块处理方式。
+The F2FS tools are built from upstream 1.17.0; see the [series manifest](../../../patches/f2fs-tools/1.17.0/series.json) for sources and patches. The SIT and SSA regions retained from online shrinking must still cover the reclaimed capacity; this is checked both before writing the GPT and during early maintenance. Reusing these regions prevents layout recalculation from shifting `main_blkaddr` forward, and avoiding block relocation preserves Android's per-block handling for both metadata encryption and file-based encryption.
 
-分区目标与文件系统目标分别处理。原厂 F2FS 可以小于 `userdata` 分区，
-不能强迫原有元数据覆盖整块分区。程序从双超级块的 SIT、SSA 和 section
-大小计算可覆盖范围，取它与分区目标中较小的容量；GPT 仍恢复完整分区范围。
-操作记录同时保存 `target_userdata_bytes` 和 `target_f2fs_bytes`，早期工具
-只扩到后者，重启后分别校验物理分区、解密映射和文件系统。旧记录没有
-文件系统目标时，从当前元数据重新推导，不要求用户重复删除分区。
+Partition targets and filesystem targets are handled separately. Stock F2FS can be smaller than the `userdata` partition, and existing metadata cannot be forced to cover the entire partition. The program calculates the coverable range from SIT, SSA, and section size in both superblocks, then takes the smaller of that range and the partition target; GPT still restores the full partition extent. The operation record stores both `target_userdata_bytes` and `target_f2fs_bytes`. The early tool expands only to the latter, and post-reboot verification checks the physical partition, decrypted mapping, and filesystem separately. When an older record lacks a filesystem target, it is re-derived from current metadata without requiring the user to delete partitions again.
 
-缩容后的 SIT 日志若包含旧尾部空闲段，只丢弃有效块数和位图均为零的越界记录，后续有效记录继续处理。越界记录仍含数据时返回错误，不截断整份日志。
+If the post-shrink SIT journal contains old trailing free segments, only out-of-range entries whose valid block count and bitmap are both zero are discarded, and subsequent valid entries continue to be processed. If an out-of-range entry still contains data, an error is returned rather than truncating the entire journal.
 
-执行前把请求改名为已尝试记录。失败不会自动重试写入或循环重启；未能正常卸载时保持 Android 挂载继续启动。扩容工具或读回失败时，只重启一次，让原厂启动路径重新检查文件系统。若重启调用失败则停住 init，避免在未挂载的 `/data` 上继续创建目录，此时可长按电源重启。关键输出保存在 `persist/sunuefi/storage/grow.log`。
+Before execution, the request file is renamed to an attempted record. Failures never automatically retry writes or cause reboot loops; if clean unmount fails, Android keeps `/data` mounted and continues booting. If the resize tool or read-back check fails, the device reboots once so the stock boot path can re-check the filesystem. If the reboot call itself fails, init halts to avoid creating directories on an unmounted `/data`; in that case, hold the power button to reboot. Key output is saved to `persist/sunuefi/storage/grow.log`.
 
-## 删除并归还空间的顺序
+## Order of Deletion and Space Reclamation
 
-只有独立存储区域紧邻 `userdata` 尾部，且归还范围内没有其他分区时，才能保持起点不变、向后扩大 `userdata`。分区编号不决定物理顺序，必须读取 GPT 的起止地址。
+Expanding `userdata` backward while keeping its start address unchanged is possible only when the dedicated storage area sits immediately after the end of `userdata` and no other partition lies within the reclaimed range. Partition numbers do not determine physical order; GPT start and end addresses must be read.
 
-删除过程先要求已安装早期维护、Android 启动路线和独立分区未挂载，再删除 ESP/root 条目并扩大 `userdata` 的结束位置。预览和执行均检查扩容条件；不满足时不删除分区。原厂系统分区、加密配置、`userdata` 起点和现有 GUID 均保持不变。
+Deletion first requires early maintenance to be installed, the boot route to be set to Android, and the dedicated partitions to be unmounted, before removing the ESP/root entries and extending the end of `userdata`. Both preview and execution verify expansion preconditions; if unmet, partitions are not deleted. Stock system partitions, encryption configuration, the `userdata` start address, and existing GUIDs all remain unchanged.
 
-分区表写入后的结果是“等待重启完成 Android 扩容”。模块不会在已挂载的 `/data` 上运行 `resize.f2fs`，也不会提前把这一步显示为容量已经归还。正常启动后，读取物理分区、device-mapper 和两份 F2FS 超级块，分别达到记录中的目标后才完成操作；文件系统尾部可以保留原有元数据无法覆盖的分区余量。
+The state after writing the partition table is "waiting for reboot to complete Android expansion." The module never runs `resize.f2fs` on a mounted `/data`, nor does it report space as already reclaimed at this stage. After a normal reboot, the physical partition, device-mapper device, and both F2FS superblocks are read, and the operation completes only after each meets the recorded targets; trailing partition slack that existing metadata cannot cover may remain after the end of the filesystem.
 
-## 重启后的只读检查
+## Post-Reboot Read-Only Verification
 
-源码位于 [`tools/android/piano_resize_f2fs.c`](../../../tools/android/piano_resize_f2fs.c)。
+Source code: [`tools/android/piano_resize_f2fs.c`](../../../tools/android/piano_resize_f2fs.c).
 
 ```sh
-piano-resize-f2fs status --expect-bytes 新userdata容量字节数 --expect-f2fs-bytes 文件系统目标字节数
+piano-resize-f2fs status --expect-bytes <new-userdata-bytes> --expect-f2fs-bytes <target-f2fs-bytes>
 ```
 
-输出中包含：
+Output fields:
 
-- `userdata_bytes`：内核当前识别的物理分区容量。
-- `mapped_bytes`：Android 解密块设备的容量。
-- `f2fs_bytes`：F2FS 超级块中声明的容量。
-- `mapping_requires_reboot`：物理分区已扩大，但 Android 仍在使用旧容量映射。
-- `target_f2fs_bytes`：现有元数据可覆盖的文件系统目标，不超过分区容量。
-- `grow_pending`：文件系统尚未达到可覆盖的目标容量，按 F2FS section 对齐保留余量。
-- `expansion_verified`：目标容量、物理分区、映射和两份超级块均满足扩容后的要求。
+- `userdata_bytes`: Physical partition capacity currently recognized by the kernel.
+- `mapped_bytes`: Capacity of the Android decrypted block device.
+- `f2fs_bytes`: Capacity declared in the F2FS superblock.
+- `mapping_requires_reboot`: The physical partition has grown, but Android is still using the old-capacity mapping.
+- `target_f2fs_bytes`: Filesystem target coverable by existing metadata, not exceeding partition capacity.
+- `grow_pending`: The filesystem has not yet reached the coverable target capacity, allowing margin aligned to F2FS sections.
+- `expansion_verified`: The target capacity, physical partition, mapping, and both superblocks all meet post-expansion requirements.
 
-指定目标容量后，完整确认返回 `0`；尚未达到目标返回 `3`，同时保留完整状态输出。此命令仅读取，不修改文件系统、分区表或加密配置。
+When target capacities are specified, full verification returns `0`; if targets are not yet met, it returns `3` while still printing the complete status output. This command is read-only and does not modify the filesystem, partition table, or encryption configuration.
 
-实机早期扩容将 F2FS 从 `219871686656` 字节扩大到 `495286484992` 字节，用时约 10.8 秒。物理分区、解密映射和 F2FS 容量一致，双超级块一致、UUID 保留，原挂载恢复后 Android 启动完成，BOOT 哈希未变。重启后的用户加密文件仍需解锁才能读取，不能用设备加密区域可读代替用户文件内容检查。
+On-device early expansion grew F2FS from `219871686656` bytes to `495286484992` bytes in about 10.8 seconds. The physical partition, decrypted mapping, and F2FS capacity matched, both superblocks were consistent, the UUID was preserved, Android finished booting after restoring the original mount, and the BOOT hash remained unchanged. After reboot, user-encrypted files still require unlocking before they can be read; readability of the device-encrypted area cannot substitute for verifying user file contents.

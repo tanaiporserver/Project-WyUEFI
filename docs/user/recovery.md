@@ -1,29 +1,29 @@
-# 返回 Android 与故障恢复
+# Returning to Android & Recovery
 
-SunUEFI 不替换原厂引导程序。正常扫描和启动不会改写 Android 分区；手动执行 [UEFI Fastboot 刷写](fastboot.md#刷写分区)时，只写指定的目标。出问题时，按下表处理。
+SunUEFI does not replace the stock bootloader. Normal scanning and booting do not modify Android partitions; when manually performing [UEFI Fastboot flashing](fastboot.md#flashing-partitions), only the specified target is written. If something goes wrong, refer to the table below.
 
-| 现象 | 原因 | 怎么做 |
+| Symptom | Cause | What to do |
 | --- | --- | --- |
-| 在 Linux 里想回 Android | 保存的启动路线是 Linux | 运行 `piano-next-boot android --reboot`，或点桌面上的“返回 Android” |
-| 在 Android 里想改回 Linux 或 Android | 路线保存在 BOOT 分区的记录区 | 在助手的 **启动** 页重新选择；没有助手时见下文“用命令改启动路线” |
-| 屏幕停在原厂 Fastboot | 没有选到系统，或刷写后没有重启 | 电脑上运行 `fastboot reboot` |
-| 电脑能看到 `SunUEFI-piano` | 固件还在运行 | 运行 `fastboot -s SunUEFI-piano reboot`，固件保存设置、同步存储后重启。看到开机选择页时，可用音量键选择 Android |
-| 完全没有反应 | 死机或卡在早期启动 | 长按电源键强制重启，直到出现开机画面。按多久因机器而异，用你已知的原厂强制重启方式 |
-| 想进小米原厂 Recovery | 需要原厂恢复功能 | 在 Android 里运行 `reboot recovery`，或用系统的重启菜单。不会触发 SunUEFI，也不改变保存的启动路线 |
+| Want to return to Android from Linux | The saved boot route is Linux | Run `piano-next-boot android --reboot`, or click "Return to Android" on the desktop |
+| Want to switch back to Linux or Android from Android | The route is saved in the record area of the BOOT partition | Re-select it on the **Boot** page of the Boot Helper; without the helper, see [Changing the Boot Route via Command Line](#changing-the-boot-route-via-command-line) below |
+| Screen stuck on stock Fastboot | No OS was selected, or the device was not rebooted after flashing | Run `fastboot reboot` on your computer |
+| Computer detects `SunUEFI-piano` | The firmware is still running | Run `fastboot -s SunUEFI-piano reboot`; the firmware will save settings, flush storage, and reboot. When the boot selection menu appears, use the volume keys to choose Android |
+| Completely unresponsive | System hang or stuck in early boot | Hold the power button to force a reboot until the boot splash appears. Hold duration varies by device; use your known stock force-reboot method |
+| Want to enter Xiaomi stock Recovery | Need stock recovery features | Run `reboot recovery` in Android, or use the system reboot menu. This does not trigger SunUEFI and does not change the saved boot route |
 
-强制重启后仍然回不到 Android 时，先不要继续刷写，记下屏幕状态和电脑上 `fastboot devices` 的输出再求助。
+If you still cannot return to Android after a force reboot, do not flash anything else. Note the screen state and the output of `fastboot devices` on your computer before asking for help.
 
-## 更新报启动分区空间不足
+## Insufficient Boot Partition Space During Updates
 
-先用 `sudo bootctl --print-esp-path` 找到启动分区的挂载点，再用 `df -h` 检查该目录的空间。用 `uname -r` 和 `sudo bootctl list` 区分当前内核与旧版本。
-保留当前版和至少一套已能启动的回退版本，只卸载用不到的旧内核及其同版本配套包。
-用系统包管理器卸载，让它同时移除相应的启动文件，不要手动清空启动分区。
-如果更新已经因空间不足中断，腾出空间后先重新生成报错版本的启动文件，
-确认内核、initramfs 和设备树齐全再重启，见[构建手册](../devel/building.md#从装包到启动项)。
+First run `sudo bootctl --print-esp-path` to locate the boot partition mount point, then check available space in that directory with `df -h`. Use `uname -r` and `sudo bootctl list` to distinguish the running kernel from older versions.
+Keep the current version and at least one known-working fallback version, and uninstall only unused older kernels along with their matching version-specific packages.
+Use the system package manager to uninstall them so the corresponding boot files are removed cleanly; do not manually wipe the boot partition.
+If an update was already interrupted due to insufficient space, free up space and regenerate the boot files for the failed version first.
+Verify that the kernel, initramfs, and Device Tree are all present before rebooting; see the [Build Guide](../devel/building.md#from-package-installation-to-boot-entries).
 
-## 用命令改启动路线
+## Changing the Boot Route via Command Line
 
-在 Android 里用 root 执行。BOOT 分区按当前槽位选择：
+Run as root in Android. Select the BOOT partition based on the active slot:
 
 ```sh
 BOOT=/dev/block/by-name/boot$(getprop ro.boot.slot_suffix)
@@ -31,12 +31,12 @@ piano-boot-request status --device "$BOOT"
 piano-boot-request set --device "$BOOT" --target android
 ```
 
-`--target` 可选 `android`、`menu`、`linux`、`setup`。BOOT 分区里没有有效记录时，系统默认进入 Android。
+Valid values for `--target` are `android`, `menu`, `linux`, and `setup`. When no valid record exists in the BOOT partition, the system boots into Android by default.
 
-## 原厂 Recovery
+## Stock Recovery
 
-SunUEFI 不使用 Recovery 分区安装。原厂引导程序不会为独立的 Recovery 镜像加载 vendor_boot 和 pvmfw，启动会停在 Fastboot，所以安装器拒绝 `--recovery`。如果之前自己刷过类似的镜像，请恢复原厂 Recovery 镜像。保存了 Linux 路线的同时进入 Recovery，在设备上还没有试过。
+SunUEFI does not install to the Recovery partition. The stock bootloader does not load `vendor_boot` or `pvmfw` for a standalone Recovery image, causing boot to halt at Fastboot, so the installer rejects `--recovery`. If you previously flashed a similar image yourself, restore the stock Recovery image. Entering Recovery while a Linux boot route is saved has not been tested on-device yet.
 
-## 关于数据
+## About Your Data
 
-`fastboot boot` 只在内存里运行。安装器和助手只写 `sunuefi_esp` 和 `sunuefi_root` 两个分区，不碰其他分区。合体 BOOT 会改写 BOOT 分区，恢复原样需要原厂 BOOT 镜像，可以用[合体 BOOT 的还原工具](../devel/boot/combined-boot.md)无损还原。动手之前先备份 BOOT 分区。
+`fastboot boot` runs strictly in memory. The installer and Boot Helper only write to the `sunuefi_esp` and `sunuefi_root` partitions and do not touch any other partitions. Combined BOOT modifies the BOOT partition; restoring it to stock requires the stock BOOT image, or you can restore it losslessly with the [Combined BOOT restore tool](../devel/boot/combined-boot.md). Back up the BOOT partition before making changes.

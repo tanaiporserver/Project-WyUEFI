@@ -1,79 +1,49 @@
-# 原生 BOOT 重打包、还原与持久请求
+# Native BOOT Repackaging, Restoration, and Persistent Requests
 
-`android/native/piano-boot-repack.c` 为 Android 引导助手提供当前 BOOT 的重打包、
-核心更新、无损还原和持久启动选择。原厂内核与格式兼容的自定义 GKI 都保留在原位，
-不从安装包替换 Android 内核。模块的安装和使用见 [Android 引导助手](android-module.md)。
+`android/native/piano-boot-repack.c` provides current BOOT repackaging, core updates, lossless restoration, and persistent boot selection for the Android Boot Helper. Both the stock kernel and format-compatible custom GKI kernels are kept in place; the Android kernel is never replaced from the installation package. See [Android Boot Helper](android-module.md) for module installation and usage.
 
-支持 Piano 的 BOOT v3／v4、raw AArch64 GKI 和 96 MiB active BOOT，
-保留已有 ramdisk 与 v4 GKI 签名段。入口和布局要求见[BOOT 识别与写入](android-module.md#boot-识别与写入)。工具不改变 Recovery、init_boot、
-vendor_boot、vbmeta、GPT 或非活动槽，也不自动重启／处理 OTA。
+Supports Piano BOOT v3/v4, raw AArch64 GKI, and 96 MiB active BOOT, preserving any existing ramdisk and v4 GKI signature section. See [BOOT Detection and Writing](android-module.md#boot-detection-and-writing) for entry point and layout requirements. The tool does not modify Recovery, `init_boot`, `vendor_boot`, `vbmeta`, GPT, or the inactive slot, nor does it automatically reboot or handle OTAs.
 
-## 已核对的布局
+## Verified Layout
 
-2026-10-03 RO 采集的原厂 boot_a 文件为 100,663,296 字节（96 MiB），BOOT4
-header_size=1584，GKI 文件长 36,866,560 字节，AArch64 Image span=37,486,592。
-AVB 原 image_size=36,888,576，vbmeta 长 2368 字节，footer 在文件最后 64 字节。
-GKI 后约 61 MiB 的区域仅有 5393 个非零字节，不能因为大多数是零而丢弃其余
-header、签名、footer 或填充。
+The stock `boot_a` image captured read-only on 2026-10-03 is 100,663,296 bytes (96 MiB), with BOOT4 `header_size=1584`, a GKI file length of 36,866,560 bytes, and an AArch64 Image span of 37,486,592. The original AVB `image_size=36,888,576`, `vbmeta` is 2368 bytes long, and the footer occupies the last 64 bytes of the file. The ~61 MiB region after the GKI contains only 5393 non-zero bytes; the remaining headers, signatures, footer, or padding must not be discarded just because most of the region is zeroed.
 
-BOOT4 / AVB 字段依据 AOSP 的
-[boot image header](https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/include/bootimg/bootimg.h)、
-[AVB footer](https://android.googlesource.com/platform/external/avb/+/refs/heads/main/libavb/avb_footer.h)
-与 [hash descriptor](https://android.googlesource.com/platform/external/avb/+/refs/heads/main/libavb/avb_hash_descriptor.h)。
-指纹只作为写前比对的元数据，不要求原厂前缀或某个内核版本。AVB 存在时校验结构
-和 SHA256／SHA512 数据摘要，没有验证 OEM RSA 签名。摘要缺失或失配的当前 BOOT
-可以在完整还原检查后经实体音量键确认继续；具体流程见[BOOT 识别与写入](android-module.md#boot-识别与写入)。
-格式不兼容、损坏的范围和无法保留的元数据不会因确认而跳过。
+BOOT4 / AVB fields follow AOSP's
+[boot image header](https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/include/bootimg/bootimg.h),
+[AVB footer](https://android.googlesource.com/platform/external/avb/+/refs/heads/main/libavb/avb_footer.h),
+and [hash descriptor](https://android.googlesource.com/platform/external/avb/+/refs/heads/main/libavb/avb_hash_descriptor.h).
+Fingerprints are used solely as pre-write comparison metadata, without requiring a stock prefix or a specific kernel version. When AVB is present, its structure and SHA256/SHA512 data digest are verified, without validating the OEM RSA signature. A current BOOT with a missing or mismatched digest can still proceed after a full restoration check and physical volume-key confirmation; see [BOOT Detection and Writing](android-module.md#boot-detection-and-writing) for the exact flow. Incompatible formats, corrupted ranges, and unpreservable metadata are never bypassed by confirmation.
 
-## 保持 SPLITv1
+## Preserving SPLITv1
 
-重打包的内核仍是当前早期 selector 使用的 `SUNUEFI-SPLITv1`。布局为：
+The repackaged kernel remains the `SUNUEFI-SPLITv1` format used by the current early selector. Its layout is:
 
 ```text
-BOOT3／4 header（仅 kernel_size 更新）
-原 GKI 一份（仅 branch/image_size 更新）
-原 Image span 后的两个 4 KiB NEXTv1 请求页
-selector 文件与其私有 stack 空间
-同一产品的 BootShim + FD
-当前 APPv1
-RSTRv1 恢复目录
-对齐填充、原 ramdisk 与 GKI 签名段（如有）
-unsigned boot AVB metadata、分区末尾 footer
+BOOT3/4 header (only kernel_size updated)
+Single copy of original GKI (only branch/image_size updated)
+Two 4 KiB NEXTv1 request pages after the original Image span
+selector binary and its private stack space
+BootShim + FD from the same product build
+Current APPv1
+RSTRv1 restore catalog
+Alignment padding, original ramdisk, and GKI signature section (if present)
+Unsigned boot AVB metadata, footer at end of partition
 ```
 
-GKI 未再复制一份。原 BOOT header 的完整 4096 字节、原 GKI header 的 64 字节
-以及内核之后的非零 4 KiB 块和原偏移保存到 APP 后的恢复目录；没有存储零区
-副本，也没有另存整个原厂 BOOT。目录最多 2 MiB，无法完整表示的原始填充会
-直接拒绝重打包，不会静默丢失数据。
+The GKI is not duplicated. The full 4096 bytes of the original BOOT header, the 64 bytes of the original GKI header, and every non-zero 4 KiB block after the kernel along with its original offset are stored in the restore catalog after APP; zeroed regions are not stored as copies, and no separate full copy of the stock BOOT is saved. The catalog is capped at 2 MiB; if the original padding cannot be represented losslessly within this limit, repackaging is rejected outright rather than silently dropping data.
 
-`RSTRv1` 固定 header 为 320 字节，记录原文件长度、GKI 长度/span、selector
-文件/内存大小/metadata 偏移、source/GKI/selector/shim/FD/APP SHA256 与目录
-body SHA256。body 是原 BOOT page、原 GKI header，然后是原始 offset/length
-及该非零块。还原首先从保留的 GKI 恢复原 header，再按目录重建尾部及零区，
-验证完整原 BOOT SHA256。恢复源可以带有自定义内核留下的旧 AVB 摘要，完整性由
-目录记录的原始字节摘要核对。ramdisk 与 GKI 签名段按 AOSP 布局移到新内核段之后，
-原偏移及原内容同时保留在恢复目录里。GKI 签名字节保持原样，不表示签名覆盖新增的选择器。
-新镜像使用 unsigned
-AVB NONE/hash 元数据，保留原 properties 与 rollback；没有 OEM 签名，也没有
-改变设备 vbmeta 的功能。
+The fixed `RSTRv1` header is 320 bytes and records the original file size, GKI size/span, selector file size/memory size/metadata offset, SHA256 hashes of source/GKI/selector/shim/FD/APP, and the catalog body SHA256. The body consists of the original BOOT page, the original GKI header, and then each original offset/length pair followed by its non-zero block. Restoration first restores the original header onto the retained GKI, then reconstructs the tail and zeroed regions from the catalog, and verifies the full original BOOT SHA256. The restoration source may contain a stale AVB digest left by a custom kernel; integrity is verified against the original raw-byte digest recorded in the catalog. Any ramdisk and GKI signature section are relocated after the new kernel section per AOSP layout, while their original offsets and contents are also preserved in the restore catalog. The GKI signature bytes are kept verbatim, which does not imply that the signature covers the added selector. The new image uses unsigned AVB NONE/hash metadata, preserving the original properties and rollback index; it carries no OEM signature and does not alter the device's `vbmeta` functionality.
 
-现有 `tools/package_product_trampoline.py` 生成的旧 SPLIT 镜像没有这个恢复
-目录。它的正常入口 ABI 可共用，但原生工具会拒绝声称能从旧载荷无损恢复整个
-BOOT；不能凭旧 ROM 下载或历史 BOOT 备份补齐缺失的数据。
+Legacy SPLIT images generated by `tools/package_product_trampoline.py` do not contain this restore catalog. Although they share the normal entry ABI, the native tool refuses to claim lossless full-BOOT restoration from legacy payloads; missing data cannot be substituted from old ROM downloads or historical BOOT backups.
 
-## 编译与文件接口
+## Build and File Interface
 
 ```sh
 python tools/build_boot_repack.py --arch aarch64 \
   --sysroot build/distros/release/rootfs --output build/boot-repack-native
 ```
 
-编译入口使用现有 clang/LLD 和 ARM64 libc/GCC sysroot，输出无 PT_INTERP 的
-静态 ELF，不安装 host 包。SHA256 复用固定 simple-init 内的 BSD libmd
-`sha2.c`；NEXTv1 CRC 和选择规则复用现有 `BootRequest.c`。policy/state JSON
-使用固定 jsmn v1.1.0 的 MIT tokenizer，来源与 commit 位于
-`android/native/jsmn-source.json`。manifest.json 记录编译命令、
-所有源码 SHA、固定上游提交、二进制 SHA 和明确为 false 的设备证明。
+The build entry point uses the existing clang/LLD toolchain and ARM64 libc/GCC sysroot to emit a static ELF without `PT_INTERP`, installing no host packages. SHA256 reuses BSD libmd `sha2.c` from pinned `simple-init`; NEXTv1 CRC and selection rules reuse the existing `BootRequest.c`. Policy/state JSON parsing uses a pinned MIT-licensed `jsmn` v1.1.0 tokenizer, whose source and commit are recorded in `android/native/jsmn-source.json`. `manifest.json` records the build command, all source SHAs, pinned upstream commits, binary SHAs, and device-verification flags explicitly set to `false`.
 
 ```sh
 piano-boot-repack status
@@ -87,18 +57,11 @@ piano-boot-repack request --input wrapped-boot.img --output selected-boot.img --
 piano-boot-repack request --input selected-boot.img --target linux --preview
 ```
 
-示例中的两个 selector 数值仅对应本次测试已编译的 selector；每次应取同一
-`selector.json` 的 `selector_memory_bytes` 与 `metadata_offset`，不能固定复用
-旧值。`--bootshim` 是 `--shim` 的同义入口。FD 必须为 3 MiB，APP 必须通过 APPv1
-大小和 SHA 校验；selector 的 metadata placeholder 必须是原始空值，拒绝嵌套
-包装。输出必须是新文件，不覆盖输入。
+The two selector values in the example apply only to the selector built for this test; always read `selector_memory_bytes` and `metadata_offset` from the matching `selector.json` rather than hardcoding stale values. `--bootshim` is an alias for `--shim`. The FD must be 3 MiB, and APP must pass APPv1 size and SHA checks; the selector's metadata placeholder must still contain its original empty value, rejecting nested wrapping. Output must be a new file and never overwrites the input.
 
-文件模式的 `probe` 报告 `boot_source_confirm_required`，不因摘要缺失或失配而隐藏
-当前布局。离线重打包这类输入时加 `--allow-modified-boot`，只放宽源 AVB 数据摘要；
-入口、空间、元数据范围和完整还原检查保持不变。Android 在线安装使用
-`--confirm-modified-boot` 并读取实体音量键，没有免按键的在线选项。
+In file mode, `probe` reports `boot_source_confirm_required` and does not hide the current layout when the digest is missing or mismatched. Pass `--allow-modified-boot` when repackaging such inputs offline to relax only the source AVB data digest check; entry point, space, metadata range, and full restoration checks remain enforced. Online installation on Android uses `--confirm-modified-boot` and reads the physical volume keys; there is no keyless online option.
 
-一次原厂文件的完整比较入口是：
+To run a full round-trip comparison against a stock file:
 
 ```sh
 python tools/build_boot_repack.py --arch aarch64 \
@@ -107,42 +70,17 @@ python tools/build_boot_repack.py --arch aarch64 \
   --selector-dir path/to/current-selector-bundle
 ```
 
-builder 会核对 selector 与当前 product FD/BootShim 的 manifest，运行原生
-probe/repack/restore，逐字节比较原文件与临时恢复文件，再用 wrapper
-保存 Linux 请求、只读查看、改选 Android，并验证请求变化后仍还原。结果写入
-roundtrip.json。临时完整恢复文件比较后删除，不作为备用分区镜像保留。
-ARM64 工具可在已有的本机 binfmt/QEMU 下执行；也可显式提供现有用户态
-`--runner`。这一过程没有设备行为。
+The builder checks the selector manifest against the current product FD/BootShim, runs native `probe`/`repack`/`restore`, compares the original file byte-for-byte against the temporary restored file, then uses the wrapper to save a Linux request, preview it read-only, switch back to Android, and verify that restoration still succeeds after request changes. Results are written to `roundtrip.json`. The temporary full restored image is deleted after comparison and is not kept as a backup partition image. The ARM64 binary can run under existing local binfmt/QEMU, or via an explicitly supplied user-mode `--runner`. This process performs no on-device actions.
 
-本次测试 boot_a 已完成该比较，原文件/恢复 SHA256 均为
-`7c444a2d6aa930cd79e2d48c569f6c891fbaff054c63fc85c3a57fb61c660ac2`。
-恢复目录为 18,368 字节，仅四个非零尾块，包内 GKI 只有一份。具体的产品、
-selector、shim、APP、工具 SHA 和输出 SHA 位于本地 `build/
-记录中；最终二进制的源码/工具 hash、同 stock 文件重打包、持久改选和
-还原另记录在 `final-file-validation.json`。它们是文件记录，不能当作 Android 旁路、Mi Recovery 或
-设备刷写已经验证。
+The test `boot_a` image passed this comparison, with both the original and restored files matching SHA256 `7c444a2d6aa930cd79e2d48c569f6c891fbaff054c63fc85c3a57fb61c660ac2`. The restore catalog is 18,368 bytes with only four non-zero tail blocks, and the package contains a single copy of the GKI. Specific product, selector, shim, APP, tool, and output SHAs are stored in local `build/` records; the final binary's source/tool hashes, stock-file repackaging, persistent target switching, and restoration are also recorded in `final-file-validation.json`. These are file-level records and must not be treated as on-device verification of Android bypass, Mi Recovery, or device flashing.
 
-固定 AOSP avbtool 的既有检查已验证新 footer、NONE vbmeta 与 boot SHA256。
-当前原生文件检查返回 Linux target=2/sequence=1，preview 保持该记录，
-改选 Android 后 target=0/sequence=2；共享 reader 与 CRC 一致。请求变化会使
-新包装 AVB 数据 hash 失配，RSTR 还原仍得到上述相同原始 SHA。所有临时完整
-恢复文件和请求对照文件在比较后删除；这些是文件记录，不能代表在线写入已验证。
+Existing checks with pinned AOSP `avbtool` verified the new footer, `NONE` vbmeta, and boot SHA256. Current native file tests return Linux `target=2`/`sequence=1`, `--preview` preserves that record, and switching to Android yields `target=0`/`sequence=2`, with the shared reader and CRC in agreement. Changing the request invalidates the wrapped image's AVB data hash, while RSTR restoration still reproduces the exact original SHA above. All temporary full restored files and request comparison files are deleted after verification; these are file-level records and do not represent verified online writes.
 
-## 在线接口与模块接线
+## Online Interface and Module Wiring
 
-在线调用需要 `--policy`。工具校验接口／ABI、运行中自身二进制的 hash，以及
- repack 所用的四个 payload hash。模块 builder 现在携带同一产品的
-`shim.bin`、`fd.bin`、`app.bin`、`selector.bin`，并从同一次 selector manifest
-传入 `selector.memory_bytes` 与 `selector.metadata_offset`，不猜测 shim 或偏移。
-有文件检查输入时，native builder 还输出 `selector-module.json` 与
-`policy-prototype.json`，可供设备只读 probe/status；该 prototype policy 的
-`zip_ready` 与设备证明均为 false。
+Online invocations require `--policy`. The tool verifies the interface/ABI, the hash of its own running binary, and the four payload hashes used for repacking. The module builder bundles `shim.bin`, `fd.bin`, `app.bin`, and `selector.bin` from the same product build, and passes `selector.memory_bytes` and `selector.metadata_offset` from the matching selector manifest without guessing shim locations or offsets. When given file-validation inputs, the native builder also emits `selector-module.json` and `policy-prototype.json` for read-only `probe`/`status` on the device; in this prototype policy, `zip_ready` and all device-verification fields are `false`.
 
-以下是原生与模块脚本采用的接口。只读阶段可先 probe/status；当前已经是
-RSTR wrapper 时 probe 不加 `--reject-wrapped`。该选项只用于后面的新安装检查。
-`slot` 必须来自当前
-Android `getprop ro.boot.slot_suffix`，node 只能是与它对应的
-`/dev/block/by-name/boot_a` 或 `boot_b`：
+Below is the interface used by the native binary and module scripts. During the read-only phase, run `probe`/`status` first; omit `--reject-wrapped` when probing an image that is already an RSTR wrapper, as that flag is intended only for subsequent fresh-install checks. `slot` must come from the current Android `getprop ro.boot.slot_suffix`, and the device node must be the corresponding `/dev/block/by-name/boot_a` or `boot_b`:
 
 ```sh
 piano-boot-repack status --interface-version 1 --policy policy.json
@@ -162,41 +100,12 @@ piano-boot-repack restore --boot-device "$bootdev" --active-slot "$slot" \
   --policy policy.json --installed-state install-state.json --execute
 ```
 
-原生端调用固定 `/system/bin/getprop`，重新确认 piano、active slot、正常启动
-完成和解锁状态。probe 只读 BOOT，保存 current source SHA、节点/rdev、容量
-以及三项独立身份：当前 ROM 指纹、`ro.bootimage.build.fingerprint`、 BOOT
-footer 指纹；不要求后两者相等。当前 wrapper 的 probe 还报告从 RSTR
-验证的 `original_source_sha256`、`app_sha256` 和规范化 `wrapper_sha256`，用于
-对照既有载荷；没有安装记录时 `owned=false`，仍不能据 probe 直接写入。
-设备曾出现 bootimage 属性 303、BOOT
-footer 309，属于要分别记录与写前比对的情况。
+The native binary invokes `/system/bin/getprop` directly to re-verify `piano`, the active slot, completed normal boot, and unlock state. `probe` reads BOOT read-only and saves the current source SHA, device node/`rdev`, size, and three independent identity fields: the current ROM fingerprint, `ro.bootimage.build.fingerprint`, and the BOOT footer fingerprint; the latter two are not required to match. Probing an existing wrapper also reports the RSTR-verified `original_source_sha256`, `app_sha256`, and normalized `wrapper_sha256` for comparison against existing payloads; without an install state record, `owned=false`, and writes still cannot be performed based on `probe` alone. Devices have been observed with `bootimage` property `303` and BOOT footer `309`, which is why both must be recorded separately and compared before writing.
 
-repack 会先在内存中完成完整包装及逐字节反向重建，保存小型
-`PREPARED_NOT_WRITTEN` 安装记录并 fsync；写前重新读取身份、source hash 和节点，
-只写当前 active BOOT。成功必须 fsync 并读取整个 96 MiB 的 SHA，随后才将
-状态更新为 `WRITTEN_READBACK_VERIFIED`。如需临时解除该 BOOT 的内核 readonly
-flag，只针对已验证的当前节点，并恢复原 flag；工具没有其他分区写入口。
-中途报错必须先检查现分区，不能把 PREPARED 记录当成已安装或直接重启。
+`repack` first performs the full wrap and byte-for-byte reverse reconstruction in memory, writes a small `PREPARED_NOT_WRITTEN` install state record, and calls `fsync`. Before writing, it re-reads the device identity, source hash, and node, writing only to the current active BOOT. Success requires calling `fsync` and reading back the SHA of the entire 96 MiB partition before updating the state to `WRITTEN_READBACK_VERIFIED`. If the kernel read-only flag on that BOOT block device must be temporarily cleared, this is applied solely to the verified current node and restored afterward; the tool has no write path to any other partition. On mid-operation failure, inspect the live partition first—never treat a `PREPARED` record as installed or reboot immediately.
 
-restore/request 必须核对同 ROM、同槽、同 bootimage 属性、同 footer 和安装
-记录中的 source/app/wrapper hash。wrapper hash 只规范化两个自有 NEXT 页，
-其他 header、GKI、payload、catalog、padding 与 AVB bytes 均需相同；NEXT 页的
-CRC、generation 和零 padding 另行校验。还原先重建并验证完整原 BOOT SHA，
-再执行相同的写前检查、fsync 和完整读回。OTA、改槽、外国包装、旧 SPLIT 无
-RSTR 目录或缺安装记录都会拒绝；不能拿历史 ROM 镜像替代缺失的原始数据。
+`restore` and `request` must verify the same ROM, same slot, same `bootimage` property, same footer, and the source/app/wrapper hashes in the install state record. The wrapper hash normalizes only the two owned NEXT pages; all other headers, GKI, payloads, catalog, padding, and AVB bytes must match exactly, while the NEXT pages' CRC, generation, and zero padding are validated separately. Restoration first reconstructs and verifies the full original BOOT SHA, then performs the same pre-write checks, `fsync`, and full readback. OTAs, slot switches, foreign wrappers, legacy SPLIT images without an RSTR catalog, or missing install records are all rejected; historical ROM images cannot be substituted for missing original data.
 
-request 使用共享 CRC 与双页序号，写入较旧／无效的一个 4 KiB 请求页，完整
-读回 BOOT 后才报告保存成功。目标可以选 Android(0)、UEFI(1)、Linux(2)、
-setup(3)，持续生效直到重新选择；status/preview 不消费请求，不写 misc/PMIC，
-不负责重启。模块 Action 的 `request TARGET --confirm` 保留用户明确确认。
-所谓 one-shot/consumed_once 不再作为产品门禁；对应检查是持久选择、
-改选与 CRC 往返。诊断 cmdline 的 `sunuefi.boot=uefi` override 与 NEXT 持久
-选择是两个接口，不能据名字把前者捆进普通模块。
+`request` uses the shared CRC and dual-page sequence numbers, writing to the older or invalid 4 KiB request page and reporting success only after a full readback of BOOT. Supported targets are `Android` (0), `UEFI` (1), `Linux` (2), and `setup` (3), remaining active until changed; `status`/`--preview` do not consume requests, write to `misc`/PMIC, or trigger a reboot. The module Action's `request TARGET --confirm` preserves explicit user confirmation. One-shot/`consumed_once` behavior is no longer a product gate; the required checks are persistent selection, target switching, and CRC round-tripping. The diagnostic cmdline override `sunuefi.boot=uefi` and persistent NEXT selection are two separate interfaces; do not bundle the former into the regular module based on naming similarity.
 
-`status --require-ready` 仍要求在线 source/slot/restore/readback 等检查、
-同包装的 Android 旁路、持久 request handling 和标准 Recovery 的记录。
-实现在线代码、host roundtrip 或把字段设为 true 都不能替代这些记录。
-WebUI manager bridge、设备在线写入与还原、最新 selector 包装启动和持久 Linux
-偏好下的 Recovery 仍待验证；当前 prototype 文件检查使用最新 Recovery 优先 selector
-`2d053c9e...`（`build/
-roundtrip.json。已有 selector 的设备证明与在线 repacker 写入／还原的证明仍需分别记录。
+`status --require-ready` still requires records of online source/slot/restore/readback checks, Android bypass with the same wrapper, persistent request handling, and standard Recovery behavior. Implementing the online code, running host round-trips, or manually setting fields to `true` cannot substitute for those records. The WebUI manager bridge, on-device online write and restore, booting wrapped with the latest selector, and Recovery behavior under a persistent Linux preference still require verification; the current prototype file validation uses the latest Recovery-first selector `2d053c9e...` (`build/roundtrip.json`). Existing on-device verification for the selector and verification for online repacker write/restore must still be recorded separately.

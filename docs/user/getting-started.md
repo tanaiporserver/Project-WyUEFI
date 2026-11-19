@@ -1,56 +1,56 @@
-# 快速上手
+# Getting Started
 
-在小米平板 8 Pro 上第一次安装 Linux，按本页五步走完即可，Android 和里面的数据保持原样。
+Follow these five steps to install Linux on your Xiaomi Pad 8 Pro (`piano`) for the first time. Android and its data remain intact.
 
-## 开始前
+## Prerequisites
 
-* 设备是小米平板 8 Pro（`piano`）。16 GB 和 24 GB 使用同一镜像，固件在启动时按原厂引导程序提供的布局识别实际内存。
-* Bootloader 已解锁，已安装 KernelSU 或 SukiSU。
-* 平板上留出足够的空间，并备份重要数据。独立分区会从 Android 的数据分区里划出空间。
+* A Xiaomi Pad 8 Pro (`piano`). Both 16 GB and 24 GB models use the same image; the firmware detects the actual memory size at boot from the layout provided by the stock bootloader.
+* Unlocked bootloader with KernelSU or SukiSU installed.
+* Sufficient free storage on the tablet and a backup of important data. The dedicated partitions carve space out of Android's data partition.
 
-## 选一个系统
+## Choose an OS
 
-各系统共用同一个启动镜像（ESP，即 EFI 系统分区），只有系统镜像（root，即根文件系统）不同。
+All distributions share the same boot image (ESP, EFI System Partition); only the system image (root, root filesystem) differs.
 
-| 系统镜像 | 系统 | root 分区至少 | 适合 |
+| System Image | OS | Minimum Root Partition | Best For |
 | --- | --- | --- | --- |
-| `debian-gnome` | Debian sid + GNOME | 8 GiB | 日常使用的通用桌面 |
-| `debian-kde` | Debian sid + KDE Plasma | 8 GiB | 习惯 KDE Plasma 的用户，限制见[已知问题](known-issues.md#其他) |
-| `debian-denial` | Debian sid + Denial | 8 GiB | 想用 APT 和 Denial 触控桌面 |
-| `nyarch-gnome` | Arch Linux ARM + GNOME（Nyarch） | 16 GiB | 想用滚动更新的软件包和 Nyarch 主题 |
-| `arch-denial` | Arch Linux ARM + Denial | 16 GiB | 想用 pacman 和 Denial 触控桌面 |
-| `steamos` | Valve SteamOS ARM64 | 16 GiB | 玩游戏，详见 [SteamOS](steamos.md) |
+| `debian-gnome` | Debian sid + GNOME | 8 GiB | General-purpose daily desktop |
+| `debian-kde` | Debian sid + KDE Plasma | 8 GiB | Users who prefer KDE Plasma; see [Known Issues](known-issues.md#other) for limitations |
+| `debian-denial` | Debian sid + Denial | 8 GiB | Users who want APT and the Denial touch desktop |
+| `nyarch-gnome` | Arch Linux ARM + GNOME (Nyarch) | 16 GiB | Rolling-release packages and the Nyarch theme |
+| `arch-denial` | Arch Linux ARM + Denial | 16 GiB | Users who want pacman and the Denial touch desktop |
+| `steamos` | Valve SteamOS ARM64 | 16 GiB | Gaming; see [SteamOS](steamos.md) for details |
 
-## 安装
+## Installation
 
-从 [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml) 同一次构建里下载三个包：`SunUEFI-Module`（引导助手模块）、`SunUEFI-ESP`（启动镜像）和 `SunUEFI-Root-发行版`（系统镜像）。把解压出来的模块 ZIP 和两个 `.sparse.img` 文件放到平板上，然后：
+Download three packages from the same workflow run of [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml): `SunUEFI-Module` (Boot Helper module), `SunUEFI-ESP` (boot image), and `SunUEFI-Root-<distro>` (system image). Copy the extracted module ZIP and both `.sparse.img` files to the tablet, then:
 
-1. 在 KernelSU 或 SukiSU 的模块页面安装模块 ZIP，提示出现时按音量＋安装引导，重启。
-2. 在模块卡片上点 **打开 WebUI**，进入引导助手。
-3. 打开 **存储** 页，点 **创建独立分区**，选好分给新系统的容量，确认后重启一次。平板上已有 `sunuefi_esp` 和 `sunuefi_root` 时跳过这一步。
-4. 重新打开助手，在 **存储** 页的 **安装或更新系统** 里选择启动镜像和系统镜像，点 **安装所选镜像**，等它完成。
-5. 打开 **启动** 页，选 **UEFI**，再选 **Linux**，点 **保存并重启**。
+1. Install the module ZIP on the Modules page in KernelSU or SukiSU. Press Volume Up when prompted to install the boot setup, then reboot.
+2. Tap **Open WebUI** on the module card to enter the Boot Helper.
+3. Open the **Storage** tab, tap **Create Dedicated Partitions**, choose the storage size allocated to the new OS, confirm, and reboot once. Skip this step if `sunuefi_esp` and `sunuefi_root` already exist on the tablet.
+4. Reopen the Boot Helper, select the boot image and system image under **Install or Update OS** on the **Storage** tab, tap **Install Selected Images**, and wait for it to finish.
+5. Open the **Boot** tab, select **UEFI**, then select **Linux**, and tap **Save and Reboot**.
 
-每一步的细节和提示见[安装指南](install-from-artifact.md)。第 3 步在新平板上还没有验证过，见[已知问题](known-issues.md#首次分区)。
+For detailed instructions and tips on each step, see the [Installation Guide](install-from-artifact.md). Step 3 has not yet been verified on a fresh tablet; see [Known Issues](known-issues.md#first-time-partitioning).
 
-## 首次启动
+## First Boot
 
-首次启动会把根文件系统扩展到分区的全部容量，比以后的启动慢。看到桌面后用用户名 `piano`、密码 `piano123456` 登录，桌面默认自动登录。锁屏解锁和 `sudo` 用同一个密码，可以在系统设置里改，或者运行 `passwd`。
+On first boot, the root filesystem expands to fill the entire partition, so startup takes longer than usual. Once the desktop appears, log in with username `piano` and password `piano123456` (auto-login is enabled by default). The lock screen and `sudo` use the same password; change it in System Settings or by running `passwd`.
 
-## 软件源与更新
+## Repositories and Updates
 
-已经配置 SunUEFI 软件源的镜像，可以直接用包管理器更新。Debian 运行 `sudo apt update && sudo apt upgrade`，Arch 系（Nyarch、Arch Denial 和 SteamOS）运行 `sudo pacman -Syu`。更新内核前可用 `sudo bootctl --print-esp-path` 确认启动分区已挂载；重启失败时可在 systemd-boot 菜单选旧内核。
+Images with the SunUEFI repository preconfigured can be updated directly through the package manager. On Debian, run `sudo apt update && sudo apt upgrade`; on Arch-based systems (Nyarch, Arch Denial, and SteamOS), run `sudo pacman -Syu`. Before updating the kernel, run `sudo bootctl --print-esp-path` to confirm the boot partition is mounted. If a reboot fails, select the previous kernel from the systemd-boot menu.
 
-### 手动添加 APT 软件源
+### Manually Adding the APT Repository
 
-该源面向 Debian **sid ARM64**，不要添加到 Debian stable。下载[归档签名公钥](https://sunuefi-repo.okassets.uk/keys/sunuefi-archive-keyring.gpg)，运行 `gpg --show-keys --fingerprint sunuefi-archive-keyring.gpg`，核对主密钥指纹为 `1B89 034B 2C88 8929 63C0 C1CA D7D5 F9A7 080E 6560`。
+This repository targets Debian **sid ARM64**; do not add it to Debian stable. Download the [archive signing public key](https://sunuefi-repo.okassets.uk/keys/sunuefi-archive-keyring.gpg), run `gpg --show-keys --fingerprint sunuefi-archive-keyring.gpg`, and verify that the primary key fingerprint is `1B89 034B 2C88 8929 63C0 C1CA D7D5 F9A7 080E 6560`.
 
 ```sh
 sudo install -m 0644 sunuefi-archive-keyring.gpg /usr/share/keyrings/sunuefi-archive-keyring.gpg
 sudoedit /etc/apt/sources.list.d/sunuefi.sources
 ```
 
-在 `sunuefi.sources` 里填入：
+Add the following to `sunuefi.sources`:
 
 ```text
 Types: deb
@@ -61,9 +61,9 @@ Architectures: arm64
 Signed-By: /usr/share/keyrings/sunuefi-archive-keyring.gpg
 ```
 
-### 手动添加 pacman 软件源
+### Manually Adding the pacman Repository
 
-下载并核对同一份签名公钥后，将它加入 pacman 的信任库：
+After downloading and verifying the same signing public key, add it to pacman's keyring:
 
 ```sh
 sudo pacman-key --add sunuefi-archive-keyring.gpg
@@ -71,7 +71,7 @@ sudo pacman-key --lsign-key 1B89034B2C88892963C0C1CAD7D5F9A7080E6560
 sudoedit /etc/pacman.conf
 ```
 
-Nyarch 只添加 `[sunuefi]`；SteamOS 添加下面两个仓库，保持顺序。把它们放在发行版原有仓库之前，保留原有仓库和签名设置。
+On Nyarch, add only `[sunuefi]`. On SteamOS, add both repositories below in the exact order shown. Place them above the distribution's existing repositories while keeping the existing repositories and signature settings intact.
 
 ```ini
 [sunuefi-steamos]
@@ -83,34 +83,29 @@ SigLevel = Required TrustedOnly
 Server = https://sunuefi-repo.okassets.uk/pacman/$repo/os/$arch
 ```
 
-保存后运行 `sudo pacman -Syu`。`sunuefi-steamos` 只给 SteamOS 使用，不要把 Valve 的包混装进 Nyarch。
+Save the file and run `sudo pacman -Syu`. `sunuefi-steamos` is exclusively for SteamOS; do not mix Valve packages into Nyarch.
 
-## 充电记录
+## Charging Logs
 
-`piano-charge-monitor.service` 默认关闭。需要观察充电时，在终端运行：
+`piano-charge-monitor.service` is disabled by default. To monitor charging, run in a terminal:
 
 ```sh
 sudo systemctl start piano-charge-monitor.service
 ```
 
-接电时每 2 秒记录，未接电时每 60 秒记录；插拔电源会立即重新采样。
-记录包含电源电压、电流、功率估算、快充协议和认证状态、两芯电池信息、
-温度、热限流档位及 CPU/GPU 频率。它只读取状态，不修改充电设置，也不
-阻止系统睡眠；系统睡眠期间不采样，唤醒后继续。
+It logs every 2 seconds while plugged in and every 60 seconds on battery, resampling immediately whenever power is connected or disconnected. Logs include supply voltage, current, estimated power, fast-charging protocol and authentication status, dual-cell battery telemetry, temperatures, thermal throttling levels, and CPU/GPU frequencies. It is read-only: it does not modify charging settings or prevent suspend; sampling pauses during suspend and resumes on wake.
 
-日志保存在 `/var/log/piano-charge-monitor/`，旧记录自动压缩，总量不超过
-20 MiB，满后删除最早记录。导出记录或结束监测：
+Logs are stored in `/var/log/piano-charge-monitor/`. Older logs are compressed automatically and capped at 20 MiB total, rotating out the oldest entries when full. To export logs or stop monitoring:
 
 ```sh
 sudo tar -C /var/log -czf "$HOME/charging-logs.tar.gz" piano-charge-monitor
 sudo systemctl stop piano-charge-monitor.service
 ```
 
-需要以后开机也记录时，用 `sudo systemctl enable --now piano-charge-monitor.service`；
-取消开机记录并停止则用 `sudo systemctl disable --now piano-charge-monitor.service`。
+To enable logging automatically at boot, run `sudo systemctl enable --now piano-charge-monitor.service`. To disable it at boot and stop it, run `sudo systemctl disable --now piano-charge-monitor.service`.
 
-## 回到 Android
+## Returning to Android
 
-在 Linux 里运行 `piano-next-boot android --reboot`，或者点桌面上的“返回 Android”。开机时在选择页用音量键选 Android 只影响这一次。其他情况见[故障恢复](recovery.md)。
+In Linux, run `piano-next-boot android --reboot`, or click **Return to Android** on the desktop. Selecting Android with the volume keys on the boot selection screen applies to that boot only. For other scenarios, see [Recovery](recovery.md).
 
-安装失败，或者想用电脑刷写，见[电脑安装](install-from-computer.md)。想先试运行再决定，见[临时启动](temporary-boot.md)。
+If installation fails or you prefer flashing from a computer, see [Install from Computer](install-from-computer.md). To try Linux temporarily before installing, see [Temporary Boot](temporary-boot.md).

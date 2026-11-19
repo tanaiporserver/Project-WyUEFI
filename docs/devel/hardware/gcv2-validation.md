@@ -1,37 +1,37 @@
-# GCv2 最小实机检查
+# Minimal On-Device GCv2 Validation
 
-这份步骤供主任务在正常默认内核构建完成、恢复包可用之后执行。bde3已实测恒等Gamma的硬件提交与完成；原Mutter48.7在恢复空LUT时使用户会话SEGV。正常Debian本地包已修复该路径，无EDID输出也已自动关联标准sRGB profile。新库的空清除和曲线恢复已完成D-Bus读回及会话存活检查，温色的硬件与物理反馈仍单独记录。通用客户端默认继续阻止原状态为空的probe，不据安装版本猜测活动进程。
+This procedure is intended for the main task to run after the normal default kernel build completes and recovery packages are available. Hardware submission and completion of an identity gamma LUT have been verified on device with `bde3`; stock Mutter 48.7 crashed the user session with SEGV when restoring an empty LUT. The local Debian package fixes this path and automatically associates outputs without EDID with a standard sRGB profile. Empty-LUT clearing and curve restoration on the new library have passed D-Bus readback and session survival checks; hardware completion and physical visual feedback for warm color shifts are still recorded separately. By default, the generic client still blocks probes when the initial state is empty, rather than guessing what is running in the active process based on installed package versions.
 
-## 只读起点
+## Read-Only Baseline
 
-1. 对照测试完整构建manifest、已安装的MSM模块hash与加载状态。只看`uname -r`无法区分同为7.2.9的a8和新包。读final DT确认DPU有`mdp/vbif/regdma`，第三资源为`0x0af80000/0x7000`。
-2. 保存原始`dmesg --color=never`和当前DPU DRM节点的属性。节点由驱动绑定确定，不假定card0。已有`piano-drm-snapshot /dev/dri/cardN --blobs`只用只读DRM ioctl；保存原始JSON，包括错误计数。
-3. 在活动GNOME用户的session bus下运行`piano_gamma_probe.py`，不带`--probe`。核对CRTC API ID、KMS ID、活动模式与三个Gamma数组。活动CRTC应有1024项`GAMMA_LUT_SIZE`；缺少此属性或size不匹配时停止，不强开GNOME Night Light开关。
+1. Cross-check the full test build manifest, installed MSM module hashes, and module load state. Checking `uname -r` alone cannot distinguish `a8` from newer packages that also report `7.2.9`. Inspect the final Device Tree to confirm that DPU declares `mdp/vbif/regdma`, with the third resource at `0x0af80000/0x7000`.
+2. Save the raw `dmesg --color=never` output and the properties of the active DPU DRM node. Determine the node from driver binding instead of assuming `card0`. The existing `piano-drm-snapshot /dev/dri/cardN --blobs` tool uses read-only DRM ioctls only; save its raw JSON output, including error counts.
+3. Run `piano_gamma_probe.py` without `--probe` on the active GNOME user's session bus. Verify the CRTC API ID, KMS ID, active mode, and the three gamma arrays. The active CRTC must advertise `GAMMA_LUT_SIZE` of 1024 entries; stop if this property is missing or the size does not match, and do not force-enable the GNOME Night Light toggle.
 
 ```sh
-# 主任务在guest活动GNOME会话环境执行；默认只读。
+# Run by the main task inside the active guest GNOME session; read-only by default.
 python3 /run/piano_gamma_probe.py > /tmp/gcv2-before-mutter.json
 /run/piano-drm-snapshot /dev/dri/cardN --blobs > /tmp/gcv2-before-drm.json
 dmesg --color=never > /tmp/gcv2-before-kernel.txt
 ```
 
-`/run`是临时部署路径，源文件是[Gamma客户端](../../../tools/dev/piano_gamma_probe.py)和[只读DRM采集器](../../../tools/android/piano_drm_snapshot.c)。脚本使用[Mutter48.7DisplayConfig接口](https://raw.githubusercontent.com/GNOME/mutter/48.7/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml)的`GetResources`、`GetCrtcGamma`和`SetCrtcGamma`；API ID来自当前配置，不能拿DRM对象ID直接代入。
+`/run` is a temporary deployment path; the sources are the [Gamma client](../../../tools/dev/piano_gamma_probe.py) and the [read-only DRM collector](../../../tools/android/piano_drm_snapshot.c). The script calls `GetResources`, `GetCrtcGamma`, and `SetCrtcGamma` on the [Mutter 48.7 DisplayConfig interface](https://raw.githubusercontent.com/GNOME/mutter/48.7/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml); the API ID comes from the current configuration and must not be substituted with the DRM object ID directly.
 
-**三个空数组可以表示原本的bypass，不能据此安全恢复。** bde3初始CRTC104/105的`GAMMA_LUT_SIZE=1024`、`GAMMA_LUT=0`，活动CRTC104对应Mutter API ID0。Mutter48.7 [read_crtc_gamma](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-kms-crtc.c#L147)先记录支持的size，在blob0时保留NULL；[getter](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-crtc-kms.c#L98)把NULL返回为size0 LUT。DRM snapshot可解释后端容量，不能证明完整SetCrtcGamma路径能恢复空数组。当前客户端在原状态为空时拒绝probe，`--restore-from`也拒绝空备份；不会以恒等曲线冒称恢复原bypass。
+**Three empty arrays can represent the original bypass state, but cannot be safely restored as-is.** On `bde3`, CRTC 104/105 initially reported `GAMMA_LUT_SIZE=1024` and `GAMMA_LUT=0`, with active CRTC 104 mapped to Mutter API ID 0. In Mutter 48.7, [read_crtc_gamma](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-kms-crtc.c#L147) records the supported size first and leaves the LUT as `NULL` when the blob ID is 0; the [getter](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-crtc-kms.c#L98) then returns `NULL` as a size-0 LUT. A DRM snapshot documents backend capability, but does not prove that the full `SetCrtcGamma` path can restore empty arrays. The current client refuses to probe when the initial state is empty, and `--restore-from` also rejects empty backups; it will not substitute an identity curve and pretend to have restored the original bypass state.
 
-bde3恒等提交在boottime659.136439秒记录`ctl1 dspp_mask0x60000 iova0x1000 words1554`，659.136542秒记录`completed status0x8`，Set/Get读回一致。约3秒后的空恢复使UID1000的GNOME Shell以`status11/SEGV`退出，GDM重新建立会话；这次日志没有kernel Oops或REGDMA timeout。源码可达路径是SetCrtcGamma缓存非NULL的size0对象，[meta_kms_update_set_crtc_gamma](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-kms-update.c#L554)将其送入[meta_gamma_lut_copy_to_size](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-crtc.c#L278)，后者用零size计算slots并访问空数组的`i-1`项。未取得core stack，不能把源码定位写成已确认的崩溃栈。
+On `bde3`, the identity submission logged `ctl1 dspp_mask0x60000 iova0x1000 words1554` at boottime 659.136439 s and `completed status0x8` at 659.136542 s, with matching Set/Get readback. Roughly 3 seconds later, attempting an empty-LUT restore terminated UID 1000's GNOME Shell with `status11/SEGV`, causing GDM to recreate the session; the logs showed no kernel Oops or REGDMA timeout. The reachable source path is that `SetCrtcGamma` caches a non-`NULL` size-0 LUT object, [meta_kms_update_set_crtc_gamma](https://github.com/GNOME/mutter/blob/48.7/src/backends/native/meta-kms-update.c#L554) passes it to [meta_gamma_lut_copy_to_size](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-crtc.c#L278), and the latter computes slot counts with size 0 and accesses index `i-1` of the empty array. Because no core stack trace was captured, this source trace must not be documented as a confirmed crash stack.
 
-[Mutter最小修复](../../../linux/desktops/gnome/patches/mutter/0001-kms-empty-gamma-bypass.patch)在KMS更新入口将size0与NULL一同表示为bypass，非空曲线仍走原重采样。适用官方48.7；当前root记录`libmutter-16-0 48.7-0+deb13u1`、`gnome-shell 48.7-0+deb13u2`。已用固定Debian源包、原rules/control及正常quilt构建ARM64源码和五个运行包，版本`48.7-0+deb13u1+sunuefi1`。安装并正常重启GDM后，保存当前1024项曲线→设置空→读回三空→恢复原曲线，D-Bus返回与曲线读回均匹配，同一piano会话15保持、GDM active。此检查证明新库完整空LUT接口往返和会话存活，未单独证明面板光学恢复。内核atomic层可写blob0这一事实不替代上层完整验证，也无需为此新增legacy gamma回调。
+The [minimal Mutter patch](../../../linux/desktops/gnome/patches/mutter/0001-kms-empty-gamma-bypass.patch) treats both size-0 LUTs and `NULL` as bypass at the KMS update entry point, while non-empty curves still go through the original resampling path. It targets upstream 48.7; the current root filesystem records `libmutter-16-0 48.7-0+deb13u1` and `gnome-shell 48.7-0+deb13u2`. Using the pinned Debian source package, original `rules`/`control`, and standard `quilt` workflow, the ARM64 source and five runtime packages were built as version `48.7-0+deb13u1+sunuefi1`. After installing them and performing a clean GDM restart, saving the current 1024-entry curve → setting empty arrays → reading back three empty arrays → restoring the original curve produced matching D-Bus responses and curve readbacks, while keeping the same `piano` session 15 intact and GDM active. This check proves full empty-LUT interface round-trip behavior and session survival on the new library, but does not by itself prove optical recovery on the panel. The fact that the kernel atomic layer accepts blob ID 0 does not substitute for full userspace validation, nor does it require adding a legacy gamma callback.
 
-当前后端在提交与完成处有`drm_dbg_kms`日志，但没有成功初始化、逐DSPP绑定和健康退出的正向日志。`GAMMA_LUT`出现可以说明代码已安装可用ops，无法单独说明每个物理DSPP的输出结果。之前独立日志草案基于旧281的CTL枚举循环，未加入a589；正式0006测试修复改为catalog循环后，该草案不可直接应用，须先更新再正常编译。所需正向消息仍应只在reset成功、资源初始化、ops绑定和quiesce完成之后输出，不增加寄存器读取、假完成事件或新控制路径。
+The current backend emits `drm_dbg_kms` logs on submission and completion, but lacks positive logs for successful initialization, per-DSPP binding, and clean teardown. The presence of `GAMMA_LUT` indicates that usable ops were installed, but alone cannot confirm the output of each physical DSPP. The earlier standalone logging draft was based on the old CTL enumeration loop in `281` and was not included in `a589`; after the formal `0006` test fix switched to a catalog loop, that draft can no longer be applied directly and must be updated before a normal build. The required positive log messages should still be emitted only after successful reset, resource initialization, ops binding, and quiesce completion, without adding extra register reads, synthetic completion events, or new control paths.
 
-主任务可在测试窗口保存当前`/sys/module/drm/parameters/debug`值，仅增加KMS bit`0x04`，结束时恢复原值。不开启该bit时没有提交debug消息不能被当作没有DMA；已有error日志仍应保留。
+During the test window, the main task may save the current `/sys/module/drm/parameters/debug` value, set only the KMS bit `0x04`, and restore the original value afterward. When this bit is unset, the absence of submission debug logs must not be interpreted as no DMA occurring; existing error logs must still be preserved.
 
-## 标准Night Light入口
+## Standard Night Light Entry Point
 
-GSD48.1的[NightLightPreview](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/color/gsd-color-manager.c#L284)临时使用当前`night-light-temperature`；超时后恢复正常策略。[set_forced](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/color/gsd-night-light.c#L573)在夜灯关闭时将Temperature恢复6500K。Mutter的[update_white_point](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-device.c#L1384)使用Gamma容量，[generate_gamma_lut](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-profile.c#L502)在有无VCGT两条路径都生成非空数组，不从GetCrtcGamma的空数组推size0。需要已ready的assigned color profile；缺少profile时源码直接不更新Gamma。`NightLightSupported=true`只说明Gamma容量可用。
+In GSD 48.1, [NightLightPreview](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/color/gsd-color-manager.c#L284) temporarily applies the current `night-light-temperature` and reverts to the normal policy after the timeout. [set_forced](https://github.com/GNOME/gnome-settings-daemon/blob/48.1/plugins/color/gsd-night-light.c#L573) restores `Temperature` to 6500K when Night Light is disabled. Mutter's [update_white_point](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-device.c#L1384) uses the gamma LUT capacity, and [generate_gamma_lut](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-profile.c#L502) produces non-empty arrays on both the with-VCGT and without-VCGT paths rather than deriving size 0 from empty `GetCrtcGamma` arrays. A ready assigned color profile is required; without one, the code returns early without updating gamma. `NightLightSupported=true` only indicates that gamma capacity is available.
 
-主任务可在用户准备观察且GNOME会话存活时执行一次标准预览，不改变夜灯启用或时间设置：
+When the user is ready to observe the panel and the GNOME session is alive, the main task can trigger a standard preview without altering Night Light enablement or schedule settings:
 
 ```sh
 gdbus call --session --dest org.gnome.SettingsDaemon.Color \
@@ -39,13 +39,13 @@ gdbus call --session --dest org.gnome.SettingsDaemon.Color \
   --method org.gnome.SettingsDaemon.Color.NightLightPreview 3
 ```
 
-调用环境必须是活动用户的session bus。预览结束后的6500K是非空的正常颜色曲线，可能包含profile校准；不等于恢复最初`GAMMA_LUT=0`。是否真正变暖仍看面板和新硬件完成记录。
+This call must run on the active user's session bus. The 6500K state after the preview ends is a normal non-empty color curve (potentially including profile calibration) and is not equivalent to restoring the initial `GAMMA_LUT=0` bypass state. Whether the display actually shifts warmer still depends on visual observation of the panel and new hardware completion logs.
 
-bde3后续一次标准10秒预览已accepted，Temperature由6500过渡到6395，但during/after的Gamma blob仍为0，没有新REGDMA。colord的DSI设备已Enabled且Embedded，却没有关联profile；包与服务齐全。官方48.7 [ensure_device_profile](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-store.c#L492)在没有EDID checksum时提前return FALSE，未进入已有的无EDID sRGB fallback；无default profile使assigned profile为空，白点更新直接返回。无EDID修复已经进入上述正常包：以device ID建立缓存，在colord connect成功且没有任何default profile时，给标准sRGB fallback补Filename和MAPPING_device_id，沿原有soft关联形成默认profile；已有用户profile和EDID路线保持。安装、重启GDM后，DSI已自动关联no-edid ICC，GetCrtcGamma三曲线各1024项，kernel正常。标准sRGB明确未实机校准；正常夜灯的硬件提交和物理变暖反馈仍待独立记录，不能通过伪EDID或强开UI代替。
+A subsequent standard 10-second preview on `bde3` was accepted and transitioned `Temperature` from 6500 to 6395, but the gamma blob remained 0 during and after the preview, with no new REGDMA activity. The DSI device in `colord` was `Enabled` and `Embedded`, yet had no associated profile despite all required packages and services being present. In upstream 48.7, [ensure_device_profile](https://github.com/GNOME/mutter/blob/48.7/src/backends/meta-color-store.c#L492) returns `FALSE` early when there is no EDID checksum and never reaches the existing no-EDID sRGB fallback; without a default profile, the assigned profile remains `NULL` and white-point updates return immediately. The no-EDID fix is included in the Debian package above: it keys the cache by device ID, and when `colord` connects successfully with no default profile present, it populates `Filename` and `MAPPING_device_id` on the standard sRGB fallback and establishes a default profile through the existing soft-association path, while keeping existing user profiles and EDID paths intact. After installation and a GDM restart, the DSI output automatically associated with the no-EDID ICC profile, `GetCrtcGamma` returned three 1024-entry curves, and the kernel remained healthy. Standard sRGB is explicitly uncalibrated for this panel; hardware submission and physical warming feedback under normal Night Light still need to be recorded independently, and must not be substituted with a fake EDID or by force-toggling the UI.
 
-## 非空备份的恒等后温色
+## Identity Then Warm Probe with Non-Empty Backups
 
-以下直接Gamma检查只适用于当前三个原始数组均为1024项的状态；原状态为空时客户端拒写，须等待正常Mutter修复包及空恢复验证。先检查现有Night Light和其他颜色客户端状态是否稳定，避免两个客户端同时改Gamma。分别执行恒等、温色两个窗口，每个都备份原始Gamma并在`finally`恢复。以下`ACTUAL_ID`来自只读列表，两个backup路径必须尚不存在：
+The following direct gamma checks apply only when all three initial arrays have 1024 entries; when the initial state is empty, the client refuses to write and you must wait for the patched Mutter package and empty-restore verification. First verify that Night Light and any other color clients are in a steady state so two clients do not modify gamma concurrently. Run separate identity and warm probe windows, each backing up the original gamma and restoring it in `finally`. In the commands below, `ACTUAL_ID` comes from the read-only listing, and neither backup path may already exist:
 
 ```sh
 python3 /run/piano_gamma_probe.py --crtc ACTUAL_ID --probe identity \
@@ -58,17 +58,17 @@ python3 /run/piano_gamma_probe.py --crtc ACTUAL_ID --probe warm \
   > /tmp/gcv2-warm-mutter.json
 ```
 
-两个窗口间先检查恒等结果、恢复记录和内核日志，没有故障再进行温色。温色是明确定义的RGB增益`1.0/0.8/0.6`，用来检验硬件通路，不是校准后的某个Kelvin色温。在每个hold窗口内另行保存一次只读DRM blob和dmesg；报告里的`start_uptime`可筛选这一窗口的新内核消息。脚本收到正常终止信号也尝试恢复；进程被强杀或DBus失联时保留backup，恢复命令为：
+Between the two windows, inspect the identity result, restore log, and kernel log, and proceed to the warm probe only if no faults occurred. The warm probe applies an explicit RGB gain of `1.0/0.8/0.6` to exercise the hardware pipeline rather than targeting a calibrated Kelvin color temperature. During each hold window, capture an additional read-only DRM blob snapshot and `dmesg`; `start_uptime` in the report can be used to filter new kernel messages for that window. The script also attempts to restore on normal termination signals; if the process is forcefully killed or loses D-Bus connectivity, the backup file is preserved and can be restored with:
 
 ```sh
 python3 /run/piano_gamma_probe.py --restore-from /tmp/gcv2-warm-original.json
 ```
 
-恢复只接受非空备份，重新查当前配置，只匹配原来的KMS CRTC。目标已不活动时明确失败，不向猜测的输出写入。软件读回不一致或恢复失败返回status2；status0仍只表示接口往返和软件读回完成。
+Restore accepts non-empty backups only, re-queries the current display configuration, and matches strictly against the original KMS CRTC. If the target is no longer active, it fails explicitly rather than writing to a guessed output. Software readback mismatch or restore failure exits with status 2; exit status 0 only indicates that the interface round-trip and software readback succeeded.
 
-## 同时看四类结果
+## Evaluating All Four Result Categories Together
 
-离线[报告脚本](../../../tools/dev/piano_gcv2_report.py)解析采集，不修改系统：
+The offline [report script](../../../tools/dev/piano_gcv2_report.py) parses the captured artifacts without modifying the system:
 
 ```sh
 python3 tools/dev/piano_gcv2_report.py \
@@ -76,13 +76,13 @@ python3 tools/dev/piano_gcv2_report.py \
   --since-uptime ACTUAL_PROBE_START
 ```
 
-- **软件属性**：CRTC的8192字节blob包含1024个RGB/reserved记录，恒等与温色变化符合请求，非空备份恢复回原曲线。原bypass的blob0恢复需Mutter修复包单独验证。JSON有错误则保留原错误，不计作完整采集。
-- **DMA**：测试提交日志的`ctl`、非零且包含全部assigned DSPP的`dspp_mask`、IOVA和word数，与随后`REGDMA completed`消息配对。bits17..20对应物理DSPP0..3，不预设测试一定使用哪两个DSPP。没有completion或出现timeout/SMMU fault均不能算成功；日志中的done来自硬件轮询。
-- **两侧输出**：直接看面板，恒等不应改变色彩；温色应覆盖两侧、交界无不同步，恢复后回到原色。物理mixer分界要结合资源分配与当前屏幕旋转确认。桌面截图、PipeWire和EFI framebuffer导出发生在硬件Gamma之前，不能证明面板已经变暖。没有新增画面覆盖或软件着色替代硬件。
-- **退出**：主任务确认健康颜色更新后，再按已有恢复入口进行一次正常返回Android/重启。收集上一启动日志或pstore检查quiesce与fault。日志补丁的`quiesce complete inflight=0`必须在真正退出处出现；没有该日志的现版不能虚称正向退出日志齐全。
+- **Software properties**: The CRTC's 8192-byte blob contains 1024 RGB/reserved entries, identity and warm updates match the requested curves, and non-empty backup restoration returns the original curve. Restoring the original bypass state (blob ID 0) must be verified separately with the patched Mutter package. If the JSON contains errors, preserve them as-is and do not count the capture as complete.
+- **DMA**: Check `ctl`, a non-zero `dspp_mask` covering all assigned DSPPs, the IOVA, and word count in submission logs, paired with the subsequent `REGDMA completed` message. Bits 17..20 map to physical DSPP 0..3; do not assume in advance which two DSPPs a run will use. Missing completion or any timeout/SMMU fault disqualifies the run; the logged `done` comes from hardware polling.
+- **Dual-half output**: Inspect the panel directly—identity must not alter colors, warm must cover both halves without seam desynchronization, and colors must return to normal after restore. Confirm the physical mixer seam orientation against resource allocation and current screen rotation. Desktop screenshots, PipeWire captures, and EFI framebuffer dumps occur before hardware gamma and cannot prove that the panel shifted warmer. No overlay or software tinting is used in place of hardware.
+- **Teardown**: After the main task confirms healthy color updates, perform a clean return to Android or reboot via the existing recovery entry point. Collect the previous boot log or `pstore` to check quiesce behavior and faults. The logging patch's `quiesce complete inflight=0` message must appear at actual teardown; current builds without that log must not claim complete positive teardown logging.
 
-第一次颜色检查不注入SMMU故障、不任意读写MMIO、不测试sysfs解绑、DPMS或睡眠。若reset持续不ack，退出路径会保留映射并继续等待，后续component/devres回收不能继续；这不是一次成功恢复。恢复操作由主任务依据设备状态执行，可能需要平台强制重启。
+For this first color check, do not inject SMMU faults, perform arbitrary MMIO reads/writes, or test sysfs unbind, DPMS, or suspend. If reset persistently fails to acknowledge, the teardown path retains mappings and keeps waiting, preventing subsequent component/devres teardown from proceeding; that is not a successful recovery. Recovery is handled by the main task based on device state and may require a platform hard reboot.
 
-完成这轮以后再用GNOME的标准Night Light确认桌面联动。GC2使用常规10bit LUT；不能把温色变化扩大解释为HDR、IGC5、12bit FRC或面板高精度校准已完成。
+After completing this pass, use GNOME's standard Night Light to confirm desktop integration. GC2 uses a standard 10-bit LUT; a warm shift must not be over-interpreted as completion of HDR, IGC5, 12-bit FRC, or high-precision panel calibration.
 
-正常Debian五包 `48.7-0+deb13u1+sunuefi1` 已完成构建和APT安装，重启GDM后DSI设备自动关联生成的sRGB profile，三条正常Gamma各1024项、DRM blob8192字节。随后保存正常曲线→清为空→读回三空→恢复原曲线，均成功，piano会话15没有注销。这证明新Mutter的空恢复缺陷已修；标准夜灯的物理两侧输出仍待现场预览。通用sRGB不是面板实测校准。记录在本机 `mutter-sunuefi1-profile-state.txt`、`mutter-sunuefi1-gamma-readonly.txt` 和 `mutter-sunuefi1-empty-restore.txt`。
+The five Debian packages (`48.7-0+deb13u1+sunuefi1`) have been built and installed via APT. After restarting GDM, the DSI device automatically associated with the generated sRGB profile, with three 1024-entry gamma curves and an 8192-byte DRM blob. Saving the active curves → clearing to empty → reading back three empty arrays → restoring the original curves all succeeded without logging out `piano` session 15. This confirms that the empty-LUT restore bug in Mutter is fixed; physical dual-half output under standard Night Light still awaits on-device visual preview. The generic sRGB profile is not a measured panel calibration. Logs are recorded locally in `mutter-sunuefi1-profile-state.txt`, `mutter-sunuefi1-gamma-readonly.txt`, and `mutter-sunuefi1-empty-restore.txt`.

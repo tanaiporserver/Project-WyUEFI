@@ -1,54 +1,27 @@
-# Piano 蓝牙配置
+# Piano Bluetooth Configuration
 
-UEFI 启动时从原厂 `persist` 只读获取蓝牙地址，通过设备树的标准 `local-bd-address` 属性交给 Linux。HCI 核心与 QCA 驱动完成控制器配置，原版 BlueZ 可以直接使用，不需要项目的地址初始化程序。公共镜像和 ESP 不保存某台平板的 MAC，安装器不改写设备专属地址。
+During UEFI boot, the firmware reads the Bluetooth address read-only from the stock `persist` partition and passes it to Linux via the standard Device Tree `local-bd-address` property. The HCI core and QCA driver handle controller configuration, so upstream BlueZ works out of the box without any project-specific address initialization helper. Public images and the ESP do not store any individual tablet's MAC address, and the installer does not modify device-specific addresses.
 
-## 板级 NVM 与连接距离
+## Board-Specific NVM and Connection Range
 
-WCN7861 使用 p81 板级 `brhbtnv20.b2e`，蓝牙键鼠等外设的连接距离正常。
-[`piano-bluetooth-nvm.dtso`](../../../linux/dts/piano-bluetooth-nvm.dtso) 已接入共用设备树构建，只替换 NVM，rampatch 保持 `brhbtfw20.tlv`。
+The WCN7861 uses the p81 board-specific `brhbtnv20.b2e`, giving normal connection range for Bluetooth keyboards, mice, and other peripherals. [`piano-bluetooth-nvm.dtso`](../../../linux/dts/piano-bluetooth-nvm.dtso) is integrated into the shared Device Tree build and overrides only the NVM, leaving the rampatch as `brhbtfw20.tlv`.
 
-控制器初始化时报告的 board ID 为 `0x0000`，驱动无法自动选出板级文件。
-通用 `brhbtnv20.bin` 缺少 p81 射频前端校准，会导致外设只能在约 20 cm 内连接。
-板级文件随共用固件提供，与原厂 `bluetooth_a` 中的同名文件一致；此修复不改变本机蓝牙地址的来源。
+During controller initialization, the hardware reports a board ID of `0x0000`, so the driver cannot automatically select the board-specific file. The generic `brhbtnv20.bin` lacks p81 RF front-end calibration, limiting peripheral connections to roughly 20 cm. The board-specific file is shipped in the shared firmware package and matches the file of the same name in the stock `bluetooth_a` partition; this fix does not change how the local Bluetooth address is sourced.
 
-## 地址来源与内核接口
+## Address Source and Kernel Interface
 
-同机原厂 Android 的 `BluetoothAddress::GetLocalAddress` 从
-`/mnt/vendor/persist/bluetooth/.bt_nv.bin` 读取六字节地址，再反转字节顺序。
-已核对的原厂文件是 raw6 格式，没有额外记录头；Android 的 AIDL 实现依赖这份
-QTI HIDL 库。分析依据是原厂 `OS3.0.309.0.WPYCNXM` 的二进制与 persist 文件，
-没有假定芯片提供可直接读取的 OTP 地址。
+On the same device, stock Android's `BluetoothAddress::GetLocalAddress` reads a 6-byte address from `/mnt/vendor/persist/bluetooth/.bt_nv.bin` and reverses its byte order. The verified stock file uses a raw 6-byte format with no extra record header; Android's AIDL implementation relies on this QTI HIDL library. This analysis is based on stock `OS3.0.309.0.WPYCNXM` binaries and `persist` files, without assuming the chip exposes a directly readable OTP address.
 
-Linux 的 `hci_qca.c` / `btqca.c` 在控制器仍使用固件默认地址时，要求引导端提供
-`local-bd-address`。HCI 核心读取该属性，再调用已有的 `qca_set_bdaddr()`。
-这是六字节、低字节在前的标准属性，见
-[通用蓝牙设备树绑定](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/net/bluetooth/bluetooth-controller.yaml)
-和 [WCN7850 绑定](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml)。
-原厂文件按人类地址顺序保存，传给设备树或 MGMT 时反转一次。
+When the controller still uses its firmware default address, Linux `hci_qca.c` / `btqca.c` expects the bootloader to provide `local-bd-address`. The HCI core reads this property and invokes the existing `qca_set_bdaddr()`. It is a standard 6-byte, least-significant-byte-first property; see the [generic Bluetooth Device Tree binding](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/net/bluetooth/bluetooth-controller.yaml) and the [WCN7850 binding](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/net/bluetooth/qcom,wcn7850-bt.yaml). The stock file stores the bytes in human-readable address order and is reversed once when passed to the Device Tree or MGMT.
 
-QCA 驱动没有读取这个 ext4 文件的 NVMEM／OTP provider。不能只添加
-`nvmem-cells`，也不应让内核解析 Android 文件系统；引导固件负责把板级身份
-转换为已有的设备树属性。`qcom,local-bd-address-broken` 是字节序兼容标志，
-不能代替地址来源。
+The QCA driver has no NVMEM/OTP provider capable of reading this ext4 file. Adding `nvmem-cells` alone is not viable, and the kernel should not parse an Android filesystem; instead, the boot firmware translates board identity into the existing Device Tree property. `qcom,local-bd-address-broken` is a byte-order compatibility quirk and cannot substitute for an address source.
 
-## 固件初始化与系统交接
+## Firmware Initialization and OS Handoff
 
-[`PianoBluetoothAddress.c`](../../../uefi/components/board-identity/PianoBluetoothAddress.c)
-在 UFS 文件系统就绪后查找唯一的原厂 `persist` 卷，仅以读模式打开
-`bluetooth/.bt_nv.bin`。文件必须恰好六字节，地址不能全零、全 `FF` 或为多播／
-本地地址。文件句柄在读取后关闭，数据只保留在本次启动的固件内存中，
-不修改原厂文件、NVM 或分区。蓝牙与 [RTC 偏移](sleep.md#rtc-与原厂时间)均以文件的
-打开模式保证只读；标准刷写支持下，分区的块设备可以写入，不影响这两项读取。
+Once the UFS filesystem is ready, [`PianoBluetoothAddress.c`](../../../uefi/components/board-identity/PianoBluetoothAddress.c) locates the unique stock `persist` volume and opens `bluetooth/.bt_nv.bin` in read-only mode. The file must be exactly 6 bytes long, and the address cannot be all zeros, all `FF`, multicast, or locally administered. The file handle is closed immediately after reading, and the data stays only in firmware memory for the current boot without modifying the stock file, NVM, or partition. Both Bluetooth and [RTC offset](sleep.md#rtc-and-stock-time) enforce read-only access via the file open mode; under standard flashing support, the partition's block device remains writable without affecting either read path.
 
-原厂文件缺失或无效时，固件通过 Qualcomm ChipInfo 读取 SoC 型号和芯片序列号，
-使用与既有实现相同的 SHA256 派生规则生成稳定地址，并标记为本地生成来源。
-不使用 `machine-id`、分区 UUID 或随机数，更换 rootfs 不改变这一身份。
-32 位芯片序列号不保证全球绝无重复；两个来源均不可用时记录错误，不给所有设备
-一个固定地址，也不阻止其他硬件和系统启动。
+If the stock file is missing or invalid, the firmware queries Qualcomm ChipInfo for the SoC model and chip serial number, derives a stable address using the same SHA256 derivation rule as the existing implementation, and marks it as locally generated. Neither `machine-id`, partition UUIDs, nor random numbers are used, so replacing the rootfs does not change this identity. A 32-bit chip serial number does not guarantee global uniqueness; if both sources are unavailable, the firmware logs an error rather than assigning a hardcoded address to all devices, and does not block other hardware or OS boot.
 
-标准 EFI 设备树修正、Linux EFI 启动会话和旧 BOOTv2 路径共用同一份地址。
-只处理唯一的板载 WCN7850／WCN7861 节点，保留调用者已提供的有效地址，
-为空或缺失时填入 `local-bd-address`。配套固件必须与移除地址初始化程序的 BSP
-一起更新；旧固件不会自动获得这项交接能力。
+Standard EFI Device Tree fixups, Linux EFI boot sessions, and the legacy BOOTv2 path all share this same address. Fixup targets only the single onboard WCN7850/WCN7861 node: it preserves any valid address already supplied by the caller and populates `local-bd-address` only when empty or missing. Matching firmware must be updated together with the BSP that removes the userspace address initializer; older firmware does not automatically gain this handoff capability.
 
-蓝牙手写笔连接、压感绘画和轻捏反馈的实现见[触控笔协议](pen-protocol.md)。
+For Bluetooth stylus pairing, pressure-sensitive drawing, and squeeze feedback implementation, see [Stylus Protocol](pen-protocol.md).

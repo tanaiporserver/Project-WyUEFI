@@ -1,43 +1,44 @@
-# 构建手册
+# Build Guide
 
-在电脑或 CI 上用 `./build.sh` 构建 UEFI 镜像、Android 引导助手和各发行版的系统镜像。所有构建都只在本机和容器里进行，不会向连接的平板写入。
+Build UEFI images, the Android Boot Helper, and distribution system images on a PC or in CI using `./build.sh`. All builds run strictly locally or inside containers and never write to a connected tablet.
 
-## 环境要求
+## Environment Requirements
 
-| 目标 | 构建机 | 容器权限 |
+| Target | Build Host | Container Privileges |
 | --- | --- | --- |
-| UEFI 镜像、Android 引导助手模块 | x86_64 或 ARM64 的 Linux，装有 Docker | 普通容器 |
-| 完整系统镜像（Debian GNOME / KDE、Nyarch GNOME、SteamOS） | ARM64 的 Linux，装有 Docker | `--privileged`，用于 chroot 和挂载 |
+| UEFI image, Android Boot Helper module | x86_64 or ARM64 Linux with Docker | Standard container |
+| Full system images (Debian GNOME / KDE, Nyarch GNOME, SteamOS) | ARM64 Linux with Docker | `--privileged`, for chroot and mounting |
 
-GitHub Actions 使用 `ubuntu-26.04` 运行主机检查，用 `ubuntu-26.04-arm`
-构建固件、内核和发行版镜像。实际编译依赖来自下面的 Debian 构建容器，
-与 GitHub runner 的 Ubuntu 版本分开管理。
+GitHub Actions runs host checks on `ubuntu-26.04` and builds firmware, kernels,
+and distribution images on `ubuntu-26.04-arm`. Actual build dependencies come
+from the Debian build container below, managed separately from the GitHub
+runner's Ubuntu version.
 
-## 取得源码和主机检查
-
-```sh
-./build.sh sources     # 取得固定版本的上游子模块，不递归下载测试数据
-./build.sh check       # 主机检查，不需要平板
-```
-
-上游源码放在 `upstream/`，固定在指定提交。本地修改在 `patches/`、`uefi/`、`linux/`、`tools/`。构建在 `build/` 下的副本里应用补丁，不要改构建副本。
-只构建某一部分时，可用 `./build.sh sources --group firmware`、`--group kernel`
-或 `--group devices` 获取该阶段的子模块。它们与完整构建共用同一份源码锁，
-不拉取其他阶段的子模块或上游测试数据。
-
-## 构建容器
-
-基础镜像记录在 `config/build-container.json`，定义是 `containers/Dockerfile`。Debian 基础镜像优先从 ECR Public 下载，元数据下载失败时改用 Docker Hub，两个来源固定同一个 OCI 摘要。
+## Fetching Sources and Host Checks
 
 ```sh
-python3 tools/build_container.py     # 生成镜像 sunuefi-builder
+./build.sh sources     # Fetch pinned upstream submodules without recursively downloading test data
+./build.sh check       # Host checks; no tablet required
 ```
 
-APT 包版本会被记录，但构建结果不保证逐字节一致。
+Upstream sources live under `upstream/`, pinned to specific commits. Local modifications live in `patches/`, `uefi/`, `linux/`, and `tools/`. Builds apply patches inside working copies under `build/`; do not edit those build copies directly.
+When building only one component, use `./build.sh sources --group firmware`, `--group kernel`,
+or `--group devices` to fetch only the submodules for that stage. They share the same source lock
+as a full build and skip submodules for other stages as well as upstream test data.
 
-## UEFI 和引导助手
+## Build Container
 
-单独构建固件和引导助手时，先运行 `./build.sh sources --group firmware`。
+The base image is recorded in `config/build-container.json` and defined in `containers/Dockerfile`. The Debian base image is pulled from ECR Public first, falling back to Docker Hub if metadata download fails; both sources are pinned to the same OCI digest.
+
+```sh
+python3 tools/build_container.py     # Build the sunuefi-builder image
+```
+
+APT package versions are recorded, though bit-for-bit reproducible output is not guaranteed.
+
+## UEFI and Boot Helper
+
+When building only firmware and the Boot Helper, run `./build.sh sources --group firmware` first.
 
 ```sh
 docker run --rm -v "$PWD:/workspace" -w /workspace sunuefi-builder bash -euc '
@@ -51,83 +52,88 @@ docker run --rm -v "$PWD:/workspace" -w /workspace sunuefi-builder bash -euc '
 '
 ```
 
-`./build.sh uefi` 使用 `vendor/piano` 的板级输入和 `patches/firmware`，输出 `artifacts/product/PianoUEFI-product.img` 和 `manifest.json`。完整 UEFI 构建还需要本地提取的原厂材料，见[本地输入](local-inputs.md)。
+`./build.sh uefi` uses board inputs from `vendor/piano` and `patches/firmware`, producing `artifacts/product/PianoUEFI-product.img` and `manifest.json`. A full UEFI build also requires locally extracted stock assets; see [Local Inputs](local-inputs.md).
 
-`./build.sh module` 读取刚构建的产品，编译前置选择器和六个静态 ARM64 工具，生成 `artifacts/android/SunUEFI-Piano-版本.zip`、`manifest.json` 和 `SHA256SUMS`。它不需要平板、原厂 BOOT 或私有采集目录，Android 内核在模块安装时从设备当前 BOOT 提取。默认从经过签名校验的 Debian ARM64 软件包准备编译用的 sysroot，不执行其中的 ARM64 程序。输入和安装行为见 [Android 引导助手](boot/android-module.md)。
+`./build.sh module` reads the freshly built product, compiles the pre-boot selector and six static ARM64 utilities, and outputs `artifacts/android/SunUEFI-Piano-<version>.zip`, `manifest.json`, and `SHA256SUMS`. It requires no tablet, stock BOOT, or private dump directory—the Android kernel is extracted from the device's active BOOT during module installation. By default, it prepares the compilation sysroot from signature-verified Debian ARM64 packages without executing any ARM64 binaries from them. For inputs and installation behavior, see [Android Boot Helper](boot/android-module.md).
 
-合体 BOOT 的底层工具单独提供：
+Low-level Combined BOOT tools are also provided individually:
 
 ```sh
-./build.sh trampoline --stock-boot 当前ROM的boot.img --output 输出目录   # 生成前置选择器入口
-./build.sh boot-repack                                                   # 编译原生 BOOT 重打包 / 还原工具
-./build.sh boot-request --sysroot ...                                    # 编译 piano-boot-request
-./build.sh module-package --inspect                                      # 模块打包工具，只检查已有输入
+./build.sh trampoline --stock-boot <current-rom-boot.img> --output <output-dir>   # Generate the pre-boot selector entry
+./build.sh boot-repack                                                            # Build the native BOOT repack / restore tool
+./build.sh boot-request --sysroot ...                                             # Build piano-boot-request
+./build.sh module-package --inspect                                               # Module packaging tool; inspect existing inputs only
 ```
 
-原理见[合体 BOOT](boot/combined-boot.md)。
+See [Combined BOOT](boot/combined-boot.md) for how it works.
 
-## 完整系统
+## Full Systems
 
-各目标共用同一份内核和 UEFI，各自构建根系统：
+All targets share the same kernel and UEFI while building their own root filesystems:
 
-| 目标 | 根系统 | 构建目录 |
+| Target | Root Filesystem | Build Directory |
 | --- | --- | --- |
 | `debian-gnome` | Debian sid + GNOME | `build/distros/release` |
 | `debian-kde` | Debian sid + KDE Plasma | `build/distros/release` |
 | `debian-denial` | Debian sid + Denial | `build/distros/release` |
-| `nyarch-gnome` | Arch Linux ARM + GNOME（Nyarch） | `build/distros/nyarch-gnome-piano` |
+| `nyarch-gnome` | Arch Linux ARM + GNOME (Nyarch) | `build/distros/nyarch-gnome-piano` |
 | `arch-denial` | Arch Linux ARM + Denial | `build/distros/arch-denial-piano` |
 | `steamos` | Valve ARM64 SteamOS | `build/distros/steamos-piano` |
 
-[发布配置](../../config/release.json)选择内核版本和[补丁系列](../../patches/linux/README.md)，
-其中包含硬件适配、Gunyah 和 CachyOS BORE 调度补丁。实际使用的提交记录在
-`build/release/source-manifest.json`，内核和模块输出到 `artifacts/kernels/release/`。
-具体改动见[内核与调度配置](linux/kernel.md)。
+[Release configuration](../../config/release.json) selects the kernel version and [patch series](../../patches/linux/README.md),
+including hardware enablement, Gunyah, and CachyOS BORE scheduler patches. The exact commits used
+are recorded in `build/release/source-manifest.json`, and the kernel and modules are output to
+`artifacts/kernels/release/`. See [Kernel and Scheduler Configuration](linux/kernel.md) for details.
 
-重建内核时，旧的产物清单先作废，编译完成后才原子发布新的，避免旧 Image 配新模块。
+When rebuilding the kernel, the previous artifact manifest is invalidated first and the new one is published atomically only after compilation finishes, preventing an old `Image` from being paired with new modules.
 
 ### Debian
 
 ```sh
 ./build.sh linux
-./build.sh release-rootfs                    # 也可选 --desktop kde 或 --desktop denial
+./build.sh release-rootfs                    # Optionally pass --desktop kde or --desktop denial
 ./build.sh package --root-size-mib 8192
 python3 tools/package_sparse_images.py --bundle artifacts/release --output artifacts/fastboot-sparse
 ```
 
-已有根系统时，运行 `./build.sh esp` 只生成启动镜像，不重新导出 root 镜像。
-启动镜像默认使用 BLS Type #1：内核、initramfs 和设备树（DTB）分开放在
-`/linux/<release>/`，启动项放在 `/loader/entries/`。
-SimpleInit 的“启动 Linux”进入 systemd-boot，菜单停留三秒，可以选择保留的旧内核。
-加 `./build.sh esp --boot-layout uki` 可改为将这些文件和启动参数封装为
-`/EFI/Linux/linux-<release>.efi`（UKI）。
-UKI 打包使用 systemd 的 `ukify`，stub 来自 `config/release.json` 固定并校验的
-Debian ARM64 `systemd-boot-efi` 包；默认 BLS 构建不需要 ukify 或 stub。
-同一个软件包还提供 ARM64 systemd-boot，安装在 ESP 的
-`EFI/systemd/systemd-bootaa64.efi` 和标准后备路径 `EFI/BOOT/BOOTAA64.EFI`。
-单独提取的文件可通过 `--stub`、`--systemd-boot` 指定，`--ukify` 指定打包工具。
+If a root filesystem already exists, run `./build.sh esp` to generate only the boot image (ESP) without re-exporting the root image.
+The boot image defaults to BLS Type #1: the kernel, initramfs, and Device Tree (DTB) are placed
+separately under `/linux/<release>/`, with boot entries in `/loader/entries/`.
+Selecting "Boot Linux" in SimpleInit enters `systemd-boot` with a 3-second menu timeout, allowing
+you to choose retained older kernels.
+Pass `./build.sh esp --boot-layout uki` to bundle these files and kernel parameters into
+`/EFI/Linux/linux-<release>.efi` (UKI) instead.
+UKI packaging uses systemd's `ukify`, with the stub taken from the Debian ARM64
+`systemd-boot-efi` package pinned and verified in `config/release.json`; the default BLS build does
+not require `ukify` or the stub.
+The same package provides ARM64 `systemd-boot`, installed on the ESP at
+`EFI/systemd/systemd-bootaa64.efi` and the standard fallback path `EFI/BOOT/BOOTAA64.EFI`.
+Individually extracted files can be passed via `--stub` and `--systemd-boot`, and the packaging tool via `--ukify`.
 
-initramfs 的 BusyBox、分区识别工具和依赖库也由 `config/release.json` 固定并校验，
-在临时目录解包，不从各发行版根系统取库。内核模块和键盘固件使用共享产品的同一份输入，
-因此同次构建的系统可以使用同一个启动镜像。
+BusyBox, partition-detection utilities, and dependent libraries for the initramfs are also pinned
+and verified in `config/release.json` and unpacked in a temporary directory rather than copied from
+any distribution rootfs. Kernel modules and keyboard firmware use the same shared product inputs,
+so all distributions built in the same run can use the same boot image.
 
-基础系统已经构建过时，用 `./build.sh release-rootfs --resume` 更新内核、硬件包和配置，不重建桌面根。
-需要重编的覆盖包沿用 CI 的独立 sid 构建根。续建保留桌面根的 SunUEFI 软件源，覆盖包编译只使用 Debian 官方源。
-`./build.sh rootfs --distro ID --desktop ID --plan` 会列出发行版和桌面组合的计划，上表是成品构建目标。
+When a base system has already been built, run `./build.sh release-rootfs --resume` to update the kernel, hardware packages, and configuration without rebuilding the desktop rootfs.
+Overlay packages that require rebuilding reuse the isolated sid build root used in CI. Resuming preserves the SunUEFI repository in the desktop rootfs, while overlay package compilation uses only official Debian repositories.
+`./build.sh rootfs --distro ID --desktop ID --plan` prints the build plan for a distribution and desktop combination; the table above lists the release targets.
 
-内核和桌面包的并行度默认按 CPU 配额与可用内存选择，可用 `--jobs` 覆盖。
-桌面包共用 `build/ccache`（或 `CCACHE_DIR`），FFmpeg、Mutter、GSD 和 GDM
-会先校验并复用完整运行包。FFmpeg 构建中断后加 `--resume`，保留同一源码的对象文件。
-x86 主机用 `./build.sh ffmpeg --sysroot 已完成的sid_ARM64根目录` 构建：编译器、链接器
-和 make 在宿主 CPU 原生运行，头文件与库来自 ARM64 sysroot；QEMU 仅执行目标程序。
-其他桌面包的 `--sysroot`／`--rootfs` 入口使用相同的原生编译工具。
-宿主需安装 Clang、LLVM、AArch64 binutils、patchelf 和 ccache；Ninja 项目安装宿主 Ninja。
-交叉编译使用 GNU 汇编器与链接器，保留 Debian 的符号版本表和调试信息处理。
-产品 CI 使用原生 ARM64 构建机，缓存与源码、补丁匹配的 Debian 运行包。
+Default parallelism for kernel and desktop packages is chosen based on CPU quota and available memory, and can be overridden with `--jobs`.
+Desktop packages share `build/ccache` (or `CCACHE_DIR`); FFmpeg, Mutter, GSD, and GDM
+verify and reuse complete runtime packages when available. If an FFmpeg build is interrupted, pass
+`--resume` to keep object files for the same source tree.
+On an x86 host, build with `./build.sh ffmpeg --sysroot <completed-sid-arm64-rootfs>`: the compiler,
+linker, and `make` run natively on the host CPU while headers and libraries come from the ARM64
+sysroot, and QEMU only executes target binaries.
+The `--sysroot` / `--rootfs` entry points for other desktop packages use the same native toolchain setup.
+The host must have Clang, LLVM, AArch64 binutils, `patchelf`, and `ccache` installed; Ninja-based projects also require host Ninja.
+Cross-compilation uses the GNU assembler and linker to preserve Debian symbol versioning tables and debug information handling.
+Product CI runs on native ARM64 builders and caches Debian runtime packages matching the source and patches.
 
-Debian 的 Mesa、FFmpeg、sensors 在 sid 根目录的隔离副本中构建，不安装宿主容器的库或混用 trixie-backports。`--sysroot` 不修改输入根目录；包版本、源码归档、补丁和二进制哈希记录在各输出目录。三个产品共用 `config/mesa.json` 固定的官方 Mesa 27 开发源码；Debian 保留 sid 原始完整配方，Nyarch 使用 Arch Linux ARM 的完整配方。官方源码已包含 830v1 和 DirectX-Headers 修正，旧26.2回移植已删除。SteamOS 的 renderonly 高度修正仍单独保留，因为该官方提交只对齐缓冲宽度，不保证非4行对齐模式的尾部空间。
+Debian's Mesa, FFmpeg, and sensors packages are built in isolated copies of the sid rootfs without installing host container libraries or mixing in `trixie-backports`. `--sysroot` never modifies the input rootfs; package versions, source archives, patches, and binary hashes are recorded in each output directory. All three products share the official Mesa 27 development source pinned in `config/mesa.json`: Debian keeps the full upstream sid recipe, and Nyarch keeps the full Arch Linux ARM recipe. The official source already includes the 830v1 and DirectX-Headers fixes, so the legacy 26.2 backports have been removed. SteamOS's renderonly height fix is still kept separately because that upstream commit only aligns buffer width and does not guarantee trailing padding for modes whose height is not aligned to 4 rows.
 
-已有 sid ARM64 根目录时，可以单独重建这三组包：
+When an existing sid ARM64 rootfs is available, these three package groups can be rebuilt individually:
 
 ```sh
 sudo ./build.sh mesa --sysroot build/distros/debian-sid/rootfs
@@ -135,78 +141,82 @@ sudo ./build.sh sensors --sysroot build/distros/debian-sid/rootfs
 sudo ./build.sh ffmpeg --sysroot build/distros/debian-sid/rootfs
 ```
 
-### 共用构建与缓存
+### Shared Builds and Caching
 
-Build products 先准备一次 ARM64 构建容器，再并行构建 UEFI 和 Android 模块、内核包、设备配置和相机包。覆盖包随后按 Debian、Arch Linux ARM、SteamOS 分别构建；同一发行版的不同桌面共用硬件覆盖包。发布阶段签名并上传 R2，从公开域名验签和核对索引后，各系统才从对应的软件源安装这一批包。中间产物不增加用户下载项，各阶段的日志仍合并进 `logs.zip`。
+**Build products** prepares the ARM64 build container once, then builds UEFI and the Android module, kernel packages, device configuration, and the camera package in parallel. Overlay packages are then built separately for Debian, Arch Linux ARM, and SteamOS; different desktops on the same distribution share hardware overlay packages. The publish stage signs and uploads packages to R2, and only after verifying signatures and indexes from the public domain does each system install that batch of packages from its respective repository. Intermediate artifacts do not add user-facing downloads, while logs from all stages are merged into `logs.zip`.
 
-Debian 覆盖包在由官方签名 sid 源引导的 ARM64 构建根中编译。各包按原生配方安装构建依赖和运行依赖。完整桌面、文字编辑器和 Chromium 由系统镜像阶段安装；这些应用的依赖不影响覆盖包构建。
+Debian overlay packages are compiled inside an ARM64 build root bootstrapped from officially signed sid repositories. Each package installs its build and runtime dependencies according to its native recipe. The full desktop environment, text editor, and Chromium are installed during the system image stage; dependencies of those applications do not affect overlay package builds.
 
-KDE 镜像明确安装 `plasma-desktop` 和 `upower`。最小化安装不拉取推荐包，
-仅安装 `task-kde-desktop` 不会带入 Plasma 的桌面外壳，也不会保证电池服务可用。
-镜像检查同时核对已安装的包和桌面外壳的实际文件。
+The KDE image explicitly installs `plasma-desktop` and `upower`. Because minimal installation skips
+recommended packages, installing `task-kde-desktop` alone neither pulls in the Plasma desktop shell
+nor guarantees battery service availability. Image verification checks both installed packages and
+the actual desktop shell files.
 
-同一分支的产品运行按批排队，只保留最新的排队任务。pacman 同步索引只列出每个包的
-最新版本，所以已经开始的任务要等镜像组装结束，下一批才会替换公开索引。
-构建任一 Arch 镜像时，两套发行版的 SensorProxy 包一起检查和发布。共用的
-`piano-sensors` 需要这两套各自支持 SSC 的包；发布先更新 SteamOS 增量仓，再更新共用仓。
-如果从还会直接复制传感器服务的构建目录续建，安装器会拒绝覆盖无主文件；
-请指定新的构建输出目录。
-同批的各发行版仍并行构建。
-镜像组装读取发布任务验签成功后传来的包清单；重跑重新构建了包时，也不会读回旧清单。
+Product runs on the same branch queue in batches, keeping only the latest queued run. Because
+`pacman` sync databases list only the latest version of each package, an already-started run
+finishes image assembly before the next batch replaces the public index.
+Whenever either Arch-based image is built, SensorProxy packages for both distributions are checked
+and published together. The shared `piano-sensors` package requires the SSC-enabled packages for
+both distributions; publishing updates the SteamOS overlay repo first and then the shared repo.
+If you resume from an older build directory that still copied sensor services directly, the
+installer refuses to overwrite unowned files; specify a new build output directory instead.
+Distributions within the same batch still build in parallel.
+Image assembly reads the package manifest passed down after the publish job verifies signatures; even when a rerun rebuilds packages, it will not read back a stale manifest.
 
-同一轮任务通过 GitHub Actions 产物传递构建器、共享固件和内核、设备包及
-覆盖包。不依赖跨轮缓存保留这些输入；下载后继续核对原构建清单和归档摘要。
-成功后删除本轮中间归档，下载区只留产品和日志；失败的归档保留七天供重跑。
+Within a single workflow run, the builder image, shared firmware and kernel, device packages, and
+overlay packages are passed between jobs via GitHub Actions artifacts rather than relying on
+cross-run caches; after download, original build manifests and archive digests are still verified.
+On success, intermediate archives for that run are deleted so downloads contain only release products and logs; failed archives are retained for seven days to support reruns.
 
-完成缓存只在构建、源码和输出校验成功后发布。缓存键包含构建器、绑定源码、补丁、配置、架构、工作区路径及实际容器镜像 ID。内核恢复保留 Image、完整模块集及外部模块构建需要的配置、符号表和头文件；原生内核入口仍核对 SOURCE、编译器、配置、模块 hash 和 vermagic。root job 检查不匹配时停止，不自行重新编译或混用旧产物。UEFI 缓存保留原有构建标记、同核心模块身份与完整文件摘要，不把未完成的构建标为完成。
+Completion caches are published only after build, source, and output verification succeeds. Cache keys include the builder, pinned sources, patches, configuration, architecture, workspace path, and actual container image ID. Kernel restore preserves `Image`, the full module set, and the configuration, symbol table, and headers needed for out-of-tree modules; the native kernel entry point still verifies `SOURCE`, compiler, config, module hashes, and `vermagic`. If verification mismatches, the root job stops rather than recompiling on its own or mixing stale artifacts. The UEFI cache preserves original build markers, core module identities, and complete file digests, and never marks an incomplete build as finished.
 
-内核只绑定 `config/release.json` 的 `kernel` 子对象，按规范化 JSON 记录内容与 SHA256；修改 sensors、Mesa、登录或其他根系统配置不使内核缓存失效，内核配置、源码与工具链变化仍会失效。旧内核清单只保存整份配置文件摘要，无法还原当时的子对象，需要正常构建一次生成新记录；不会改写旧清单来跳过构建。
+The kernel binds only to the `kernel` sub-object of `config/release.json`, recording canonicalized JSON content and its SHA256. Changing sensors, Mesa, login, or other rootfs configuration does not invalidate the kernel cache, whereas kernel configuration, source, or toolchain changes still do. Older kernel manifests stored only the digest of the entire config file and cannot reconstruct the sub-object; a normal rebuild is required once to generate the new record, and old manifests are never rewritten to skip a build.
 
-固定 LLVM 归档、固件中间对象及 ccache 分开缓存，避免每次下载工具链或因小改动完全丢失对象缓存。只保存 LLVM 压缩归档，不把展开后十余 GiB 的目录占满 Actions cache。构建容器按 Dockerfile、固定基础镜像及构建器区分，载入时核对归档摘要和 OCI 镜像 ID。每种共享缓存只有一个写入 job，本地入口通过文件锁串行更新并原子发布缓存记录。
-LLVM 缓存缺失时重新下载同一官方归档，并核对固定的 SHA256。
+Pinned LLVM archives, intermediate firmware objects, and `ccache` are cached separately to avoid re-downloading the toolchain on every run or losing the entire object cache on small changes. Only the compressed LLVM archive is cached, avoiding filling Actions cache with the 10+ GiB extracted tree. Build containers are keyed by `Dockerfile`, pinned base image, and builder, and both archive digest and OCI image ID are verified on load. Each shared cache has a single writer job, while local entry points serialize updates with file locks and publish cache records atomically.
+On an LLVM cache miss, the same official archive is re-downloaded and verified against its pinned SHA256.
 
-本地需要连续构建多个发行版时，在已准备好的构建环境里使用同一入口：
+When building multiple distributions sequentially on a local machine, use the same entry point inside the prepared build environment:
 
 ```sh
 python3 tools/build/shared_products.py ensure --kind firmware
 python3 tools/build/shared_products.py ensure --kind kernel
-# 后续只校验共用产物；输入不匹配则停止
+# Subsequent steps only verify shared products; stop if inputs mismatch
 python3 tools/build/shared_products.py verify --kind firmware
 python3 tools/build/shared_products.py verify --kind kernel
 ```
 
-这些命令只由 CI 或维护者的本地共用构建调用，不改变 rootfs 的安装过程。覆盖包只缓存已完成的包档案与清单，不缓存半装好的构建根。复用前仍准备新的发行版基底，核对实际构建容器、源码与配方、所用内核接口、已安装包、仓库配置和索引；Nyarch 另核对应用实际构建的 Git 提交。任一输入不匹配就重编，不把滚动仓库锁在旧索引上。
+These commands are intended only for CI or maintainer local shared builds and do not alter rootfs installation. Overlay packages cache only completed package archives and manifests, never half-installed build roots. Before reuse, a fresh distribution base is still prepared and checked against the actual build container, sources and recipes, kernel interfaces used, installed packages, repository configuration, and indexes; Nyarch additionally verifies the exact Git commits built for its apps. Any input mismatch triggers a rebuild so rolling repositories are never pinned to stale indexes.
 
-Debian 核对已签名的 sid `Packages` 与 `Sources`，子构建器共用已选定的索引；Arch 系用各自 pacman 配置下实际的数据库，安装包时仍按发行版签名策略校验。缓存命中后逐个核对包名、版本、架构和 SHA256。完整 root 镜像不存入构建缓存。首次编译、仓库刷新、根系统安装和镜像导出仍需要时间。
-只改主机检查入口不会使产品缓存失效；UEFI 的变量处理脚本只影响固件缓存。
+Debian checks signed sid `Packages` and `Sources` files, with sub-builders sharing the selected index; Arch-based systems use the active databases configured by their respective `pacman` setups and still enforce distribution signature policies when installing packages. On a cache hit, every package name, version, architecture, and SHA256 is verified individually. Full root images are never stored in build caches. Initial compilation, repository refreshes, rootfs installation, and image export still take time.
+Editing only host-check entry points does not invalidate product caches; UEFI variable-handling scripts affect only the firmware cache.
 
-CI 实际重编覆盖包时，使用该次运行和重试编号增加原生包修订号：Debian 在配方版本后加 `+sunuefi.<运行编号>.<重试编号>`，Arch 使用 `pkgrel` 的数字子修订。属于同一源包的多个二进制包保持同一版本。命中缓存或直接使用 Debian 官方签名的 FastRPC 包时，保留原版本和原文件；本地构建默认仍使用配方版本。
+When CI actually rebuilds overlay packages, it appends a native package revision using the run number and attempt number: Debian appends `+sunuefi.<run-number>.<attempt-number>` to the recipe version, and Arch uses a numeric `pkgrel` sub-revision. Multiple binary packages from the same source package keep the same version. On cache hits or when using officially signed Debian FastRPC packages directly, the original version and files are preserved; local builds continue to use the recipe version by default.
 
-`./build.sh camera-package` 在构建容器中生成 `piano-camera` 的两种 ARM64 原生包。
-相机包使用发行版的用户空间接口头文件和静态库，不依赖某一次内核编译。
-缓存按相机源码、依赖补丁、配方、版本和构建器区分；只更新内核时复用原包。
-发布版本和最低内核元包版本在 `config/release.json` 的 `camera_package` 中；
-修改已经发布的包内容时提升 `revision`，不要用同一版本覆盖不同文件。
+`./build.sh camera-package` builds both ARM64 native package formats for `piano-camera` inside the build container.
+The camera package uses distribution userspace interface headers and static libraries rather than depending on a specific kernel build.
+Its cache is keyed by camera source, dependency patches, recipe, version, and builder; updating only the kernel reuses the existing package.
+The release version and minimum kernel metapackage version are defined in `camera_package` in `config/release.json`;
+bump `revision` whenever modifying already-published package contents instead of overwriting different files under the same version.
 
-本地和 GitHub 的完整构建走同一个 `release-rootfs` 入口。默认系统包含中文界面、拼音输入法、Chromium、GNOME 动画、蓝牙地址自动初始化和触控笔组件。根系统生成后会检查这些软件包和必需文件，结果记录在 `manifest.json` 的 `default_system`，缺少任何一项构建就失败。
+Both local and GitHub full builds go through the same `release-rootfs` entry point. The default system includes a Chinese UI, Pinyin input method, Chromium, GNOME animations, automatic Bluetooth address initialization, and stylus components. After rootfs generation, these packages and required files are verified and recorded under `default_system` in `manifest.json`; missing any item fails the build.
 
-Debian 只构建 sid，不混用 stable 或 backports。`release-rootfs` 从独立的 sid 构建根编译 sensors、FFmpeg 和桌面包，再将对应的原生包装入镜像。CI 保留编译缓存，但按 sid 配置和构建器区分缓存，并由软件包构建器检查所选源码版本后复用。
+Debian builds strictly against `sid` without mixing `stable` or `backports`. `release-rootfs` compiles sensors, FFmpeg, and desktop packages in an isolated sid build root, then installs the resulting native packages into the image. CI retains compilation caches keyed by sid configuration and builder, and package builders verify the selected source versions before reuse.
 
-Debian KDE 由 KWin 启动 Fcitx。Plasma 自带的设置门户配置优先用 KDE，
-缺少的设置由 `xdg-desktop-portal-gtk` 补齐。GTK 应用可自行选择 Wayland
-输入法或 XWayland 下的 Fcitx 插件，无需全局设置 `GTK_IM_MODULE`。
+On Debian KDE, KWin launches Fcitx. Plasma's built-in settings portal configuration prefers KDE
+and falls back to `xdg-desktop-portal-gtk` for missing settings. GTK applications can choose Wayland
+input methods or the Fcitx plugin under XWayland on their own, without setting `GTK_IM_MODULE` globally.
 
-Debian 镜像用 `update-alternatives` 选择 `wireless-regdb` 包自带的上游签名版本。
-数据库与签名一起切换，普通 APT 更新会保留该选择；共用内核仍用上游公钥验签。
-已有 Debian 安装可运行
-`sudo update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream`，
-重启后内核会重新读取数据库。
+Debian images use `update-alternatives` to select the upstream-signed database shipped with the `wireless-regdb` package.
+The database and signature switch together, normal APT upgrades preserve this selection, and the shared kernel continues to verify signatures with the upstream public key.
+On an existing Debian installation, run
+`sudo update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream`;
+the kernel reloads the database after reboot.
 
-### Arch Linux ARM 和 SteamOS
+### Arch Linux ARM and SteamOS
 
 ```sh
 ./build.sh uefi && ./build.sh module && ./build.sh linux
-./build.sh nyarch-gnome-rootfs               # SteamOS 用 steamos-rootfs
+./build.sh nyarch-gnome-rootfs               # Use steamos-rootfs for SteamOS
 ./build.sh package \
   --rootfs build/distros/nyarch-gnome-piano/rootfs \
   --rootfs-manifest build/distros/nyarch-gnome-piano/manifest.json \
@@ -215,258 +225,288 @@ Debian 镜像用 `update-alternatives` 选择 `wireless-regdb` 包自带的上�
 python3 tools/package_sparse_images.py --bundle artifacts/release --output artifacts/fastboot-sparse
 ```
 
-Arch Denial 使用 `./build.sh arch-denial-rootfs`，路径换成 `arch-denial-piano`；SteamOS 使用 `./build.sh steamos-rootfs`，路径换成 `steamos-piano`。Nyarch 从 Arch Linux ARM 基础系统开始，通过签名仓库安装软件包，再构建 Nyarch 应用和 Piano 的原生硬件包，源码和扩展选择在 `config/nyarch.json`。SteamOS 的构建细节见 [SteamOS ARM64](linux/steamos.md)。
+Arch Denial uses `./build.sh arch-denial-rootfs` with `arch-denial-piano` paths; SteamOS uses `./build.sh steamos-rootfs` with `steamos-piano` paths. Nyarch starts from an Arch Linux ARM base system, installs packages from signed repositories, and then builds Nyarch applications and native hardware packages for `piano`; sources and extensions are configured in `config/nyarch.json`. See [SteamOS ARM64](linux/steamos.md) for SteamOS build details.
 
-两种 Denial 镜像从 [Denial 签名源](https://github.com/denialwm/denial/blob/main/docs/INSTALL.md#repository-trust-paths)安装合成器及其匹配的 Flutter Engine。Debian 只从该源取 Denial 自身的包，系统依赖仍用 sid；Arch Linux ARM 仍使用自己的滚动源。SDDM 加载 Denial 原版 Wayland 会话，默认使用触控布局。相机和其他硬件继续用 Piano 的标准驱动和发行版软件包，不安装 Phonewave 的板级服务或 Android 容器。Denial 的自动旋转目前没有接入标准 SensorProxy，可在显示设置手动选方向。
+Both Denial images install the compositor and its matching Flutter Engine from the [Denial signed repositories](https://github.com/denialwm/denial/blob/main/docs/INSTALL.md#repository-trust-paths). Debian pulls only Denial's own packages from that repository while keeping system dependencies on `sid`; Arch Linux ARM continues to use its own rolling repositories. SDDM launches the stock Denial Wayland session with the touch layout enabled by default. Camera and other hardware continue to use Piano's standard drivers and distribution packages, without installing Phonewave's board services or Android containers. Auto-rotation in Denial is not yet wired to standard SensorProxy; select screen orientation manually in Display Settings.
 
-已有隔离的 ARM64 pacman 构建根目录时，可单独构建并安装完整 Mesa 包；此操作会修改指定的构建根目录，不要直接使用已交付的产品根目录：
+When an isolated ARM64 `pacman` build root is available, full Mesa packages can be built and installed independently. This modifies the specified build root, so never point it at a delivered product rootfs:
 
 ```sh
 sudo ./build.sh mesa build/mesa-nyarch --format pacman --rootfs build/distros/nyarch-builder/rootfs --jobs 8
 sudo ./build.sh mesa build/mesa-steamos --format pacman --rootfs build/distros/steamos-builder/rootfs --steamos --jobs 8
 ```
 
-中断后使用相同参数加 `--resume`，保留已配置的源码和对象。SteamOS 构建保留 `deckard-mesa-linux-aarch64` 包名及 renderonly 高度补丁；Nyarch 保留 Arch Linux ARM 的原生拆分包。
+After an interruption, rerun with the same arguments plus `--resume` to retain the configured source tree and object files. The SteamOS build keeps the `deckard-mesa-linux-aarch64` package name and the renderonly height patch; Nyarch keeps Arch Linux ARM's native split packages.
 
-两种产品构建都会检查 Mesa 源码、完整驱动选项和 ARM64 包。CI 分别缓存原生包；复用前核对来源、配方与包摘要，安装后重新检查 ELF 和目标系统的依赖，避免把不匹配的滚动发行版缓存带入镜像。
+Both product builds verify the Mesa source, full driver options, and ARM64 packages. CI caches native packages separately; before reuse, it checks the source, recipe, and package digests, and after installation it re-verifies ELF binaries and target system dependencies so mismatched rolling-distro caches are never introduced into an image.
 
-各产品由 APT 或 pacman 安装 `piano-firmware-display`，根系统组装核对两份
-校准的归属、大小与 SHA256。CI 共用这两个包，只用于组装镜像，不上传到软件源。
-其他设备固件仍按 `vendor/firmware/` 下的组件清单校验后安装。
-恢复已生成的根系统时，只迁移内容吻合且未被其他包持有的旧校准文件。
+Each product installs `piano-firmware-display` via APT or `pacman`, and rootfs assembly verifies
+ownership, size, and SHA256 for both calibration files. CI shares these two packages for image
+assembly only and does not upload them to repositories.
+Other device firmware continues to be verified against the component manifests under `vendor/firmware/` before installation.
+When resuming an existing rootfs, old calibration files are migrated only if their contents match and no other package owns them.
 
-### 单独构建的软件包
+### Standalone Packages
 
-CPU 型号由 `linux/dts/piano-cpu-model.dtso` 给八个 CPU 节点加标准 `model` 属性，内核补丁把它输出为 `/proc/cpuinfo` 的 `model name`，让 GNOME 显示 Snapdragon 8 Elite。MIDR、核心拓扑、时钟和板型号保持原值。
+The CPU model is provided by `linux/dts/piano-cpu-model.dtso`, which adds standard `model` properties to all eight CPU nodes; a kernel patch exposes it as `model name` in `/proc/cpuinfo` so GNOME displays Snapdragon 8 Elite. MIDR, core topology, clocks, and board model remain unchanged.
 
-`./build.sh gsd --sysroot 已完成的基础根目录` 在独立副本里编译带 Piano 自动亮度策略的 gnome-settings-daemon，使用原厂 lux 阈值和延迟，不修改传感器读数，由 APT 安装。默认的 `release-rootfs` 会自动完成这一步，策略只匹配 `xiaomi,piano` 板级标识。
+`./build.sh gsd --sysroot <completed-base-rootfs>` compiles `gnome-settings-daemon` with Piano's auto-brightness policy in an isolated copy using stock lux thresholds and delays without modifying sensor readings, and installs it via APT. The default `release-rootfs` runs this automatically, and the policy matches only the `xiaomi,piano` board compatible string.
 
-`./build.sh mutter` 从签名 sid 索引选择 Mutter 源码，与 Nyarch 共用空 Gamma 曲线恢复和已取消触摸 grab 两项修复；无 EDID 的标准 sRGB fallback 已由发行版提供，不再重复打补丁。标准颜色服务和用户配置保持不变。来源与补丁见 [Mutter 适配说明](../../linux/desktops/gnome/patches/mutter/README.md)。
-单独构建时使用了其他输出目录，可通过 `release-rootfs --mutter-dir 输出目录/runtime` 选择；组装前会检查源码、补丁和软件包摘要。
+`./build.sh mutter` selects the Mutter source from the signed sid index and shares two fixes with Nyarch: empty gamma curve recovery and canceled touch grab handling. The standard sRGB fallback for EDID-less panels is already provided by the distribution and is no longer patched separately. Standard color management services and user settings remain unchanged. See [Mutter adaptation notes](../../linux/desktops/gnome/patches/mutter/README.md) for sources and patches.
+If a standalone build used a custom output directory, pass it via `release-rootfs --mutter-dir <output-dir>/runtime`; source, patches, and package digests are verified before assembly.
 
-## 软件包与更新标准化
+## Package and Update Standardization
 
-硬件支持应能安装到干净的受支持发行版中，再通过发行版包管理器升级、卸载和
-回退。产品镜像是这些软件包和首次安装默认设置的组合，不应成为硬件适配
-唯一能生效的环境。下面区分已经使用的原生包和仍由构建脚本复制的文件；
-未完成的实施工作见[发布要求中的开发清单](release.md#未完成的开发工作)。
+Hardware support should be installable into a clean supported distribution and upgraded, removed,
+or rolled back via the distribution's package manager. Product images are a combination of these
+packages and first-boot defaults—not the only environment where hardware enablement can work. The
+table below distinguishes components already delivered as native packages from files still copied
+by build scripts; remaining implementation work is tracked in the [development checklist in Release Requirements](release.md#remaining-development-work).
 
-| 内容 | 现有安装方式 | 标准化方向 |
+| Component | Current Installation Method | Standardization Direction |
 | --- | --- | --- |
-| Linux 内核与模块 | Debian 的 `bindeb-pkg` 和 Arch 的 `pacman-pkg` 原生包 | 随包安装并维护匹配的模块，由元包选择最新版本 |
-| 设备树 | 组合板级 DTB、overlay 和绑定转换，按内核版本打包 | 生成启动文件时选取同版文件，逐步收敛到内核源码中的板级设备树 |
-| Linux 设备固件 | 显示校准由 `piano-firmware-display` 安装；触控固件可单独[构建本地软件包](../../linux/bsp/README.md#本地固件包)，其他固件仍由组装脚本安装 | 发行版提供通用固件，设备包补齐板级固件 |
-| ALSA UCM、udev、笔校准及音频拓扑 | 成品安装 `piano-device-config` 和 `piano-audio-topology` | 开源拓扑随独立包更新，剩余硬件运行文件继续按组件打包 |
-| Mesa、FFmpeg | 已有 Debian 和 pacman 原生包 | 保留目标发行版完整配方、功能和 ABI，按软件源正常更新 |
-| 传感器 | Debian 提供六个原生包；Nyarch 与 SteamOS 共用 `piano-sensors`，FastRPC、libssc 和 SensorProxy 按各自的库接口打包 | 继续通过标准 SensorProxy 接口提供照度和姿态 |
-| PipeWire | Debian 重建原生同版包组；Nyarch 和 SteamOS 重建采集插件 | 保留发行版的依赖关系，升级到包含修复的上游版本后删除回移 |
-| 指纹 | libfprint／fprintd 使用目标发行版包；CLI 和服务配置另行安装 | 正常包拥有全部必要文件，标准认证结果仍取自 libfprint／fprintd |
-| 相机 | 两种包管理器安装 `piano-camera`；`v4l2loopback` 随匹配内核安装 | 标准 libcamera 路径接管后移除过渡服务 |
-| 笔及诊断工具 | `piano-device-config` 安装笔的 BlueZ 服务和依赖；诊断工具仍由构建脚本复制 | 开发工具独立打包，不成为笔输入的依赖 |
-| GNOME／KDE／SteamOS 组件 | Mutter、GDM、GSD、libwacom、Gamescope 等已有原生包，默认设置和会话文件仍有 overlay | 通用修复维护一份补丁，设备配置与产品默认值分开，不覆盖用户设置 |
+| Linux kernel and modules | Native Debian `bindeb-pkg` and Arch `pacman-pkg` packages | Install and maintain matching modules per package, with metapackages tracking the latest release |
+| Device Tree | Combines board DTB, overlays, and binding conversions, packaged per kernel version | Pick the matching version when generating boot files; converge toward an in-tree board Device Tree |
+| Linux device firmware | Display calibration installed via `piano-firmware-display`; touch firmware can be [built as a local package](../../linux/bsp/README.md#local-firmware-packages); other firmware still installed by assembly scripts | Distributions provide generic firmware; device packages fill in board-specific firmware |
+| ALSA UCM, udev, stylus calibration, and audio topology | Release images install `piano-device-config` and `piano-audio-topology` | Update open-source topology via its standalone package; continue packaging remaining hardware runtime files by component |
+| Mesa, FFmpeg | Native Debian and `pacman` packages already in place | Preserve full target-distribution recipes, features, and ABI; update normally from repositories |
+| Sensors | Six native packages on Debian; shared `piano-sensors` on Nyarch and SteamOS, with FastRPC, `libssc`, and SensorProxy packaged against each distribution's library ABI | Continue exposing ambient light and orientation via the standard SensorProxy interface |
+| PipeWire | Rebuilt native same-version package group on Debian; rebuilt capture plugin on Nyarch and SteamOS | Preserve distribution dependency relationships; drop backports once upstream releases include the fix |
+| Fingerprint | Uses target-distribution `libfprint` / `fprintd` packages; CLI and service config installed separately | Standard packages own all required files; authentication results continue coming from `libfprint` / `fprintd` |
+| Camera | Both package managers install `piano-camera`; `v4l2loopback` installed per matching kernel | Remove the transitional service once the standard `libcamera` path takes over |
+| Stylus and diagnostic tools | `piano-device-config` installs the stylus BlueZ service and dependencies; diagnostic tools still copied by build scripts | Package developer tools separately so they are not dependencies of stylus input |
+| GNOME / KDE / SteamOS components | Native packages exist for Mutter, GDM, GSD, `libwacom`, Gamescope, etc.; default settings and session files still use overlays | Maintain one patch set for shared fixes; separate device config from product defaults without overwriting user settings |
 
-Linux 设备固件包括 ADSP、CDSP、Goodix 签名程序及模型、ath12k、蓝牙、GPU、
-VPU、内屏、键盘和触屏文件，来源由 `config/release.json` 和组件清单记录。
-原厂固件的许可与再分发条件需逐项核对，不能由本项目源码许可覆盖。
-通用 Adreno 固件由 Debian 的 `firmware-qcom-soc` 和 Arch Linux ARM、Valve
-SteamOS 的 `linux-firmware-qcom` 提供。原厂 AQE、SQE 与这些公开版本不是同一份
-文件，不宜只按文件名替换；板级 ZAP 也不同于 Qualcomm 参考板的签名版本。
-SunUEFI 固件和 Android 引导助手使用另一条更新链；安装 Linux 内核或硬件包
-不应顺带覆盖 Android BOOT。
+Linux device firmware covers ADSP, CDSP, Goodix signed programs and models, `ath12k`, Bluetooth, GPU,
+VPU, internal display, keyboard, and touchscreen files, with provenance recorded in `config/release.json`
+and component manifests.
+Licensing and redistribution terms for stock firmware must be checked item by item and cannot be
+superseded by this project's source license.
+Generic Adreno firmware is provided by `firmware-qcom-soc` on Debian and `linux-firmware-qcom` on
+Arch Linux ARM and Valve SteamOS. Stock AQE and SQE binaries are not identical to these public files
+and should not be substituted by filename alone; board ZAP firmware also differs from the signed
+Qualcomm reference-board version.
+SunUEFI firmware and the Android Boot Helper follow a separate update chain; installing a Linux
+kernel or hardware package must never overwrite Android BOOT as a side effect.
 
-### 内核软件包
+### Kernel Packages
 
-Debian 优先复用选定内核的 `make bindeb-pkg`，提供按 ABI 版本命名的
-`linux-image-<release>`、`linux-headers-<release>`，再由元包依赖最新版本。
-Arch 系使用内核源码自带的 `pacman-pkg`、`PKGBUILD`／`makepkg`，
-提供按 release 命名的内核和 headers 包，`linux-piano` 与
-`linux-piano-headers` 元包选择最新版，让旧内核及模块可以并存；不得将
-设备内核声明为可满足发行版原版 `linux` 的二进制模块依赖。
-共用源码、补丁、配置和版本定义，不把 `.deb` 当作 pacman 包安装。
+Debian prefers reusing the selected kernel's `make bindeb-pkg`, providing ABI-versioned
+`linux-image-<release>` and `linux-headers-<release>` packages with metapackages depending on the
+latest release.
+Arch-based systems use the kernel source's `pacman-pkg` and `PKGBUILD` / `makepkg` to provide
+release-named kernel and headers packages, with `linux-piano` and `linux-piano-headers`
+metapackages tracking the latest release so older kernels and modules can coexist; the device kernel
+must never declare that it satisfies binary module dependencies for the stock distribution `linux`
+package.
+Both share the same source, patches, config, and version definitions—never install a `.deb` as a
+`pacman` package.
 
-内核 release 必须区分会影响模块兼容性的修改，避免不同驱动占用同一个
-`/usr/lib/modules/<release>/`。模块与内核的构建配置、导出符号必须匹配，
-不能只比较 `vermagic`。headers 包需包含外部模块构建所需的生成头文件、
-配置、脚本和 `Module.symvers`；`make headers_install` 导出的用户空间
-接口头文件不能替代它，也不需要因安装设备内核就替换发行版 `linux-libc-dev`。
-交叉构建时还需检查 headers 内附工具能在目标机运行。
+The kernel release string must distinguish changes that affect module compatibility so different
+drivers never collide under the same `/usr/lib/modules/<release>/`. Module and kernel build
+configuration and exported symbols must match rather than comparing `vermagic` alone. The headers
+package must include generated headers, config, scripts, and `Module.symvers` required for
+out-of-tree module builds; userspace UAPI headers exported by `make headers_install` cannot
+substitute for it, nor should installing the device kernel replace the distribution's
+`linux-libc-dev`.
+Cross-builds must also verify that tools bundled in the headers package execute on the target device.
 
 ```sh
 ./build.sh linux-package --format debian --output artifacts/packages/kernel/debian
 ./build.sh linux-package --format pacman --output artifacts/packages/kernel/pacman
 ```
 
-CI 在 ARM64 构建器打包。交叉构建需要 ARM64 GNU 工具链及 libc；
-内核和包构建共用同一套编译选项。加 `--plan` 可只检查命令。
-headers 包校验 `Module.symvers`、生成头文件和构建工具架构；只发布内核和
-外部模块 headers，不发布随 `bindeb-pkg` 生成的 `linux-libc-dev`。
-内核 release 包含源码、配置和编译工具的摘要及 `config/release.json` 中
-固定的 `abi_epoch`，不使用项目最新提交的时间。同一组输入清空缓存重建时，
-模块目录不变。发布新的内核二进制或 headers 时，把 `abi_epoch` 更新为
-比上一版大的 Unix 时间，并将 `package_epoch` 推进到不早于它的值。
-`linux-piano-dtb-<release>` 随同发布完整板级 DTB；`piano-boot-config`
-连接 Debian 内核钩子或 pacman 事务钩子、发行版 initramfs 工具和 `kernel-install`。
-只更新板级 DTB、元包或引导配置时，只推进 `package_epoch`。软件包版本按
-`abi_epoch`、`package_epoch` 的顺序比较，不改变现有内核 ABI；升级已安装
-内核的设备树时，包管理器也会刷新启动文件。
-只修改 Debian 内核打包规则时，递增 Debian 包修订号，保持内核 ABI 不变。
-产品系统通过 `/etc/kernel/entry-token` 沿用初装启动镜像的 `linux` 标识；
-在独立安装的发行版中装包时，由 `kernel-install` 选择该系统的标识。
+CI packages kernels on ARM64 builders. Cross-packaging requires an ARM64 GNU toolchain and libc;
+kernel and package builds share the same compilation flags. Pass `--plan` to inspect commands without running them.
+The headers package is verified for `Module.symvers`, generated headers, and target-compatible build
+tool architecture; only kernel and out-of-tree module headers are published, omitting the
+`linux-libc-dev` produced by `bindeb-pkg`.
+The kernel release string incorporates digests of the source, config, and toolchain along with the
+pinned `abi_epoch` in `config/release.json` rather than the timestamp of the latest project commit.
+Rebuilding from scratch with the same inputs produces the same module directory. When publishing a
+new kernel binary or headers, advance `abi_epoch` to a Unix timestamp greater than the previous
+release and advance `package_epoch` to a value at least as recent.
+`linux-piano-dtb-<release>` ships the complete board DTB alongside it; `piano-boot-config` wires
+Debian kernel hooks or `pacman` transaction hooks, distribution initramfs generators, and
+`kernel-install`.
+When updating only the board DTB, metapackages, or boot configuration, advance only `package_epoch`.
+Package versions compare by `abi_epoch` then `package_epoch`, leaving the existing kernel ABI intact
+while ensuring package managers refresh boot files when upgrading an installed kernel's Device Tree.
+When changing only Debian kernel packaging rules, increment the Debian package revision while keeping the kernel ABI unchanged.
+Release systems retain the initial boot image's `linux` entry token via `/etc/kernel/entry-token`;
+when packages are installed on an independently installed distribution, `kernel-install` chooses that system's token.
 
-DTB 与内核一同构建和按版本安装，避免旧内核使用被覆盖的新设备树。
-长期把板级描述收敛到内核的 `arch/arm64/boot/dts/qcom/`，减少外部转换；
-同次启动的动态内存和固件资源仍由 UEFI 通过标准设备树修正协议提供。
+DTBs are built and installed per kernel version so older kernels never boot with an overwritten newer Device Tree.
+Long-term, board descriptions will converge into `arch/arm64/boot/dts/qcom/` inside the kernel tree
+to reduce external transformations; dynamic per-boot memory and firmware resources remain supplied
+by UEFI via the standard Device Tree fixup protocol.
 
-### 从装包到启动项
+### From Package Installation to Boot Entries
 
-正常升级应由以下流程完成，而不是重新刷写整个 ESP：
+Normal upgrades should follow this pipeline instead of reflashing the entire ESP:
 
 ```text
-APT／pacman 安装内核、模块、匹配 DTB 和必要固件
-  → 处理外部模块及 depmod
-  → 发行版 initramfs 工具生成对应版本的 initramfs
-  → kernel-install 按所选布局安装内核、initramfs 和 DTB
-  → systemd-boot 发现 BLS 启动项或 UKI
+APT / pacman installs kernel, modules, matching DTB, and required firmware
+  → builds out-of-tree modules and runs depmod
+  → distribution initramfs tool generates the versioned initramfs
+  → kernel-install installs kernel, initramfs, and DTB using the selected layout
+  → systemd-boot discovers the BLS entry or UKI
 ```
 
-Debian 复用 initramfs-tools 和 systemd-boot 提供的内核、initramfs 钩子；
-`55-initrd.install` 将生成的 initramfs 交给 systemd。直接安装版本化内核包时，
-APT 也会先配置匹配的设备树与 `piano-boot-config`，再生成启动文件。
-Debian 可能在挂载根之前加载数字信号处理器（DSP）驱动。`piano-boot-config` 的
-initramfs 钩子会带上已安装的 ADSP、CDSP 固件头和分段，升级引导配置也会触发
-initramfs 重建。平板已确认两颗 DSP 在冷启动时自动运行，Type-C 和 USB 网络随之上线，
-保留的旧启动项不受这次重建影响。
+Debian reuses the kernel and initramfs hooks provided by `initramfs-tools` and `systemd-boot`;
+`55-initrd.install` hands the generated initramfs to systemd. Even when installing a versioned
+kernel package directly, APT configures the matching Device Tree and `piano-boot-config` before
+generating boot files.
+Debian may load Digital Signal Processor (DSP) drivers before mounting root. The `piano-boot-config`
+initramfs hook includes installed ADSP and CDSP firmware headers and segments, and upgrading boot
+configuration also triggers an initramfs rebuild. On-device testing confirmed both DSPs come up
+automatically on cold boot, bringing Type-C and USB networking online while leaving retained older
+boot entries untouched.
 
-Arch 由 pacman 事务调用 `kernel-install`，复用官方 `50-mkinitcpio.install`，
-并按 [ArchWiki 的 kernel-install 配置](https://wiki.archlinux.org/title/Kernel-install)
-屏蔽 preset 模式的两条 mkinitcpio 事务钩子，避免重复生成。
-固件、initramfs 工具及相关启动组件更新时，事务钩子重建所有已安装内核的启动文件。
-SteamOS 的 Frame 存储分组、恢复、ADB 和固件钩子不适用这台平板；
-Piano 的 mkinitcpio 配置只跳过这些钩子，保留系统及用户配置的其他钩子。
+Arch invokes `kernel-install` from `pacman` transactions, reuses the upstream `50-mkinitcpio.install`,
+and masks the two preset-mode `mkinitcpio` transaction hooks per the
+[ArchWiki `kernel-install` guide](https://wiki.archlinux.org/title/Kernel-install)
+to prevent duplicate generation.
+When firmware, initramfs tools, or related boot components are updated, transaction hooks rebuild
+boot files for all installed kernels.
+SteamOS's Frame storage grouping, recovery, ADB, and firmware hooks do not apply to this tablet;
+Piano's `mkinitcpio` configuration skips only those hooks while keeping all other system and
+user-configured hooks.
 
-systemd-boot 本身由发行版提供。成品启用 systemd 的 `systemd-boot-update.service`，
-用软件包里的 EFI 文件更新启动分区上的副本，不需要写固件变量。`piano-boot-config`
-让该服务等已安排的启动分区挂载完成；未配置启动分区挂载时，不额外启动挂载任务。
+`systemd-boot` itself is supplied by the distribution. Release images enable systemd's
+`systemd-boot-update.service`, which updates the copy on the boot partition from the packaged EFI
+binary without writing UEFI variables. `piano-boot-config` orders the service after any scheduled
+boot partition mount, without starting extra mount jobs when no boot partition mount is configured.
 
-Nyarch、Arch Denial 和 SteamOS 把 ESP 直接挂在 `/boot`，内核、initramfs 和启动菜单在同一个分区。
-Debian 把 ESP 挂在 `/boot/efi`，APT 管理的内核文件仍留在根文件系统的 `/boot`。
-自己安装发行版时，也可以选择 `/efi` 等标准位置。用 `bootctl --print-esp-path`
-查看 ESP，用 `bootctl --print-boot-path` 查看 `kernel-install` 写启动文件的位置。
-没有独立的 XBOOTLDR 分区时，两者通常相同。
+Nyarch, Arch Denial, and SteamOS mount the ESP directly at `/boot`, keeping kernels, initramfs images, and the boot menu on one partition.
+Debian mounts the ESP at `/boot/efi`, while APT-managed kernel files remain in `/boot` on the root filesystem.
+Self-installed distributions may also use standard mount points such as `/efi`. Run `bootctl --print-esp-path`
+to inspect the ESP path and `bootctl --print-boot-path` to see where `kernel-install` writes boot files.
+Without a separate XBOOTLDR partition, the two are usually identical.
 
-安装 Piano 内核时，`piano-boot-config` 在 initramfs／UKI 已生成、systemd 写入前
-检查启动分区能否容纳新文件。在 FAT 上更新同一个入口时，只预留文件增长所需
-的空间；安装另一个版本仍要容纳完整的新入口。如果空间不足，安装会先停止并提示
-从包管理器卸载不用的旧内核，不会为了给新版本腾空间而删除已有入口。
+When installing a Piano kernel, `piano-boot-config` checks whether the boot partition can hold the
+new files after the initramfs / UKI is generated and before systemd writes them. When updating an
+existing entry on FAT, only the incremental growth is reserved; installing another version requires
+room for the full new entry. If space is insufficient, installation aborts early and prompts you to
+remove unused older kernels through the package manager rather than deleting existing entries to make room.
 
-默认 `/etc/kernel/install.conf` 为 `layout=bls`；需要 UKI 时改为 `layout=uki`。
-Arch 系运行 `sudo kernel-install add-all`；Debian 的内核文件在 `/boot`，
-运行 `sudo kernel-install add "$(uname -r)" "/boot/vmlinuz-$(uname -r)"`，
-或为需要添加的其他版本明确指定 release 和内核文件。BLS 使用 systemd 的
-`90-loaderentry.install`；UKI 使用 `60-ukify.install` 和 `90-uki-copy.install`。
-`/etc/kernel/cmdline` 可以覆盖包内的默认启动参数，
-`/etc/kernel/devicetree` 可以覆盖默认 DTB 选择；这些管理员配置优先于 `/usr/lib/kernel/`。
-包管理器升级保留 `/etc/kernel/install.conf` 等可修改配置。
-根设备可设为 `root=UUID=…` 或 `root=PARTUUID=…`，包内默认使用 `root=LABEL=PIANOROOT`，
-不带首次安装 initramfs 使用的私有参数。
+`/etc/kernel/install.conf` defaults to `layout=bls`; change it to `layout=uki` for UKIs.
+On Arch-based systems, run `sudo kernel-install add-all`; on Debian, where kernel files live in `/boot`,
+run `sudo kernel-install add "$(uname -r)" "/boot/vmlinuz-$(uname -r)"`,
+or specify the release and kernel image explicitly for any other version. BLS uses systemd's
+`90-loaderentry.install`; UKI uses `60-ukify.install` and `90-uki-copy.install`.
+`/etc/kernel/cmdline` overrides the packaged default kernel command line, and
+`/etc/kernel/devicetree` overrides the default DTB selection; these administrator configs take precedence over `/usr/lib/kernel/`.
+Package upgrades preserve editable configs such as `/etc/kernel/install.conf`.
+The root device can be set to `root=UUID=…` or `root=PARTUUID=…`; the packaged default is `root=LABEL=PIANOROOT`,
+without private parameters used only by the first-boot initramfs.
 
-启动文件按安装标识及内核版本命名，菜单名称取自目标系统的 `os-release`；
-仍可通过标准 UEFI 启动项改用其他引导程序。
-共用的初装启动项不设排序键，升级后由发行版生成的入口优先；
-仍可从菜单选择旧入口，也可改用自己的启动参数、名称和更新方式。
+Boot files are named by installation entry token and kernel version, and menu titles come from the target system's `os-release`;
+you can still switch to another bootloader through standard UEFI boot entries.
+The shared initial boot entry sets no sort key so distribution-generated entries take priority after an upgrade;
+you can still select the older entry from the menu or use your own kernel parameters, naming, and update flow.
 
-回退必须同时保留旧启动文件、模块和 DTB。Debian 和 Arch 的设备内核都按
-release 使用不同包名，元包升级不会替换旧版本包；从 systemd-boot 菜单选择旧版即可。
-相机 `v4l2loopback` 模块也按 release 并存，由内核元包安装匹配版本并交给
-包管理器更新模块索引。
-Arch 默认不生成可选的 `fallback` initramfs；它包含同一内核的更多模块，
-不能替代保留旧版内核。
-卸载旧版内核会移除该版本的启动项，不删除其他系统的启动项。
-原生包要求 systemd 258 或更高版本。如果同一版本从 BLS 切换成 UKI，
-卸载也会调用 systemd 的 BLS 插件清理旧启动项。
-更新前应保持 ESP 正常挂载且空间充足；initramfs 生成失败时，先修复报错，
-保留原内核与启动文件，不继续卸载旧版。
+Rollback requires keeping old boot files, modules, and DTBs together. Both Debian and Arch device
+kernels use distinct release-versioned package names so metapackage upgrades never overwrite older
+versions; simply pick the older entry in the `systemd-boot` menu.
+The camera `v4l2loopback` module also coexists per release, installed in the matching version by the
+kernel metapackage with module indexes updated by the package manager.
+Arch does not generate the optional `fallback` initramfs by default—it merely bundles extra modules
+for the same kernel and does not replace keeping an older kernel version.
+Uninstalling an older kernel removes its boot entry without touching entries from other systems.
+Native packages require systemd 258 or newer. Even if the same version was switched from BLS to UKI,
+uninstalling still invokes systemd's BLS plugin to clean up the old entry.
+Before updating, ensure the ESP is properly mounted with sufficient free space; if initramfs
+generation fails, fix the error first and keep the existing kernel and boot files rather than
+uninstalling the older version.
 
-### 软件源与文件归属
+### Repositories and File Ownership
 
-建立签名 APT 和 pacman 软件源，Nyarch 与 SteamOS 按各自库 ABI 构建和发布，
-用正常依赖及版本更新替代 SteamOS 对适配包的长期 `IgnorePkg`。
-包内程序不放进留给管理员的 `/usr/local`；默认配置、服务和状态目录使用
-发行版约定，升级保留密码、机器身份、配对、游戏和用户修改。
-普通用户空间组件只依赖实际使用的接口与库版本，不因内核重新构建就全部重编。
+Signed APT and `pacman` repositories are provided so Nyarch and SteamOS build and publish against
+their respective library ABIs, replacing long-term `IgnorePkg` pins on adapted packages in SteamOS
+with normal dependency and version updates.
+Packaged binaries are never placed under `/usr/local`, which is reserved for the administrator;
+default configs, services, and state directories follow distribution conventions, and upgrades
+preserve passwords, machine identity, pairings, games, and user modifications.
+Regular userspace components depend only on the interfaces and library versions they actually use
+and are not rebuilt across the board whenever the kernel is rebuilt.
 
-软件包管理与硬件接口标准化分别完成。把现有相机 daemon／loopback 或指纹
-UIO 后端打成原生包，不等于标准 CAMSS／libcamera 或上游指纹控制模型已经完成。
-源码和配方随包可取得，通用补丁被上游收录后删除本地副本。
+Package management and hardware interface standardization proceed independently. Packaging the
+existing camera daemon / loopback or fingerprint UIO backend natively does not mean standard
+CAMSS / `libcamera` or an upstream fingerprint control model is complete.
+Sources and recipes are available alongside packages, and local copies of generic patches are removed once accepted upstream.
 
-R2 软件源顶层为 `apt/`、`pacman/`、`keys/`，公开入口是
-`https://sunuefi-repo.okassets.uk`。APT 使用 `apt/dists/sid` 和
-`apt/pool/main`。pacman 遵循 `$repo/os/$arch`：
-`sunuefi` 提供共用的内核、DTB、设备配置和 Arch Linux ARM 重建包。
-Nyarch 只启用 `sunuefi`；SteamOS 把 `sunuefi-steamos` 放在 `sunuefi` 前，
-只有为 Valve 用户空间重建的包放入增量仓。同名包优先使用排在前面的仓库，
-没有覆盖的包从 `sunuefi` 取得。
+The R2 repository top-level layout is `apt/`, `pacman/`, and `keys/`, served publicly at
+`https://sunuefi-repo.okassets.uk`. APT uses `apt/dists/sid` and
+`apt/pool/main`. `pacman` follows `$repo/os/$arch`:
+`sunuefi` provides shared kernels, DTBs, device configuration, and Arch Linux ARM rebuilt packages.
+Nyarch enables only `sunuefi`; SteamOS places `sunuefi-steamos` ahead of `sunuefi`, and only
+packages rebuilt specifically for Valve's userspace go into the overlay repo. For identically named
+packages, the earlier repository takes precedence, while unoverridden packages come from `sunuefi`.
 
-`./build.sh repo --repo apt|sunuefi|sunuefi-steamos
---key <指纹> --output <新目录> <包文件...>` 生成签名索引，
-加 `--publish` 后使用 `R2_ENDPOINT`、`R2_BUCKET`、`R2_ACCESS_KEY_ID` 和
-`R2_SECRET_ACCESS_KEY` 上传。上传先完成不可变包文件和签名，再更新索引，
-同名文件内容变化即拒绝；保留旧包，不执行远端删除。
-APT 先上传 SHA512 和 SHA256 的 `by-hash` 索引，再更新 `InRelease`。
-发布后从公开域名核对两种地址，避免 APT 退回可能仍被缓存的 `Packages.gz`。
-下次发布从这份签名索引继续。
-产品构建先核对 pacman 新索引选中的包名、版本和 SHA-256，再上传索引。
-如果索引已选中更新的版本，发布会停止；用高于已发布版本的包重新构建。
-同一上游内核版本的新 ABI 必须推进 `abi_epoch`；APT 和 pacman 发布都检查这一点，
-避免摘要的字母顺序决定升级方向。
-pacman 数据库和分离签名是不同对象，发布期间可能短暂验签失败，应重试，
-不能关闭签名检查。上传中断时，发布工具仍可从上一份完整索引继续。
+`./build.sh repo --repo apt|sunuefi|sunuefi-steamos --key <fingerprint> --output <new-dir> <package-files...>`
+generates signed indexes; adding `--publish` uploads them using `R2_ENDPOINT`, `R2_BUCKET`,
+`R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`. Publishing uploads immutable package files and
+signatures before updating indexes, rejects any content change under an existing filename, retains
+older packages, and never performs remote deletions.
+APT uploads SHA512 and SHA256 `by-hash` indexes before updating `InRelease`.
+After publishing, both URLs are verified against the public domain so APT does not fall back to a
+potentially cached `Packages.gz`.
+The next publish resumes from this signed index.
+Product builds verify the selected package names, versions, and SHA-256 checksums in the new
+`pacman` index before uploading it.
+If the index already selects a newer version, publishing aborts; rebuild with a version higher than the published one.
+A new ABI for the same upstream kernel version must advance `abi_epoch`; both APT and `pacman`
+publishing enforce this so alphabetical hash ordering never determines upgrade direction.
+Because `pacman` databases and detached signatures are separate objects, brief signature
+verification failures may occur mid-publish; retry instead of disabling signature checks. If an
+upload is interrupted, the publishing tool can still resume from the last complete index.
 
-依据：[Debian 内核包与钩子](https://kernel-team.pages.debian.net/kernel-handbook/ch-update-hooks.html)、
-[Arch 内核打包](https://wiki.archlinux.org/title/Kernel/Arch_build_system)、
-[`kernel-install`](https://www.freedesktop.org/software/systemd/man/latest/kernel-install.html)。
+References: [Debian kernel packages and hooks](https://kernel-team.pages.debian.net/kernel-handbook/ch-update-hooks.html),
+[Arch kernel packaging](https://wiki.archlinux.org/title/Kernel/Arch_build_system),
+[`kernel-install`](https://www.freedesktop.org/software/systemd/man/latest/kernel-install.html).
 
-## 产物位置
+## Artifact Locations
 
-| 目录 | 内容 |
+| Directory | Contents |
 | --- | --- |
-| `artifacts/product/` | `PianoUEFI-product.img` 和 `manifest.json` |
-| `artifacts/android/` | 引导助手模块 `SunUEFI-Piano-版本.zip`、`manifest.json`、`SHA256SUMS` |
-| `artifacts/kernels/release/` | 内核 Image、模块和 `manifest.json` |
-| `artifacts/release/` | `package` 的输出：`esp.img`、`root.ext4.img` 和 `manifest.json` |
-| `artifacts/fastboot-sparse/` | 稀疏版 `esp.img`、`root.ext4.img`，以及 `manifest.json` 和 `SHA256SUMS` |
-| `artifacts/installer/` | `installer` 的默认输出目录 |
+| `artifacts/product/` | `PianoUEFI-product.img` and `manifest.json` |
+| `artifacts/android/` | Boot Helper module `SunUEFI-Piano-<version>.zip`, `manifest.json`, `SHA256SUMS` |
+| `artifacts/kernels/release/` | Kernel `Image`, modules, and `manifest.json` |
+| `artifacts/release/` | `package` output: `esp.img`, `root.ext4.img`, and `manifest.json` |
+| `artifacts/fastboot-sparse/` | Sparse `esp.img` and `root.ext4.img`, plus `manifest.json` and `SHA256SUMS` |
+| `artifacts/installer/` | Default output directory for `installer` |
 
-## CI 下载
+## CI Downloads
 
-GitHub Actions 的 **Build products** 在 `main` 上有相关改动时自动运行，也可以手动选择 `all`、`uefi`、`linux` 或任一发行版。只改文档不会触发构建，唯一的例外是 `docs/user/install-from-artifact.md`，改动它会触发整套产品构建。选择规则在 `tools/ci_build_targets.py`。
+The GitHub Actions **Build products** workflow runs automatically on relevant changes to `main` and can also be triggered manually for `all`, `uefi`, `linux`, or any individual distribution. Documentation-only edits do not trigger builds, with the sole exception of `docs/user/install-from-artifact.md`, which triggers a full product build. Target selection rules live in `tools/ci_build_targets.py`.
 
-| 下载名称 | 内容 |
+| Download Name | Contents |
 | --- | --- |
-| `SunUEFI-Module` | Android 引导助手模块 ZIP |
-| `SunUEFI-UEFI-Fastboot` | 用于 `fastboot boot` 的独立 UEFI 镜像 |
-| `SunUEFI-ESP` | 各发行版共用的稀疏 ESP 镜像 |
-| `SunUEFI-Root-发行版` | 对应[构建目标](#完整系统)的稀疏 root 镜像 |
-| `logs` | 合并的构建日志、来源清单和校验记录 |
+| `SunUEFI-Module` | Android Boot Helper module ZIP |
+| `SunUEFI-UEFI-Fastboot` | Standalone UEFI image for `fastboot boot` |
+| `SunUEFI-ESP` | Shared sparse ESP image for all distributions |
+| `SunUEFI-Root-<distro>` | Sparse root image for each [build target](#full-systems) |
+| `logs` | Merged build logs, source manifests, and verification records |
 
-模块、UEFI 镜像和 ESP 每次只上传一份，root 镜像按发行版分别上传。安装时把所选发行版的 root 镜像和同一次构建的 ESP 配套使用，步骤见[安装指南](../user/install-from-artifact.md)。
+The module, UEFI image, and ESP are uploaded once per run, while root images are uploaded per distribution. During installation, pair the chosen distribution's root image with the ESP from the same build run; see the [Installation Guide](../user/install-from-artifact.md) for steps.
 
-## 安装器
+## Installer
 
-`./build.sh installer` 和 `./build.sh install` 是两件事。
+`./build.sh installer` and `./build.sh install` do two different things.
 
-`installer` 只在电脑上整理文件。它把 `install_piano.py`、启动脚本 `install.sh` 和 `install.cmd`、`INSTALL.md`、校验记录复制到一个新目录，`--bundle artifacts/release` 会把磁盘镜像一并放进 `bundle/`，`--product` 则只放 UEFI 镜像。目录必须是新的，已有的目录会被拒绝。
+`installer` only stages files on the computer. It copies `install_piano.py`, launcher scripts `install.sh` and `install.cmd`, `INSTALL.md`, and checksum records into a new directory; `--bundle artifacts/release` includes disk images under `bundle/`, while `--product` includes only the UEFI image. The target directory must be new—existing directories are rejected.
 
-`install` 才会连接平板，由 `tools/install_piano.py` 提供三个操作：
+`install` actually connects to the tablet and exposes three actions via `tools/install_piano.py`:
 
-| 操作 | 作用 |
+| Action | Description |
 | --- | --- |
-| `inspect` | 只读检查平板的分区表（默认） |
-| `plan` | 检查平板和镜像，生成安装计划 |
-| `apply --plan 计划.json --bundle 镜像目录 --execute` | 更新已有的 `sunuefi_esp` 和 `sunuefi_root`，并读回校验 |
+| `inspect` | Read-only inspection of the tablet's partition table (default) |
+| `plan` | Inspect the tablet and images, then generate an installation plan |
+| `apply --plan <plan.json> --bundle <bundle-dir> --execute` | Update existing `sunuefi_esp` and `sunuefi_root` partitions and read back to verify |
 
-命令行安装器只更新已有的独立分区，首次分区在引导助手里完成。不带 `--execute` 时不会写入任何内容。
+The CLI installer only updates existing dedicated partitions; initial partitioning is performed in the Boot Helper. Nothing is written unless `--execute` is passed.
 
-## 继续阅读
+## Further Reading
 
-[仓库地图](repository-map.md)、[测试](testing.md)、[发布要求](release.md)、[贡献指南](../../CONTRIBUTING.md)。
+[Repository Map](repository-map.md), [Testing](testing.md), [Release Requirements](release.md), [Contributing Guide](../../CONTRIBUTING.md).

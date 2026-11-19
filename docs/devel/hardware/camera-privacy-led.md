@@ -1,34 +1,34 @@
-# Piano 实体摄像头隐私灯
+# Piano Hardware Camera Privacy LED
 
-隐私灯通过当前 [media 补丁](../../../patches/linux/7.3/0004-media.patch)与 [设备树 overlay](../../../linux/dts/piano-camera-privacy-led.dtso)接入默认产品，版本以 [Linux 补丁链](../../../patches/linux/7.3/series.json)为准。Linux 下前后摄像头开流、停流与共享灯的驱动和脉宽调制（PWM）行为已经验证；实体发光尚未进行光学确认。
+The privacy LED is enabled in default builds through the current [media patch](../../../patches/linux/7.3/0004-media.patch) and [Device Tree overlay](../../../linux/dts/piano-camera-privacy-led.dtso), with versions tracked in the [Linux patch series](../../../patches/linux/7.3/series.json). Driver and PWM behavior for front/rear camera stream-on, stream-off, and shared-LED reference handling have been verified on Linux; physical light emission has not yet been optically confirmed.
 
-原厂 Android 的相机预览使 PM8550 LPG2 的 `green` 亮度从 0 变成 4，回到 Home、相机关闭后变回 0；满量程为 255。其间 LightsService 的八个灯颜色全部保持 0， lights HAL 也只提供类型 0～7。这里直接使用已对应的 LED 硬件通道，不模拟 Android framework，也不增加后台守护进程。Linux 当前 LED 满量程同样为 255。
+On stock Android, starting camera preview changes PM8550 LPG2 `green` brightness from 0 to 4, returning to 0 after going Home and closing the camera (full scale: 255). Throughout this, all eight LightsService LED colors stay at 0, and the lights HAL exposes only types 0–7. Linux drives this mapped LED hardware channel directly without emulating the Android framework or adding a background daemon. The current Linux LED full scale is also 255.
 
-## 接线与正常生命周期
+## Wiring and Normal Lifecycle
 
-`v4l2-subdev.c` 为每个 `led_classdev` 保存一份注册引用数和活跃摄像头数。每个 sensor 保存一个活跃标志，重复获取或释放不会重复计数。第一份注册接管 sysfs/trigger，最后一份安全注销恢复 sysfs。新增 sensor 注册不会清掉另一颗正在使用的灯，一颗停止也不会关闭另一颗的指示灯。
+`v4l2-subdev.c` tracks a registration reference count and an active-camera count per `led_classdev`. Each sensor maintains its own active flag so redundant acquire or release calls do not double-count. The first registration takes ownership of sysfs/triggers, and the final clean unregistration restores sysfs access. Registering another sensor does not turn off an LED already held by an active sensor, and stopping one sensor does not extinguish the indicator while the other remains active.
 
-`leds` 与 `led-names = "privacy"` 使用已有标准接口。`privacy-led-brightness = <4 255>` 是本项目提出的 common video binding 扩展，不是既有上游属性；它表示亮度比例并保留 LED 的满量程。当前 Linux 写 4；若 provider 满量程为 511，则换算为 8。共享消费者必须请求相同的数学比例，不同请求在注册时报错。
+`leds` and `led-names = "privacy"` use existing standard bindings. `privacy-led-brightness = <4 255>` is a project-proposed common video binding extension rather than an existing upstream property; it expresses a brightness ratio while preserving the LED's native full scale. Linux currently writes 4; if a provider's full scale is 511, it scales to 8. Shared consumers must request the same mathematical ratio—mismatched requests fail at registration time.
 
-两颗 Piano sensor 在取得运行时电源引用之后、写 stream-on 之前同步获取指示灯。这样不会让前一次异步断电回调在启动过程中误释放新获取的引用。正常停止成功后释放引用；复位保持有效且 MCLK 关闭后，power-off 路径也能释放异常停止留下的引用。移除驱动时先完成这一步，再注销 LED 消费者。
+Both Piano sensors synchronously acquire the indicator after taking a runtime PM reference and before writing stream-on. This prevents a prior asynchronous power-off callback from mistakenly releasing a newly acquired reference during startup. The reference is released after a clean stream-off; once reset is asserted and MCLK is disabled, the power-off path can also release any reference left behind by an abnormal stop. Driver removal completes this step before unregistering the LED consumer.
 
-这条联动位于 sensor 和 V4L2 内核路径，不依赖 `piano-camerad`、loopback 或控制 socket；以后更换为 libcamera 时不应在用户空间另加点灯逻辑。亮度比例和共享灯引用处理的上游状态见上文，切换用户空间不会改变这些本地扩展的状态。
+This coupling lives entirely in the sensor and V4L2 kernel paths and does not depend on `piano-camerad`, loopback devices, or control sockets; migrating to libcamera later must not add separate userspace LED control logic. The upstream status of the brightness ratio and shared-LED reference handling is noted above, and switching userspace does not change the status of these local extensions.
 
-## 失败处理
+## Failure Handling
 
-- LPG 的频率、PWM、输出控制、同步、SDAM/LUT、triLED 和 PBS 写入错误沿现有调用链返回到单色或多色同步亮度 setter；不再丢弃错误后返回 0。Piano sensor 收到点灯错误后不写 stream-on。返回成功仍代表硬件接口接受了编程，不等于做过光学测量。
-- OV32D40 不再忽略 stream-off 写入错误。带 privacy LED 的 sensor 停止失败会保留错误与活跃状态，`.s_stream()` 包装层不能将它变成成功再灭灯。没有 privacy LED 的平台保留原行为。
-- CAMSS 不因末端 sensor 停止错误中断剩余停止遍历和 pipeline/buffer 清理。部分启动失败只回退已成功启动的链路前缀，再清理 pipeline；失败节点由其自身处理电源引用。sensor 的错误仍逐项记录，不把软件 cleanup 当作 sensor 已停止。
-- 两颗 sensor 各用一个 `stream_pm_held` 标志追踪开流取得的 PM 引用。正常停止、停止失败与启动失败各自只消费一次；停止失败后的快速重试在 reset/MCLK-off 之前返回 `-EAGAIN`，不会再次执行 CCI 或 `pm_runtime_put`。强制断电或移除仍持有引用时，通过原子交换消费该引用并使用 `pm_runtime_put_noidle`，不再次触发运行时断电。
-- 异步 power-off 回调只记录已完成的 reset/MCLK-off，不抢 V4L2 state lock。下一次 enable 在已有流状态锁下清除旧的 enabled 状态，因此不会把停止失败时仍可能运行的 sensor 提前标为空闲，也不会因锁顺序发生死锁。
-- stop 或 quiesce 已完成后，sensor 不再占用灯。即使 LED-off 写入失败，也会记录错误、释放已经安全停机的摄像头引用，并允许最后一份注册释放 provider 引用；不会仅因灯的关闭错误永久扣住已停止摄像头的引用。实体灯可能暂时继续亮，错误日志不会把它报告成已经熄灭。
+- Write errors in LPG frequency, PWM, output control, sync, SDAM/LUT, triLED, and PBS paths now propagate up the existing call chain to the monochrome or multicolor synchronous brightness setter instead of being dropped and returning 0. Piano sensors abort before writing stream-on if enabling the LED fails. A successful return indicates the hardware interface accepted the configuration, not that optical emission was measured.
+- OV32D40 no longer ignores stream-off write errors. On sensors with a privacy LED, a failed stop preserves both the error and the active state; the `.s_stream()` wrapper must not turn it into a success and extinguish the LED. Platforms without a privacy LED retain the original behavior.
+- CAMSS does not abort the remaining stop traversal or pipeline/buffer cleanup when an endpoint sensor fails to stop. Partial start failures unwind only the prefix of links that successfully started before cleaning up the pipeline; the failing node manages its own power references. Sensor errors are still logged individually, and software cleanup is never treated as proof that the sensor has stopped.
+- Each sensor uses a `stream_pm_held` flag to track the PM reference taken at stream-on. Normal stop, failed stop, and failed start each consume it at most once; rapid retries after a failed stop return `-EAGAIN` until reset/MCLK-off completes, avoiding duplicate CCI transactions or `pm_runtime_put` calls. If forced power-off or driver removal still holds the reference, it consumes the flag via an atomic exchange and calls `pm_runtime_put_noidle` without re-triggering runtime suspend.
+- The asynchronous power-off callback only records that reset/MCLK-off has completed and never acquires the V4L2 state lock. The next enable clears the stale enabled state while already holding the stream state lock, preventing a sensor that may still be running after a failed stop from being prematurely marked idle and avoiding lock-ordering deadlocks.
+- Once stop or quiesce has completed, the sensor no longer holds the LED. Even if the LED-off write fails, the code logs the error, releases the reference for the safely stopped camera, and allows the last registration to drop the provider reference instead of permanently leaking a stopped camera's count over an LED turn-off failure. The physical LED may temporarily remain lit, and the error log does not falsely report it as off.
 
-## 最小构建与剩余验证
+## Minimal Build and Remaining Verification
 
-五个修改对象均通过 ARM64 编译：`v4l2-subdev.o`、`ov32d40.o`、`s5kjn1.o`、`leds-qcom-lpg.o`、`camss-video.o`。DT overlay 通过 dtc 编译，并成功合并到现有完整 Piano DT；前后 sensor 的 privacy phandle 指向同一个 LPG2 节点。
+All five modified objects compile cleanly for ARM64: `v4l2-subdev.o`, `ov32d40.o`, `s5kjn1.o`, `leds-qcom-lpg.o`, and `camss-video.o`. The DT overlay compiles with `dtc` and merges cleanly into the existing full Piano DT; both front and rear sensor privacy phandles point to the same LPG2 node.
 
-2026-10-09，`7.2.9-piano-gnome-g5902d3af6f62` 实机前摄和后摄分别正常开流，亮度均为 `0 → 4 → 0`。两路同时工作时亮度保持 4，关闭前摄而后摄仍活动时保持 4，全部关闭后才变为 0。PWM 读回为启用、占空 13334/851667 ns，约等于原厂的 4/255；全部关闭后读回为禁用。测试帧均丢弃，没有保存照片或视频。这些结果证明控制器和驱动联动，不代替实体发光的光学测量；异常 I/O 路径没有在硬件上故意注入故障。
+On 2026-10-09, on-device testing with `7.2.9-piano-gnome-g5902d3af6f62` streamed both front and rear cameras independently, observing brightness transitions of `0 → 4 → 0`. With both active simultaneously, brightness stayed at 4; stopping the front camera while the rear remained active kept it at 4, dropping to 0 only after both stopped. PWM readback showed enabled with a duty cycle of 13334/851667 ns (matching stock 4/255), and disabled once all streams stopped. All test frames were discarded without saving photos or videos. These results confirm controller and driver coordination rather than replacing optical emission measurements; error I/O paths were not intentionally fault-injected on hardware.
 
-本适配处理 sensor 的停止/控制错误；独立的 CAMSS DMA 或硬复位故障仍由其原有底层驱动处理，不能把软件 cleanup 理解成所有 DMA 故障已经恢复。若其他 sensor 驱动在没有完成 stop/quiesce 的情况下直接注销，helper 仍保留不确定的活跃引用；Piano 两个驱动的移除路径已经明确先 quiesce。
+This integration handles sensor stop/control errors; independent CAMSS DMA or hard-reset failures remain the responsibility of their underlying drivers, and software cleanup must not be interpreted as full recovery from all DMA faults. If another sensor driver unregisters without completing stop/quiesce, the helper keeps the indeterminate active reference; both Piano sensor drivers explicitly quiesce first in their remove paths.
 
-内核准备与产品打包均默认包含该适配，Debian、SteamOS 和 Nyarch 使用同一份实现。
+Both kernel preparation and release packaging include this integration by default; Debian, SteamOS, and Nyarch share the same implementation.

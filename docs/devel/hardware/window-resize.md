@@ -1,29 +1,29 @@
-# GNOME 窗口缩放性能
+# GNOME Window Resize Performance
 
-当前显示以 144 Hz 扫描，但部分 GTK 窗口连续改变尺寸时，画面提交约为 30 次/秒。GNOME 概览动画不需要应用反复改变布局和重绘，不能用它的流畅度推导普通窗口缩放性能。
+The display currently scans out at 144 Hz, yet continuous resizing of some GTK windows commits frames at only ~30 times/s. GNOME Overview animations do not require applications to repeatedly relayout and redraw, so their smoothness cannot be used to infer regular window resize performance.
 
-## 已定位的范围
+## Scoped Findings
 
-2026-10-09，在当前 Debian GNOME 上对声音设置做了约 6 秒的自动缩放。应用是原生 Wayland 客户端，输出宣布为 3200×2136、143999 mHz。仅为这个进程开启 Wayland 协议日志，没有附加其他进程或重复 GPU 保底频率测试。
+On 2026-10-09, automated resizing of Sound Settings was run for ~6 seconds on the current Debian GNOME build. The application is a native Wayland client on an output advertising 3200×2136 at 143999 mHz. Wayland protocol logging was enabled only for this process, with no other processes attached and no repeated GPU floor-frequency testing.
 
-| 观测项 | 结果 | 可以说明什么 |
+| Metric | Result | What It Shows |
 | --- | --- | --- |
-| 尺寸 configure 与 ACK | 406 对，约 68.4 次/秒；确认平均约 0.006 ms | 测试不是尺寸确认节流 |
-| 新 buffer 画面提交 | 193 次，约 32.5 次/秒 | 客户端画面提交明显慢于尺寸通知 |
-| 相邻画面提交 | 平均约 30.8 ms | 与观察到的约 30 fps 一致 |
-| 上次帧回调到下一次帧请求 | 平均约 14.5 ms | 包含客户端排帧、布局、绘制和 buffer 准备，仍需细分 |
-| 画面提交到收到帧回调 | 平均约 16.2 ms | 包含服务端、传输和客户端处理，不能全部算作合成器耗时 |
+| Resize `configure` and `ack` | 406 pairs (~68.4/s); avg ack ~0.006 ms | The test is not throttled on size acknowledgments |
+| Frame commits with new buffer | 193 (~32.5/s) | Client frame commits are significantly slower than size notifications |
+| Adjacent frame commits | Avg ~30.8 ms | Consistent with the observed ~30 fps |
+| Previous frame callback to next frame request | Avg ~14.5 ms | Includes client frame scheduling, layout, drawing, and buffer prep; needs further breakdown |
+| Frame commit to frame callback received | Avg ~16.2 ms | Includes compositor, IPC transport, and client handling; cannot all be attributed to compositor time |
 
-统计只计非空 buffer attach 后的 commit，排除了纯状态提交和 `wl_display.sync` 回调。帧回调的服务端时间戳间隔与客户端记录相近，没有持续增长的事件处理积压，但固定延迟仍未知；不能据此声称存在 60 Hz 或 30 Hz 的硬性限制。
+Counts include only commits following a non-null buffer attach, excluding state-only commits and `wl_display.sync` callbacks. Server-side frame callback timestamp intervals match client-side records, showing no continuously growing event backlog, though fixed latency remains unknown; this does not establish a hard 60 Hz or 30 Hz cap.
 
-193 次画面提交对应 193 次新 buffer 创建，相邻提交的尺寸都发生变化。这个现象把后续检查指向缩放时的布局、绘制和 EGL buffer 路径；目前尚未量出 buffer 分配耗时，不能把相关性当作根因。
+The 193 frame commits correspond to 193 newly allocated buffers, with every consecutive commit changing size. This points follow-up investigation toward resize layout, drawing, and the EGL buffer path; buffer allocation time has not yet been measured, so correlation must not be treated as root cause.
 
-回调到下一次帧请求的间隔也包含 GTK 排帧等待，不等于 CPU 连续工作了 14.5 ms。当前数据仍不足以划分计算、等待和分配各自的比例。
+The interval from callback to the next frame request also includes GTK frame-clock wait time and does not mean the CPU spent 14.5 ms continuously busy. Current data is still insufficient to separate compute, wait, and allocation shares.
 
-## 源码依据与后续定位
+## Source References and Next Steps
 
-当前 Mutter 48.7 在重绘前合并最新缩放位置，Wayland 路径没有“等上一条 configure 被 ACK 才发下一条”的规则。[GTK 4.18.6](https://github.com/GNOME/gtk/tree/4.18.6/gdk/wayland)会确认尺寸通知，并在绘制之后等待 `wl_surface.frame` 回调，再继续更新。正常窗口尺寸还需客户端提交新 buffer 才生效。
+Current Mutter 48.7 coalesces the latest resize position before redrawing; the Wayland path has no rule waiting for the previous `configure` to be acknowledged before sending the next. [GTK 4.18.6](https://github.com/GNOME/gtk/tree/4.18.6/gdk/wayland) acknowledges resize notifications and waits for the `wl_surface.frame` callback after drawing before continuing updates. Normal window resizing also requires the client to commit a new buffer before taking effect.
 
-下一步应使用 GTK 的标准 frame-clock/renderer profiling，细分约 14.5 ms 的客户端阶段，再决定是否需要内核、Mesa、GTK 或应用层修改。不要先跳过帧等待、强行关闭垂直同步，或继续猜测触控采样率。[GTK 官方调试与 profiling 接口](https://docs.gtk.org/gtk4/running.html#profiling)
+The next step is to use GTK's standard frame-clock/renderer profiling to break down the ~14.5 ms client-side phase before deciding whether kernel, Mesa, GTK, or application changes are needed. Do not start by skipping frame waits, forcing vsync off, or guessing about touch polling rates. See the [official GTK debugging and profiling reference](https://docs.gtk.org/gtk4/running.html#profiling).
 
-本地协议日志、截图、自动控制记录和逐帧对应关系保存在 `内部记录目录
+Local protocol logs, screenshots, automated control recordings, and frame-by-frame correlations are stored in the internal records directory.

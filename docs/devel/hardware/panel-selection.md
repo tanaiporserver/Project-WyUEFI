@@ -1,22 +1,22 @@
-# 同一固件的面板选择
+# Panel Selection Within a Single Firmware Image
 
-Piano 的 BOE 和 CSOT 面板共用同一内核中的 NT36532 驱动，但初始化命令不同。每台设备应使用原厂 ABL 测试识别出的面板，不能把开发机的供应商当成所有设备的默认值。
+The BOE and CSOT panels on `piano` share the same NT36532 kernel driver, but require different initialization commands. Each device must use the panel identified by the stock ABL rather than assuming the development unit's panel vendor as the default for all devices.
 
-UEFI 在早期读取原厂 DTB 的 `/chosen/bootargs`，保存匹配结果，启动交接 Linux 时在已分配、扩容的 DTB 副本上修改面板节点的 `compatible`。输入 DTB、CPU、供电、DSI 端点和其他属性保持原内容。原厂 DTB 不直接作为主线 Linux 的完整设备树使用。
+Early in boot, UEFI reads `/chosen/bootargs` from the stock DTB, saves the match result, and patches the panel node's `compatible` property on a newly allocated, expanded copy of the DTB during Linux handoff. The input DTB, CPU, power supply, DSI endpoints, and all other properties remain unchanged. The stock DTB is not used directly as the complete Device Tree for mainline Linux.
 
-| ABL 的 `msm_drm.dsi_display0` 标识 | Linux 面板配置 |
+| ABL `msm_drm.dsi_display0` Identifier | Linux Panel Configuration |
 | --- | --- |
 | `qcom,mdss_dsi_p81_42_02_0a_dualdsi_dsc_vid` | `xiaomi,piano-boe-nt36532` |
 | `qcom,mdss_dsi_p81_35_02_0b_dualdsi_dsc_vid` | `xiaomi,piano-csot-nt36532` |
 
-标识缺失、未知或重复时不猜供应商，保留输入 DTB 的配置并记录 `PIANO_PANEL_SELECT` 日志。新面板需要补充可靠的原厂标识和对应驱动配置后加入表中。日志同时记录原厂参数的长度和 CRC，便于核对读取来源。
+If the identifier is missing, unknown, or duplicated, UEFI does not guess the vendor; it preserves the input DTB configuration and logs `PIANO_PANEL_SELECT`. Any new panel must be added to the table only after confirming its reliable stock identifier and corresponding driver configuration. The log also records the length and CRC of the stock parameter so the read source can be verified.
 
-`./build.sh package` 的 `--panel-vendor auto` 保留参考 DTB 中的配置，设备选择在 UEFI 启动交接时完成。打包工具保留显式 `boe` / `csot` 选项供诊断；它不代表能够识别其他设备。
+`--panel-vendor auto` in `./build.sh package` preserves the configuration from the reference DTB, deferring panel selection to UEFI Linux handoff. The packaging tool keeps explicit `boe` / `csot` options for diagnostics; this does not imply support for identifying other devices.
 
-2026-10-08 从 BOOT 普通重启、新 ESP 和 `PIANOROOT` 启动 7.2.9 后，实机 `/proc/device-tree` 读回为 `xiaomi,piano-csot-nt36532`，ESP 输入仍为 BOE，确认 CSOT 自动选择走通。BOE 设备尚未实测。定向主机检查也确认只修改启动交接副本的目标面板 `compatible`，原始输入不变。
+On 2026-10-08, after a normal reboot from BOOT with a new ESP and `PIANOROOT` booting 7.2.9, `/proc/device-tree` on real hardware read back `xiaomi,piano-csot-nt36532` while the ESP input DTB remained BOE, confirming CSOT auto-selection end to end. BOE hardware has not yet been tested on device. Targeted host checks also confirmed that only the target panel `compatible` in the handoff copy is modified, leaving the original input intact.
 
-开发机在之前使用 BOE 配置时和切换到 CSOT 后都能正常显示。两者共用 NT36532 驱动及主要显示参数，但供应商初始化命令和 ESD 配置不同；能够出画面不证明两套配置完全等价。自动选择让配置与原厂识别结果一致，不作为已证实的显示故障修复。UEFI 的物理白屏、刷新率切换和 HDR 仍需分别定位。
+The development unit displayed output both previously under the BOE configuration and after switching to CSOT. Both share the NT36532 driver and primary display timings, but their vendor initialization commands and ESD configurations differ; getting an image on screen does not prove the two configurations are equivalent. Auto-selection aligns the configuration with stock hardware detection and is not claimed as a confirmed fix for display bugs. UEFI physical white-screen issues, refresh-rate switching, and HDR still need separate investigation.
 
-实现位于 `uefi/handoff/early-memory/PianoColdBootObjects.c`、`uefi/core/PianoPanelSelection.c`；Raw Linux 和 EFI Linux 加载路径均使用同一选择函数。Linux 驱动为 `drivers/gpu/drm/panel/panel-novatek-nt36532.c`。
+The implementation lives in `uefi/handoff/early-memory/PianoColdBootObjects.c` and `uefi/core/PianoPanelSelection.c`; both the Raw Linux and EFI Linux boot paths use the same selection function. The Linux driver is `drivers/gpu/drm/panel/panel-novatek-nt36532.c`.
 
-设备树是固件向内核提供的硬件描述；构建和运行时的修改方式可参见 [Linux 的设备树文档](https://docs.kernel.org/devicetree/usage-model.html)。
+The Device Tree is the hardware description firmware passes to the kernel; see the [Linux Device Tree usage model documentation](https://docs.kernel.org/devicetree/usage-model.html) for build-time and runtime modification details.

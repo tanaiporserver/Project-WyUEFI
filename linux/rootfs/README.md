@@ -1,24 +1,24 @@
-# 发行版基础系统
+# Distribution Base Systems
 
-入口为 `python3 tools/assemble_rootfs.py --distro debian --desktop gnome --plan`。`--execute` 才使用 debootstrap/APT 或 Arch tarball/pacman 后端，需要 root、私有挂载 namespace、chroot 及跨架构时的 qemu/binfmt。输出必须是新项目 `build/distros/` 目录。
+The entry point is `python3 tools/assemble_rootfs.py --distro debian --desktop gnome --plan`. Only `--execute` invokes the debootstrap/APT or Arch tarball/pacman backend, which requires root privileges, a private mount namespace, `chroot`, and `qemu`/binfmt when cross-building. Output must go to a fresh `build/distros/` project directory.
 
-| 基础系统 | GNOME | KDE | DDE |
+| Base System | GNOME | KDE | DDE |
 | --- | --- | --- | --- |
-| Debian trixie | 构建草案 | 构建草案 | 不可用：无已审配方 |
-| Ubuntu noble／24.04 LTS | 构建草案 | 构建草案 | 不可用：不添加 DDE PPA |
-| Arch Linux ARM aarch64 | 构建草案 | 构建草案，Maliit按包可用性 | 不可用：无已审配方 |
-| Deepin ARM64 | 未开放 | 未开放 | 需显式签名 base 与目标仓库包检查 |
+| Debian trixie | Build draft | Build draft | Unavailable: no reviewed recipe |
+| Ubuntu noble / 24.04 LTS | Build draft | Build draft | Unavailable: DDE PPA not added |
+| Arch Linux ARM aarch64 | Build draft | Build draft (Maliit subject to package availability) | Unavailable: no reviewed recipe |
+| Deepin ARM64 | Not open | Not open | Requires explicitly signed base and target repository package verification |
 
-“构建草案”不是 Piano 启动确认。APT/pacman 执行前会检查必需包，缺项会失败，不使用 ignore-missing 或关闭签名。默认软件源仍会更新，记录包清单及仓库元数据，不宣称完整位级复现。
+"Build draft" does not confirm bootability on `piano`. Required packages are checked before APT/pacman execution; missing packages cause a failure rather than using ignore-missing or disabling signature verification. Default repositories remain mutable; package manifests and repository metadata are recorded, with no claim of bit-for-bit reproducibility.
 
-Arch 官方 latest tarball 是可变来源，执行必须显式传 `--base-sha256`；不自动补一个未经取得的 hash。官方默认 root/alarm 密码会被锁定，SSH身份与machine-id会清理，目标仓库使用 pacman-key 初始化/填入 Arch Linux ARM 签名密钥。
+The official Arch `latest` tarball is a mutable source, so execution requires passing `--base-sha256` explicitly; an unverified hash is never filled in automatically. Default `root`/`alarm` passwords are locked, SSH host keys and `machine-id` are cleared, and `pacman-key` is initialized and populated with the Arch Linux ARM signing keys for the target repositories.
 
-Deepin 官方有 ARM64 发布，但本仓库没有已核实的可直接导入 base tarball。必须提供 `--suite --base-url --base-sha256 --base-signature-url --base-keyring --base-keyring-sha256 --keyring --sources-list`。导入前核对 digest/GPG签名，导入后核对 distro身份；源文件只接受同 suite 的 Deepin 官方 HTTPS仓库，不混 Ubuntu/Debian源。不提供这些输入时只报告 `INPUTS_REQUIRED`，不下载或假设其存在。
+Deepin has official ARM64 releases, but this repository does not ship a verified, directly importable base tarball. You must supply `--suite --base-url --base-sha256 --base-signature-url --base-keyring --base-keyring-sha256 --keyring --sources-list`. Digests and GPG signatures are verified before import, and distribution identity is verified after import; sources files accept only official Deepin HTTPS repositories for the same suite, without mixing Ubuntu or Debian sources. When these inputs are omitted, the tool only reports `INPUTS_REQUIRED` and neither downloads nor assumes their existence.
 
-基础系统与 [桌面](../desktops/README.md) 独立，BSP另包提供。[storage.json](storage.json) 约定根分区名 `sunuefi_root`，文件系统标签仍为 `PIANOROOT`；assembler不更改GPT、UUID或设备数据。`--bsp DIR --layer MESA --layer RUNTIME --layer MODULES --layer FIRMWARE` 要求所有 manifest 的 `target={distro,suite,arch:aarch64}` 匹配；Mesa/runtime还要声明 glibc版本或静态libc，包管理器保持正常依赖检查。一个 Debian deb不能作为其他发行版的通用编译层。BSP `payload.tar/PKGBUILD` 仅是配方，未生成目标包时不能声称安装完成。
+Base systems are decoupled from [Desktops](../desktops/README.md), and the BSP is supplied as separate packages. [storage.json](storage.json) defines the root partition name `sunuefi_root` while keeping the filesystem label `PIANOROOT`; the assembler does not modify GPT tables, UUIDs, or device data. `--bsp DIR --layer MESA --layer RUNTIME --layer MODULES --layer FIRMWARE` requires all manifests to match `target={distro,suite,arch:aarch64}`; Mesa and runtime layers must also declare their glibc version or static libc, and package managers keep normal dependency checks enabled. A Debian `.deb` cannot serve as a generic compiled layer for other distributions. BSP `payload.tar`/`PKGBUILD` files are recipes only; installation cannot be claimed complete until target packages are actually built.
 
-没有选择 BSP 时可生成基础系统+桌面，状态为 `HOST_ROOTFS_DESKTOP_BUILT_BSP_PENDING`。选择完整BSP时缺编译层会拒绝。安装过程中移除发行版 generic kernel包，dispatcher不把它们设为ESP启动项；最终kernel/DTB/label bootstrap由共同发布流水线提供。
+When no BSP is selected, a base system + desktop image can still be generated with status `HOST_ROOTFS_DESKTOP_BUILT_BSP_PENDING`. When a full BSP is requested, missing compiled layers are rejected. Distribution generic kernel packages are removed during installation, and the dispatcher does not register them as ESP boot entries; the final kernel/DTB/label bootstrap is provided by the shared release pipeline.
 
-桌面默认自动登录锁定密码的 `piano` 用户；通过安装器或可信root控制台首次设自己的密码。没有公共固定密码。每个桌面的200%默认和OSK边界见桌面页，旋转尚依赖传感器确认。
+Desktop sessions default to auto-login as the password-locked `piano` user; set your own password on first setup through the installer or a trusted root console. There is no shared default password. See the Desktops page for each desktop's 200% default scaling and OSK boundaries; screen rotation still depends on sensor verification.
 
-官方依据：[Debian trixie ARM64](https://www.debian.org/releases/trixie/arm64/)、[Ubuntu noble ARM64](https://cdimage.ubuntu.com/ubuntu/releases/noble/release/)、[Ubuntu debootstrap/keyring](https://packages.ubuntu.com/noble/debootstrap)、[Arch Linux ARM Generic AArch64](https://archlinuxarm.org/platforms/armv8/generic)、[Deepin发布页](https://www.deepin.org/en/download/)。
+Official references: [Debian trixie ARM64](https://www.debian.org/releases/trixie/arm64/), [Ubuntu noble ARM64](https://cdimage.ubuntu.com/ubuntu/releases/noble/release/), [Ubuntu debootstrap/keyring](https://packages.ubuntu.com/noble/debootstrap), [Arch Linux ARM Generic AArch64](https://archlinuxarm.org/platforms/armv8/generic), [Deepin Download Page](https://www.deepin.org/en/download/).

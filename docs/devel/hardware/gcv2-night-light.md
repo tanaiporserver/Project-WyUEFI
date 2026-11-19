@@ -1,24 +1,24 @@
-# GCv2／IGCv5 与标准色彩接口
+# GCv2/IGCv5 and Standard Color Interfaces
 
-默认内核通过高通 REGDMA 提交硬件色彩查找表，提供标准 `GAMMA_LUT`、`DEGAMMA_LUT`，与现有 `CTM` 配合。GNOME 夜灯可用；固定内屏的 HDR 信号转换另见[显示位深与 HDR](display-depth.md#标准-hdr-输出)。12-bit FRC 仍未实现。
+The default kernel submits hardware color lookup tables through Qualcomm REGDMA, exposing standard `GAMMA_LUT` and `DEGAMMA_LUT` alongside the existing `CTM`. GNOME Night Light works; for HDR signal conversion on the fixed internal panel, see [Display Bit Depth and HDR](display-depth.md#standard-hdr-output). 12-bit FRC is still not implemented.
 
-## 硬件资源
+## Hardware Resources
 
-实现对照 [MiCode 固定显示源码](https://github.com/MiCode/vendor_opensource_display-drivers/tree/aa06fd1757c28dce96fbe4e04d4530ec21b52aac)和原厂最终设备树：REGDMA3 的 MMIO 为 `0x0af80000/0x7000`，XIN 为 7，GCv2 相对 DSPP 的偏移为 `0x17c0`。启动设备树通过 [piano-regdma-resource.dtso](../../../linux/dts/piano-regdma-resource.dtso)提供命名资源。
+The implementation cross-references the [pinned MiCode display source](https://github.com/MiCode/vendor_opensource_display-drivers/tree/aa06fd1757c28dce96fbe4e04d4530ec21b52aac) and the final stock Device Tree: REGDMA3 has MMIO at `0x0af80000/0x7000`, XIN 7, and GCv2 at offset `0x17c0` relative to DSPP. The boot Device Tree provides the named resource via [piano-regdma-resource.dtso](../../../linux/dts/piano-regdma-resource.dtso).
 
-驱动使用正常 DPU GPUVM 中的 64 KiB GEM 缓冲区与 IOVA，容纳 GC、IGC 和 Gamut v4.3 的组合状态，不把 CPU 物理地址当作 DMA 地址。LUT 命令与最终描述符共享映射；描述符按照命令长度对齐。CTL 只使用 catalog 中存在的实例，寄存器范围在访问前核对。
+The driver allocates a 64 KiB GEM buffer with an IOVA in the normal DPU GPUVM to hold the combined GC, IGC, and Gamut v4.3 state, rather than treating a CPU physical address as a DMA address. LUT commands and the final descriptor share the mapping, with the descriptor aligned to the command length. CTL only uses instances present in the catalog, and register ranges are bounds-checked before access.
 
-## 曲线提交
+## Curve Submission
 
-- GCv2 暴露均匀 65536 项 `GAMMA_LUT`，映射为覆盖完整输入范围的 1024 个主采样点和暗部的 256 个扩展点。扩展点的输入步长约为 `1/65536`，输出仍为十位。两组采样通过同一个 HW-index 端口依次写入，再交换表并开启高精度模式；旧版 GC 仍使用 1024 项接口。
-- IGCv5 使用 1025 项均匀采样的标准 Degamma 曲线，每色保留 16 位值，映射为原厂的 257 个普通点和 128 个暗部点，通过 LUTBUS 写入。高精度扩展已启用，Linux 7.3 进一步按原厂配置打开 IGC 内部抖动；它不改变 DSC 传输位深。
-- 两类曲线组成一批完整颜色状态，提交到当前分配的两路 DSPP。只有共同完成才更新相应 flush；关闭曲线使用旁路状态。
-- DMA 队列失败时保留既有的生命周期和退出规则，不能释放仍可能被硬件使用的内存。
+- GCv2 exposes a uniform 65536-entry `GAMMA_LUT`, mapped to 1024 main sample points covering the full input range plus 256 dark-region extension points. The extension points have an input step of approximately `1/65536`, while output remains 10-bit. Both sample sets are written sequentially through the same HW-index port before swapping tables and enabling high-precision mode; legacy GC continues to use the 1024-entry interface.
+- IGCv5 uses a standard 1025-entry uniformly sampled Degamma curve, keeping 16-bit values per channel, mapped to the stock 257 regular points and 128 dark-region points and written through LUTBUS. The high-precision extension is enabled, and Linux 7.3 further enables IGC internal dither to match the stock configuration; this does not change DSC transport bit depth.
+- Both curve types are combined into a single complete color-state batch and submitted to both currently allocated DSPPs. The corresponding flush bits are updated only after both complete; disabling a curve uses the bypass state.
+- On DMA queue failure, existing lifetime and teardown rules remain in effect so memory that may still be in use by hardware is never freed.
 
-IGCv5 实现位于[显示补丁](../../../patches/linux/7.3/0002-display.patch)，GCv2 暗部扩展位于 [`0052`](../../../patches/linux/7.3/0052-dpu-gcv2-dark-range.patch)。Linux 7.3.3 已在设备上完成暗部扩展的恒等、非线性及旁路恢复，双 DSPP mask 为 `0x60000`，每次均读到硬件完成 `status=0x8`。完整组合命令为 2532 个 word，最终描述符对齐到 10240 字节，仍在 16 KiB 缓冲区内；两组 LUT 同时旁路只需 8 个 word。物理暗阶和颜色准确度仍需独立检查。
+The IGCv5 implementation lives in the [display patch](../../../patches/linux/7.3/0002-display.patch), and the GCv2 dark-region extension lives in [`0052`](../../../patches/linux/7.3/0052-dpu-gcv2-dark-range.patch). On Linux 7.3.3 hardware, identity, non-linear, and bypass restoration for the dark-region extension have been verified: the dual-DSPP mask is `0x60000`, and hardware completion `status=0x8` is read back every time. A full combined command is 2532 words with the final descriptor aligned to 10240 bytes, still fitting inside the 16 KiB buffer; bypassing both LUTs takes only 8 words. Physical dark-tone gradation and color accuracy still require independent verification.
 
-## 桌面兼容
+## Desktop Compatibility
 
-Mutter 的空 Gamma 恢复曾触发空数组访问，修复位于 [0001-kms-empty-gamma-bypass.patch](../../../linux/desktops/gnome/patches/mutter/0001-kms-empty-gamma-bypass.patch)，Debian 和 Nyarch 构建都包含它。
+Mutter's empty-Gamma restoration previously triggered a null-array access; the fix lives in [0001-kms-empty-gamma-bypass.patch](../../../linux/desktops/gnome/patches/mutter/0001-kms-empty-gamma-bypass.patch) and is included in both Debian and Nyarch builds.
 
-缺少显示校准固件时内屏仍没有 EDID，GNOME 的颜色配置使用 colord 设备建立未校准的 sRGB 默认配置，保留用户自定义配置。匹配校准固件时提供合成 EDID 和标准 HDR 属性；色深和原厂处理的边界见[显示位深与 HDR](display-depth.md)。
+Without display calibration firmware, the internal panel still has no EDID; GNOME's color configuration uses the colord device to create an uncalibrated default sRGB profile while preserving custom user profiles. When matching calibration firmware is present, a synthesized EDID and standard HDR properties are provided; see [Display Bit Depth and HDR](display-depth.md) for bit-depth and stock processing boundaries.

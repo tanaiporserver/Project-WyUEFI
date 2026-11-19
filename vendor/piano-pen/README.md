@@ -1,7 +1,7 @@
-# 小米焦点触控笔 Pro 原厂固件
+# Xiaomi Focus Pen Pro Stock Firmware
 
-`p81c/0.0.32/` 保存从 Android 原厂 OTA 缓存取得的完整 ZIP 和解包后的 IMG。两份文件已经核对一致；来源、版本和校验值记录在 `manifest.json`，校验文件为 `SHA256SUMS`。
+`p81c/0.0.32/` stores the full ZIP retrieved from the stock Android OTA cache along with the extracted IMG. Both files have been verified to match; provenance, version, and checksums are recorded in `manifest.json`, with the checksum file in `SHA256SUMS`.
 
-这是笔本体的固件，与平板上的 Novatek NT36532 触控控制器固件不同。本项目不会在 Linux 启动时自动刷写它。固件原始字节由厂商提供，项目没有给它另行授予开源许可。
+This is the firmware for the stylus itself, distinct from the Novatek NT36532 touch controller firmware on the tablet. This project does not automatically flash it on Linux boot. The raw firmware bytes are provided by the vendor, and the project grants no separate open-source license for them.
 
-容器与程序分析见 [固件分析](../../docs/devel/hardware/p81c-firmware.md)，原厂升级和日常震动协议见 [P81C 协议](../../docs/devel/hardware/p81c-ota-protocol.md)。
+For container and binary analysis, see [Firmware Analysis](../../docs/devel/hardware/p81c-firmware.md); for the stock upgrade and daily haptic protocols, see [P81C Protocol](../../docs/devel/hardware/p81c-ota-protocol.md).

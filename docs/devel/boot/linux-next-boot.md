@@ -1,51 +1,51 @@
-# Linux 下次启动入口
+# Linux Next-Boot Entry
 
-`piano-next-boot` 使用现有合体 BOOT 请求页选择 Android、启动菜单、Linux 或 UEFI 设置。默认只保存下次路线；`--reboot` 才请求 systemd 正常重启。本工具不重包内核、不切槽、不写 misc/PMIC，也不增加后台服务。
+`piano-next-boot` uses the existing Combined BOOT request pages to select Android, the boot menu, Linux, or UEFI Setup. By default, it only saves the next boot route; `--reboot` is required to request a normal reboot via systemd. This tool does not repack the kernel, switch slots, write to `misc`/PMIC, or add background services.
 
-当前选择会持续保留，后续正常开机继续沿用，直到改选其他路线。一次性请求自动消费尚未实现。已部署的新选择器让原厂 Recovery 优先，持久 Linux 偏好与 Recovery 的组合检查仍待完成。
+The current selection persists across subsequent normal boots until another route is chosen. Automatic consumption of one-shot requests is not yet implemented. The newly deployed selector gives priority to stock Recovery; combined testing of a persistent Linux preference with Recovery is still pending.
 
-Android 与 Linux 可通过同一份合体 BOOT 相互切换。原生工具校验当前启动记录，写入后同步并读回，再执行正常重启。
+Android and Linux can switch back and forth through the same Combined BOOT. The native tool validates the current boot record, syncs and reads back after writing, and then performs a normal reboot.
 
-## 使用
+## Usage
 
 ```sh
 piano-next-boot status
-piano-next-boot android          # 保存下次进入原厂 Android
-piano-next-boot menu             # 保存下次进入启动选择菜单
-piano-next-boot android --reboot # 保存成功后正常重启
+piano-next-boot android          # Save stock Android as the next boot target
+piano-next-boot menu             # Save the boot selection menu as the next boot target
+piano-next-boot android --reboot # Reboot normally after saving succeeds
 ```
 
-普通用户通过 pkexec 调用。本地活动会话中的 sudo／wheel 管理员可使用这一项 polkit 授权；其他用户需要管理员认证。默认账户和密码见项目首页。root 可直接调用同一 CLI。
+Regular users invoke it via `pkexec`. Administrators in the `sudo`/`wheel` group within a local active session can use this polkit authorization; other users require administrator authentication. See the project homepage for the default account and password. `root` can invoke the same CLI directly.
 
-两个`.desktop`入口为“返回 Android”和“SunUEFI 启动选择菜单”。按钮先显示GTK确认对话框，提醒保存当前工作，再走相同CLI/helper。取消不保存请求；失败显示错误。桌面环境需要标准polkit认证代理及Python GI/GTK3，CLI仅需Python标准库、pkexec和原生工具。
+The two `.desktop` entries are "Return to Android" and "SunUEFI Boot Selection Menu". Clicking either first displays a GTK confirmation dialog reminding you to save your current work before invoking the same CLI/helper. Canceling does not save the request; failures display an error. The desktop environment requires a standard polkit authentication agent and Python GI/GTK3, while the CLI only requires the Python standard library, `pkexec`, and the native tool.
 
-## 直接识别活动槽位
+## Direct Active Slot Detection
 
-不需要安装配置，也不在 ESP 或 root 中保存 BOOT 槽位副本。工具通过标准分区名找到 `boot_a`、`boot_b` 所在磁盘，只读校验主备 GPT，根据高通的活动、优先级、成功和剩余尝试标志选出当前可启动槽位，再核对内核提供的分区范围。
+No installation configuration is required, and no copy of the BOOT slot is stored in ESP or root. The tool locates the disk containing `boot_a` and `boot_b` via standard partition names, performs read-only verification of the primary and backup GPTs, selects the currently bootable slot based on Qualcomm's active, priority, successful, and remaining-tries flags, and verifies the partition extents reported by the kernel.
 
-高通 GPT 属性使用 bit 48～49 表示优先级、bit 50 表示活动槽、bit 51～53 表示剩余尝试、bit 54 表示启动成功、bit 55 表示不可启动。字段定义来自高通公开的 [partition_parser.h](https://github.com/msm8916-mainline/lk2nd/blob/master/platform/msm_shared/include/partition_parser.h)，选择逻辑参考 [ab_partition_parser.c](https://github.com/msm8916-mainline/lk2nd/blob/master/platform/msm_shared/ab_partition_parser.c)。本机当前 GPT 与 Android 报告的活动 B 槽一致。
+Qualcomm GPT attributes use bits 48–49 for priority, bit 50 for the active slot, bits 51–53 for remaining tries, bit 54 for boot successful, and bit 55 for unbootable. Field definitions come from Qualcomm's public [partition_parser.h](https://github.com/msm8916-mainline/lk2nd/blob/master/platform/msm_shared/include/partition_parser.h), and the selection logic follows [ab_partition_parser.c](https://github.com/msm8916-mainline/lk2nd/blob/master/platform/msm_shared/ab_partition_parser.c). The device's current GPT matches the active B slot reported by Android.
 
-GPT 只决定原厂加载 A、B 哪个 BOOT；Android／UEFI／Linux 的选择仍写入该 BOOT 内 SunUEFI 自有的双请求页。工具不改 GPT、槽位优先级或原厂内核。主备 GPT 不一致、活动槽位不或当前 BOOT 没有 SunUEFI 时明确报错，不回退到旧槽位。
+GPT only determines whether stock firmware loads the A or B BOOT slot; the Android/UEFI/Linux selection is still written to SunUEFI's own dual request pages inside that BOOT partition. The tool does not modify GPT, slot priority, or the stock kernel. If the primary and backup GPTs do not match, the active slot cannot be determined, or the current BOOT does not contain SunUEFI, the tool fails explicitly and does not fall back to an older slot.
 
-每次操作都从 BOOT 读取当前 APP generation，写入前后复核活动槽位；原生写入工具再核对 generation、请求页内容、同步及读回。ESP 未挂载也不影响系统切换。
+Every operation reads the current APP generation from BOOT and re-verifies the active slot before and after writing; the native write tool further checks the generation, request page contents, sync, and readback. An unmounted ESP does not affect OS switching.
 
-APP generation为SPLITv1元数据+96处16字节，也是NEXTv1+40处的绑定值。原生`piano-boot-request status --device ...`新增`app_generation` JSON字段，便于安装读回核对。`set/consume --expect-generation HEX32`在最初定位后与打开可写FD、重新定位时两次核对该值；不匹配时不写请求页。旧参数仍兼容，但产品helper总是传pin，不重复实现SPLIT parser或CRC。
+The APP generation is a 16-byte value at offset `+96` in the `SPLITv1` metadata, and is also the bound value at offset `+40` in `NEXTv1`. The native `piano-boot-request status --device ...` command adds the `app_generation` JSON field for readback verification during installation. `set`/`consume --expect-generation HEX32` verifies this value twice: after initial discovery, and again when opening a writable FD and re-locating the metadata; if it does not match, the request page is not written. Legacy arguments remain compatible, but the production helper always passes the pin and does not reimplement the SPLIT parser or CRC.
 
-Android=0、menu=1、Linux=2、Setup=3；设置Android以更高sequence写target0，取消旧Linux请求。共享CRC、双请求页、fsync/readback和原块设备ro恢复仍由原生工具负责。
+Target IDs are Android=0, menu=1, Linux=2, and Setup=3; selecting Android writes target 0 with a higher sequence number, superseding any previous Linux request. Shared CRC, dual request pages, `fsync`/readback, and restoring the block device's original read-only state remain handled by the native tool.
 
-## 打包位置
+## Packaging Locations
 
-| 仓库源 | guest安装位置 |
+| Repository Source | Guest Install Path |
 | --- | --- |
-| `linux/userspace/piano-next-boot` | `/usr/bin/piano-next-boot`，0755 root |
-| `linux/userspace/piano-next-boot-helper` | `/usr/libexec/piano-next-boot-helper`，0755 root |
-| 原生 `piano-boot-request` ELF | `/usr/local/sbin/piano-boot-request`，0755 root |
-| `org.sunuefi.boot-request.policy` | `/usr/share/polkit-1/actions/org.sunuefi.boot-request.policy`，0644 root |
-| `49-piano-boot-request.rules` | `/usr/share/polkit-1/rules.d/49-piano-boot-request.rules`，0644 root |
-| 两份 `org.sunuefi.*.desktop` | `/usr/share/applications/`，0644 root |
+| `linux/userspace/piano-next-boot` | `/usr/bin/piano-next-boot`, `0755 root` |
+| `linux/userspace/piano-next-boot-helper` | `/usr/libexec/piano-next-boot-helper`, `0755 root` |
+| Native `piano-boot-request` ELF | `/usr/local/sbin/piano-boot-request`, `0755 root` |
+| `org.sunuefi.boot-request.policy` | `/usr/share/polkit-1/actions/org.sunuefi.boot-request.policy`, `0644 root` |
+| `49-piano-boot-request.rules` | `/usr/share/polkit-1/rules.d/49-piano-boot-request.rules`, `0644 root` |
+| Both `org.sunuefi.*.desktop` files | `/usr/share/applications/`, `0644 root` |
 
-polkit action只绑定固定helper executable；有限规则仅放行local+active+sudo/wheel管理员，其他active用户仍要求auth_admin，inactive/any拒绝。不保留长期授权。helper只接受四个固定target/status及可选--reboot，不接受外部device/config/binary/任意命令。原生工具检查选定分区内的SunUEFI布局、request CRC及generation。helper不是setuid，不需新daemon。卸载该rules文件即可回到全体active用户auth_admin；不会改变sudoers或账号密码。
+The polkit action is bound strictly to the fixed helper executable. The scoped rule only allows local, active `sudo`/`wheel` administrators; other active users still require `auth_admin`, and inactive/`any` sessions are denied. No persistent authorization is retained. The helper only accepts the four fixed targets or `status` plus the optional `--reboot` flag; it does not accept external devices, configs, binaries, or arbitrary commands. The native tool validates the SunUEFI layout, request CRC, and generation inside the selected partition. The helper is not setuid and requires no new daemon. Removing the rules file reverts all active users to `auth_admin` without altering `sudoers` or account passwords.
 
-release root builder 为 Debian、Nyarch 和 SteamOS 安装同一套工具、静态原生命令及 Python GI/GTK3、pkexec 依赖，直接使用，无需额外配置命令。
+The release root builder installs the same toolset, static native binary, and Python GI/GTK3 and `pkexec` dependencies for Debian, Nyarch, and SteamOS, ready to use without extra setup commands.
 
-源码阶段的必要检查覆盖 generation 不符时拒绝写入、共享 CRC、请求页范围及非法参数；Python、desktop 和 polkit 格式检查通过。部署、重启和 UI 检查范围见上方当前状态。
+Required source-level checks cover rejecting writes on generation mismatch, shared CRC, request page bounds, and invalid arguments; Python, `.desktop`, and polkit format checks pass. See the current status above for deployment, reboot, and UI verification coverage.

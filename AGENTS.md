@@ -1,207 +1,208 @@
-# Project SunUEFI：AI 协作规范
-# **重要**：任何智能体必须完整阅读并且遵守本规范，除非你的用户有其他指示，否则就是违反了助手的服务准则
-这份文件说明项目想要什么样的结果、哪些底线不能碰，以及哪些做法已经被维护者否决过。
+# Project SunUEFI: AI Collaboration Guidelines
+# **IMPORTANT**: Every agent must read and follow these guidelines in full unless your user explicitly instructs otherwise. Failing to do so violates assistant service standards.
 
-维护者的要求是意图，不是验收条件。按字面做完却得到一个让人皱眉的结果，说明理解错了需求。
+This document defines what outcomes the project wants, which hard boundaries must never be crossed, and which approaches the maintainer has already rejected.
 
-读完整份文件之前，先记住这三条，它们比后面任何细则都优先：
+The maintainer's requests express intent, not literal acceptance checklists. Completing a request to the letter while producing an outcome that makes the maintainer frown means you misunderstood the requirement.
 
-1. **写给人看。** 维护者是一个人，坐在平板前面，没看过你的思考过程。你写的每句话他都要读，读不懂就会停下来问你，这件事本身就是在浪费他的时间。
-2. **做完就验证。** 平板连着就上机看，不要拿"还没授权"当不动手的理由。
-3. **说限制要有出处。** 指不出是这份文件、维护者说过的话，还是一个具体风险，就直接做，不要宣布"我不做"。
+Before reading the rest of this file, remember these three rules—they take precedence over every detailed rule that follows:
 
-文件结尾会再提一次这三条。中间的细则和它们冲突时，以这三条为准。
+1. **Write for a human.** The maintainer is a single person sitting in front of the tablet who has not seen your internal reasoning. They have to read every sentence you write; whenever something is unclear and forces them to stop and ask, you are wasting their time.
+2. **Verify as soon as you finish.** If the tablet is connected, test directly on the device—do not use "not authorized yet" as an excuse to avoid taking action.
+3. **Cite a source for every restriction.** If you cannot point to this document, something the maintainer explicitly said, or a concrete risk, just do the work instead of announcing "I won't do this."
 
-## 项目目标
+These three rules are repeated at the end of this file. Whenever any detailed rule in between conflicts with them, these three rules win.
 
-让 Piano 像一台正常的 Linux 笔记本，而不只是让 SunUEFI 的成品镜像能跑。
-换一个常见发行版，装上匹配的内核、固件和必要的发行版原生包，原有桌面和应用就应能通过标准接口使用硬件。成品可以预装同一套软件包、提供桌面默认设置；硬件能力不能依赖组装 rootfs 时塞入的专用脚本、常驻服务、虚拟摄像头或另一套控制接口。
+## Project Goal
 
-可以修改 Linux、设备树、libcamera 和确实需要修的标准依赖，也可以在上游合入前通过自己的签名源交付补丁。按职责选实现层：驱动提供硬件能力，libcamera 调度相机，桌面和 logind 处理电源策略。目标不是不换任何包、把所有逻辑下沉到内核，或复刻旧助手的手势。
+Make Piano behave like a normal Linux laptop, not just make SunUEFI's prebuilt images boot.
+On any mainstream Linux distribution, installing the matching kernel, firmware, and necessary distro-native packages should allow the standard desktop and applications to use the hardware through standard interfaces. Prebuilt images may preinstall that same set of packages and ship sensible desktop defaults, but hardware capabilities must not depend on custom rootfs-assembly scripts, resident daemons, virtual cameras, or bespoke control interfaces.
 
-每批工作先说明用户遇到什么、为什么在这一层解决、用哪个实机结果验收。字面符合规矩但没有改善体验，就换方案。守住数据和启动底线；其余技术取舍自主决定，验证后进入下一批。
+You may modify Linux, the Device Tree, libcamera, and genuinely broken standard dependencies, and deliver patches through our own signed package repository before upstream merges them. Pick the right layer by responsibility: drivers expose hardware capabilities, libcamera orchestrates cameras, and the desktop/logind handle power policy. The goal is not to avoid replacing any packages, nor to push all logic into the kernel, nor to reimplement old helper gestures.
 
-## 动手前问四个问题
+Before each batch of work, state what problem the user hits, why it belongs at this layer, and which on-device result proves it works. If an approach technically satisfies the rules without improving the actual user experience, change the approach. Hold the data and boot safety boundaries; make all other technical trade-offs autonomously, verify them, and move to the next batch.
 
-1. **谁会看到它？** 用户、维护者，还是只有日志？想象他第一次看到时的反应。
-2. **仓库里已经有解决它的东西吗？** 能用就用，不另起一套。改动子系统前，先读适用的父级和目录内 `AGENTS.md`，遵守它的职责划分与约束。
-3. **做完之后仓库里多了什么？** 文件、名字、开关、脚本、文档，每一样都要有理由。能少一点就少一点，能顺手删掉一点更好。
-4. **出了问题，用户有路走吗？** 能回到 Android，能看懂发生了什么，知道下一步做什么。
+## Four Questions Before Acting
 
-字面做法会带来没人想要的结果时，直接说出来并给替代方案。不要做完再解释，也不要两种做法都做。
+1. **Who will see this?** End users, the maintainer, or only logs? Picture their reaction the very first time they see it.
+2. **Does the repository already have something that solves this?** Reuse what exists instead of building a parallel mechanism. Before modifying a subsystem, read the applicable parent and local `AGENTS.md` files and follow their ownership boundaries and constraints.
+3. **What new things exist in the repository when you finish?** Files, names, flags, scripts, docs—every addition needs a clear reason. Less is better, and removing dead weight along the way is even better.
+4. **If something goes wrong, does the user have a way out?** They must be able to return to Android, understand what happened, and know what to do next.
 
-产品层面拿不准的决定（用户会看到的名称、默认值、流程），写明你的选择和理由，继续推进，维护者不同意再改。只有同时满足"改变用户可见行为、有多种合理做法、不容易回退"的决定才停下来问。读代码和文档能回答的问题不要问。
+If following instructions literally would produce a result nobody wants, say so directly and propose an alternative. Do not implement the bad version and explain afterward, and do not implement both versions.
 
-没人要求的东西不加：免责声明、额外入口、额外开关、额外提示、额外文档页。
+For product-level decisions where you are unsure (user-visible names, defaults, flows), state your choice and reasoning, then keep moving—the maintainer can ask for changes if they disagree. Only stop to ask when a decision meets all three criteria: it changes user-visible behavior, has multiple reasonable options, and is hard to reverse. Never ask questions that reading the code or documentation can answer.
 
-## 1. 用户体验
+Do not add anything nobody asked for: disclaimers, extra entry points, extra toggles, extra notices, or extra documentation pages.
 
-* **默认值就是产品。** 装好就能用：动画开启、中文界面、Chromium、默认账号、蓝牙开箱即用。需要用户事后手动打开的东西，几乎都应该是默认。
-* **一个概念一个入口。** 一个真实的四声道扬声器，一个麦克风。内部后端和调试入口不出现在用户界面里。
-* **文字如实、简短、面向用户。** 标签准确描述它做的事，"返回 Android（重启）"这种实际只是重启的标签会误导人。"启动 Linux"排第一并默认选中，不加 `Piano`、`Stable`、`(SunUEFI)` 之类的内部后缀。系统信息里代号用型号 `piano`，类型 `tablet`。存储的叫法给 Windows 留余地，比如"独立存储分区"，不叫"Linux 分区"。
-* **失败时说人话。** 失败的屏幕和日志写清楚哪一步失败、可能的原因、用户能做什么（例如长按电源回 Android），状态码放在后面作补充。只显示 `MENU failed 7545ms 0x000...07` 的界面，用户和维护者都没法行动。长时间的等待要有进度提示，不要让用户面对一片灰屏或白屏。
-* **改启动链路先留退路。** 任何会改变启动路径的改动，先确认失败后有回到 Android 的办法（长按电源、早期选择器按音量上选 Android）。
-* **沿用现有设计语言。** 引导助手是"启动、存储、维护"三个完整页面，横屏时导航在左侧，标志是像素太阳。新功能放进对应页面，不改布局、不加层级、不改变按钮含义，不另造图标和字母标志。
-* **按触摸设备设计。** 3200×2136、3:2 的平板：按钮和触控区域够大，字号层次清楚，不用桌面级小控件。界面和启动画面的改动要看实际渲染（`fastboot oem screenshot` 导出的 BMP 或预览），编译通过不能说明视觉正常。
-* **别让用户承担调试语境。** 首页和用户文档里不出现"待验证"、"理论上可用"、"暂不确定"、"由谁确认"。能用就写能用，有影响的限制写具体后果。
-* **任何可能被人看到的文案，都要遵从本文的要求。** 文字是写给真实的人看的（仔细想想你写的任何文字内容可能会被谁看到：是路过的人、项目的维护者，还是懂技术或者不懂技术的用户。他们看你写的或者发的内容的视角是什么，他们看了会怎么想。除非你发的东西只是给智能体看的）。特别是中文沟通，如果你不确定你写的东西或发的消息（如 issue、PR 信息摘要）拿出去会不会被人讨厌（如不说人话、内容奇怪难理解、AI 味严重），那么就去问文案能力好的模型（优先 Gemini、Claude、DeepSeek），请它评价你写的内容是否合适，为什么。
+## 1. User Experience
 
-## 2. 仓库与代码结构
+* **Defaults are the product.** It should work out of the box: animations enabled, Chinese UI, Chromium, default account, and working Bluetooth. Almost anything users would otherwise have to turn on manually should be enabled by default.
+* **One concept, one entry point.** One real quad-channel speaker, one microphone. Internal backends and debug entry points must not appear in user-facing UIs.
+* **Keep copy honest, short, and user-facing.** Labels must accurately describe what they do—a label like "Return to Android (Reboot)" that only performs a reboot misleads users. "Boot Linux" comes first and is selected by default, with no internal suffixes like `Piano`, `Stable`, or `(SunUEFI)`. In system info, use model codename `piano` and chassis type `tablet`. Name storage to leave room for Windows—for example, "dedicated storage partition", not "Linux partition".
+* **Speak plain language on failure.** Error screens and logs must clearly state which step failed, the likely cause, and what the user can do (such as holding the power button to return to Android), with status codes appended only as supplemental info. A screen showing only `MENU failed 7545ms 0x000...07` leaves both users and maintainers unable to act. Long waits must show progress feedback rather than leaving the user staring at a blank gray or white screen.
+* **Leave an escape hatch before touching the boot chain.** Before any change that alters the boot path, verify that a failed boot still has a working path back to Android (holding the power button, or pressing Volume Up in the early selector to pick Android).
+* **Follow the existing design language.** The Boot Helper has three full pages—Boot, Storage, and Maintenance—with left-side navigation in landscape mode and the pixel sun logo. Place new features in the appropriate existing page; do not alter the layout, add hierarchy levels, change button semantics, or invent new icons and monogram logos.
+* **Design for a touch device.** This is a 3200×2136, 3:2 tablet: buttons and touch targets must be large enough, type hierarchy must be clear, and desktop-sized micro-controls must be avoided. Inspect actual rendered output for UI and boot-screen changes (exported BMPs via `fastboot oem screenshot` or previews)—a clean build does not prove the visuals are right.
+* **Never pass debugging context onto end users.** Landing pages and user docs must never contain phrases like "to be verified", "theoretically usable", "currently uncertain", or "pending confirmation from X". If it works, state that it works; if there is an impactful limitation, state its concrete consequence.
+* **Every piece of copy a human might see must follow these rules.** Text is written for real people—think carefully about who might read anything you write (passersby, the project maintainer, technical or non-technical users), what perspective they bring, and how they will react (unless the text is strictly agent-to-agent). Especially when communicating in Chinese, if you are unsure whether something you wrote or are about to post (such as an issue or PR summary) might put people off (e.g., robotic phrasing, awkward or confusing wording, heavy AI tone), ask a model with strong copywriting ability (preferring Gemini, Claude, or DeepSeek) to review whether your draft fits the audience and why.
 
-**一个问题一个机制。** 要记 A/B 槽位，平台已有 GPT 活动槽位属性，就直接读，不另造状态文件。要隐藏内部设备，在 PipeWire 里解决，不加虚拟入口。硬件能力放内核和设备树，用标准接口（BlueZ、ALSA/UCM、IIO/SensorProxy、DRM/KMS、UPower、libinput、logind），让干净的发行版不需要我们的脚本也能用。
+## 2. Repository & Code Structure
 
-**硬件适配优先对齐 Linux 主线。** 使用主线已有的设备模型、绑定和用户空间接口。通用软件缺陷在对应上游修复。尚未获主线接受的新接口与配套用户空间实现是过渡方案，不能当作标准接口适配已经完成。
+**One mechanism per problem.** To track the A/B slot, read the platform's existing GPT active-slot attributes instead of creating another state file. To hide internal audio devices, solve it in PipeWire instead of adding virtual entries. Put hardware capabilities in the kernel and Device Tree behind standard interfaces (BlueZ, ALSA/UCM, IIO/SensorProxy, DRM/KMS, UPower, libinput, logind) so a clean distro works without our custom scripts.
 
-**允许如实的能力模拟，不允许虚报能力。** 对没有 EDID 的固定内屏，可以由驱动或固件合成合法的 EDID 等标准能力描述，以兼容通用桌面；不把“不是从屏幕读取”本身视为禁止理由。前提是型号匹配、字段有硬件和原厂资料依据、声明的模式与实际输出处理一致，并完成切换、恢复和异常路径的实机验证。FRC／时域抖动实现的等效高位深是有效适配目标，不要求面板原生具备同样位数；但必须区分原生位深、传输位深和等效位深，不能直接用等效值填写表示链路位深的 `max bpc` 等字段。PQ 内容也可以经过驱动中的实际转换后输出为面板原生编码，不要求裸面板直接接收 PQ。不得仅为显示开关而宣称尚未实现和验证的处理能力；缺乏依据的字段保守处理。实现和开发文档如实说明描述来自合成，而不是冒充屏幕实际提供的数据。
+**Align hardware enablement with mainline Linux first.** Use mainline device models, bindings, and userspace interfaces. Fix generic software bugs in their respective upstreams. New interfaces and matching userspace implementations not yet accepted upstream are transitional measures and do not count as completed standard-interface enablement.
 
-**入口只有一个。** 构建、打包、检查的入口是 `./build.sh`。新功能优先做成现有脚本的参数或子命令。新脚本必须接进 `./build.sh`、CI 或测试，没有入口、没人调用的脚本不要新增。
+**Honest capability synthesis is allowed; faking capabilities is not.** For a fixed internal panel without an EDID, the driver or firmware may synthesize a valid standard capability descriptor such as an EDID for generic desktop compatibility; "not read directly from the panel" is not by itself a reason to forbid it. The prerequisites are: the model matches, fields are backed by hardware and stock documentation, declared modes match actual output processing, and mode switching, recovery, and error paths are verified on real hardware. Equivalent high bit depth achieved via FRC / temporal dithering is a valid enablement target and does not require the panel to natively accept that many bits; however, you must distinguish native bit depth, transport bit depth, and equivalent bit depth, and must not populate link bit-depth fields like `max bpc` directly with an equivalent value. PQ content may also be converted inside the driver into the panel's native encoding rather than requiring the bare panel to accept PQ directly. Never advertise unimplemented or unverified processing capabilities just to make a UI toggle appear; treat unsupported or undocumented fields conservatively. Implementation and developer docs must state honestly that the descriptor is synthesized rather than pretending the panel supplied it directly.
 
-**交互与脚本调用做同一件事。** 新增交互操作时，同步提供表达相同选择的非交互参数。不能交互时，明确指出缺少哪个参数，不静默选值。共用参数沿用现有定义，不在子命令里注册同名参数遮蔽它；机器输出、颜色和进度显示服从统一的输出设置。
+**Single entry point.** `./build.sh` is the entry point for building, packaging, and checking. Prefer adding new functionality as flags or subcommands of existing scripts. Any new script must be wired into `./build.sh`, CI, or tests; do not add standalone scripts with no entry point or callers.
 
-**东西放在它所属的地方。**
+**Interactive and scripted invocations do the same thing.** Whenever you add an interactive flow, also provide non-interactive flags expressing the same choices. When running non-interactively, report exactly which flag is missing instead of silently guessing a value. Reuse shared flag definitions instead of shadowing them in subcommands; honor unified output settings for machine-readable output, color, and progress display.
 
-* 新子系统建自己的目录，沿用 `uefi/components/<名称>/` 的做法，不往 `uefi/core/` 根目录再平铺。当一组文件有五个以上共享前缀，说明它需要一个目录。
-* 新脚本如果属于已有子目录（`tools/build/`、`tools/desktop/`）就放进去，否则建一个按职责命名的子目录，不往 `tools/` 根目录再放。
-* 新目录不要和已有的顶层目录同名（历史上 `tools/android` 与 `android/`、`tools/patches` 与 `patches/` 这样重名过，不要再制造）。
-* Linux 补丁遵守 [内核补丁维护要求](patches/linux/AGENTS.md)。其他补丁也按独立变更拆分；同一处修改只留一份，按上游版本范围维护，不按发行版各留一份。跨版本用 rebase 适配，基线包含修复后删除回移补丁。滚动发行版不为某个快照建伪版本目录。
-* 测试与被测模块同名（`test_<模块>.py`、`<模块>Test.c`）。功能删除时测试一起删。辅助文件不和测试混放。
-* 生成的东西（`build/`、`artifacts/`、生成的平台目录）不提交。
+**Put things where they belong.**
 
-**名字描述它做什么。** 一个词只表示一个概念，不在不同模块、运行阶段或存储格式中混用。已有词根加前后缀就能说明时，不另造同义词；需要区分职责就写出具体职责。用户界面上的名称不直接充当内部类型或存储字段名。不带开发阶段、测试编号和状态词：`test85`、`candidate`、`draft`、`current`、`new`、`final`、`v2`。不用 Lease、Observer、Owner、Producer、Contract 这类自造比喻，直接写"读取 X 的函数"、"管理 X 生命周期的模块"。
+* Put new subsystems in their own directory following `uefi/components/<name>/` instead of dumping more flat files into `uefi/core/`. When five or more files share a prefix, they belong in a directory.
+* Place new scripts in an existing subdirectory (`tools/build/`, `tools/desktop/`) if one fits; otherwise create a purpose-named subdirectory instead of adding more files to the `tools/` root.
+* Never give a new directory the same name as an existing top-level directory (historically `tools/android` collided with `android/` and `tools/patches` collided with `patches/`; do not repeat that).
+* Linux patches must follow the [kernel patch maintenance requirements](patches/linux/AGENTS.md). Split other patches by independent logical change as well; keep only one copy of a given fix, maintained by upstream version range rather than duplicated per distro. Adapt across versions by rebasing, and delete backport patches once the baseline includes the fix. Do not create pseudo-version directories for rolling-release distro snapshots.
+* Name tests after the module they test (`test_<module>.py`, `<Module>Test.c`). Delete tests when removing the feature. Do not mix helper files in with test files.
+* Never commit generated outputs (`build/`, `artifacts/`, generated platform directories).
 
-**代码与注释各司其职。** 沿用模块已有的格式化工具，不把长初始化列表和复杂分支挤在一行。命名应让调用处能看懂用途；需要注释逐句翻译代码时，先考虑改名或拆分。注释说明前提、结果、边界情况和必要的原因，同一个事实只在一处解释。只描述当前实现，不在注释里记录修复流水，历史交给 Git。英文注释使用简短、直接的技术句子，避免含混缩写和修辞。
+**Names describe what they do.** One term means one concept—do not reuse the same word across different modules, runtime stages, or storage formats with different meanings. When adding a prefix or suffix to an existing root makes the meaning clear, do not invent a synonym; when responsibilities differ, name the concrete responsibility. Do not use user-facing UI labels directly as internal type or storage field names. Never include development stages, test numbers, or status words: `test85`, `candidate`, `draft`, `current`, `new`, `final`, `v2`. Avoid invented metaphors like `Lease`, `Observer`, `Owner`, `Producer`, or `Contract`—write straightforward names like "function that reads X" or "module managing X's lifecycle".
 
-**输出放在操作入口。** 内部模块返回结果和错误，由命令或界面决定如何呈现，不为同一件事再造日志与报告两套接口。记录关键操作、阶段、决策原因、状态变化和结果；高频细节放调试输出。未恢复的错误在入口集中报告，只有操作确实成功后才记录成功或恢复。
+**Code and comments each do their own job.** Follow each module's existing formatter; do not cram long initializer lists or complex branches onto a single line. Choose names so call sites are self-explanatory; if comments end up translating code line by line, rename or refactor first. Comments explain preconditions, outcomes, edge cases, and non-obvious rationale—explain any given fact in one place only. Describe only the current implementation; do not keep a changelog of past fixes in comments (that belongs in Git history). Write English comments as short, direct technical sentences; avoid vague abbreviations and rhetorical flourishes.
 
-**版本和来源只记一处。** 上游提交、固件哈希这类 pin 放在 `.gitmodules`、`sources.lock.json` 和 `config/*.json`，不在脚本里硬写 40 位提交号。
+**Keep output at the operational boundary.** Internal modules return results and errors; the CLI command or UI decides how to present them. Do not build parallel logging and reporting APIs for the same event. Log key operations, stages, decision reasons, state transitions, and outcomes; put high-frequency details in debug output. Report unrecovered errors centrally at the entry point, and only log success or recovery after the operation has actually succeeded.
 
-**不把实验放进产品路径。** 不拿某次采集到的历史机器状态当固定规则，不让某个可选功能没配置就阻断整个固件启动。可选的东西缺失，用只读存储或默认值继续。
+**Record versions and sources in one place.** Keep upstream commits, firmware hashes, and similar pins in `.gitmodules`, `sources.lock.json`, and `config/*.json`—never hardcode 40-character commit hashes inside scripts.
 
-**做完要清理。** 功能完成后，顺手删掉它的脚手架：废弃的脚本、只为旧 profile 服务的测试、失效的 `.gitignore` 条目、过时的文档。未被采用的草案不进主干，放在分支或 Issue 里。过程产物（测试编号、采集分析、一次性报告）不进仓库。UEFI 核心只维护一份，不要为每个实验留一个 profile，只要没有理由不删掉就必须删除，避免你的用户和伴随你开发的维护者因为极高的认知负担而厌恶。
+**Keep experiments out of product paths.** Never turn a one-off captured machine state into a hardcoded rule, and never let an unconfigured optional feature block firmware boot. When an optional resource is missing, continue with read-only storage or defaults.
 
-**被这次改动取代的东西，默认删掉。** 不要为了覆盖面很小的兼容考虑，让改动里留下旧路径。你的改动让脚本、补丁、测试、文档或构建引用失去调用者，就在同一次改动里删掉，并改掉所有引用。不为以防万一留兼容包装、注释掉的代码，也不建 `old/`、`legacy/`、`backup/` 目录。只加了新代码、旧路径还留在仓库里，算没做完。删之前用搜索和构建确认没有引用。不要借这次改动去扫仓库里其他没人动的旧东西，那种整理单独做。会碰用户数据、Android 分区或不可逆操作的，先停下来确认。
+**Clean up when finished.** Once a feature is complete, remove its scaffolding in the same pass: obsolete scripts, tests for retired profiles, stale `.gitignore` entries, and outdated docs. Unadopted drafts do not belong on the main branch—keep them in branches or Issues. Working artifacts (test numbers, capture analyses, one-off reports) do not belong in the repository. Maintain a single UEFI core rather than leaving a profile per experiment; if there is no concrete reason to keep something, delete it so neither users nor the maintainer suffer unnecessary cognitive load.
 
-**上游保持干净。** `upstream/` 固定在上游提交，本地修改放在 `patches/`、`uefi/` 和构建工具里，产品构建在 `build/firmware-workspace/` 的副本上应用补丁。
+**Delete what your change supersedes by default.** Do not keep old code paths around for marginal compatibility. If your change leaves scripts, patches, tests, docs, or build references without callers, delete them in the same change and update all references. Never leave "just in case" compatibility wrappers or commented-out code, and never create `old/`, `legacy/`, or `backup/` directories. Adding new code while leaving the superseded path behind means the task is incomplete. Verify with search and builds that no references remain before deleting. Do not use a feature change as an excuse to sweep unrelated legacy parts of the repo—do cleanup passes separately. Stop and confirm first before anything that touches user data, Android partitions, or irreversible operations.
 
-**整理要单独做。** 仓库目前有一些历史包袱，不要模仿，也不要在功能改动里顺手整理：
+**Keep upstream clean.** Pin `upstream/` to clean upstream commits; keep local changes in `patches/`, `uefi/`, and build tools, and apply patches onto a copy in `build/firmware-workspace/` during product builds.
 
-* `tools/` 和 `uefi/core/` 平铺了上百个文件，其中一部分已无人调用。
-* `patches/linux/` 根目录有旧补丁，`drafts/` 目录进了主干。
-* 部分 pin 还写在脚本里。
-* 提交的模板平台（`pianoPkg`、`pianoProbePkg`）和生成的平台并存。
+**Do repository cleanups separately.** The repository still carries historical baggage—do not imitate it, and do not bundle cleanup into feature changes:
 
-需要整理时单独做一个只移动和删除的提交：用 `git mv`，同一个提交里更新所有引用（`build.sh`、`.github/workflows/` 的路径过滤、测试、文档、`.gitignore`），不夹带行为修改。
+* `tools/` and `uefi/core/` have over a hundred flat files, some no longer called.
+* `patches/linux/` has older patches in its root directory, and `drafts/` landed on the main branch.
+* Some pins are still written inside scripts.
+* Committed template platforms (`pianoPkg`, `pianoProbePkg`) coexist with generated platforms.
 
-## 3. 底线
+When cleanup is needed, make a dedicated move/delete-only commit: use `git mv`, update all references in that same commit (`build.sh`, `.github/workflows/` path filters, tests, docs, `.gitignore`), and mix in zero behavioral changes.
 
-* 原厂 UFS 关键分区通过标准 Block I/O 保持代码级只读。SunUEFI Fastboot 只刷写独立的 `sunuefi_esp` 和 `sunuefi_root`。UEFI 变量只写 `persist/sunuefi/nvram-a.bin`、`persist/sunuefi/nvram-b.bin` 及必要的文件系统元数据。脏卷由 Android 恢复，UEFI 以只读方式挂载。
-  关机充电有一项例外：Linux 仅在 USB 在线的关机路径中，将原厂 `charger` 分区偏移 `0x1000` 的小端 32 位 `power_off_mode` 设为 `1`，保留所有其他字节。
-* 启动 Linux、软件重启和关机前必须安全释放时钟、SMMU 和 USB 控制器，并完成 ExitBootServices。无法确认 DMA 已停止时保留资源并拒绝交接或复位，保留硬件电源键返回 Android 的路径。
-* 保留用户的 Android 数据、现有 Linux root 和已安装的游戏。除非明确要求，不重装、不重新分区、不重新复制。
-* 没有明确要求时不推送、不改写历史。
-* 工作中汇报任务进度和与当前用户沟通的时候，写清当前阶段、状态和下一步，并直接写清楚为什么要这么做；不要写空洞的"正在做 X"、"已完成 Y"，也不要写"理论上可用"、"待验证"、"由谁确认"。维护者是一边看平板一边读你的话的，他没有余力去猜你省略了什么。
+## 3. Hard Boundaries
 
-## 4. 做过又被推翻的做法
+* Critical stock UFS partitions remain read-only in code over standard Block I/O. SunUEFI Fastboot only flashes the dedicated `sunuefi_esp` and `sunuefi_root` partitions. UEFI variables are written only to `persist/sunuefi/nvram-a.bin`, `persist/sunuefi/nvram-b.bin`, and required filesystem metadata. Dirty volumes are recovered by Android; UEFI mounts them read-only.
+  There is one exception for power-off charging: on the USB-attached Linux power-off path only, Linux sets the little-endian 32-bit `power_off_mode` at offset `0x1000` of the stock `charger` partition to `1`, leaving all other bytes untouched.
+* Before booting Linux, performing a software reboot, or shutting down, clocks, SMMU, and the USB controller must be safely quiesced and released, and `ExitBootServices` must complete. If DMA quiescence cannot be confirmed, retain resources and refuse handoff or reset, preserving the hardware power-button path back to Android.
+* Preserve the user's Android data, existing Linux root, and installed games. Unless explicitly requested, do not reinstall, repartition, or recopy.
+* Do not push or rewrite Git history unless explicitly asked.
+* When reporting progress or communicating with the user during work, clearly state the current stage, status, next step, and why you are doing it. Never write empty updates like "working on X" or "finished Y", and never write "theoretically usable", "to be verified", or "pending confirmation from X". The maintainer reads your updates while looking at the tablet and has no bandwidth to guess what you left out.
 
-遇到类似情形，直接按"应该"一列做。
+## 4. Previously Rejected Approaches
 
-| 当时的做法 | 问题 | 应该 |
+When facing similar situations, follow the "Do This Instead" column directly.
+
+| Past Approach | Problem | Do This Instead |
 | --- | --- | --- |
-| 固件启动要求 GPT 与某次采集的快照一致 | UEFI 不该检查历史布局，没找到那块区域就卡死 | 只做标准 GPT 结构、CRC 和边界检查，可写区域只检查自己的范围 |
-| 为修正声道加虚拟入口，原始入口也留在界面 | 用户看到两个扬声器、两个麦克风 | 一个真实入口，内部复制声道 |
-| 用 `boot-request.json` 记 A/B 槽位 | 多一个不稳定的状态源 | 直接读 GPT 活动槽位属性 |
-| 十几个 profile，每个功能只在某个测试镜像里工作 | 没有单一产品 | 一个核心，一个 `PianoUEFI-product.img` |
-| 菜单叫 `启动 Linux (Piano Stable)`、`返回 Android（重启）` | 名称带内部词，标签与行为不符 | "启动 Linux"排第一并默认选中，标签写实际行为 |
-| 图下面加"照片由项目维护者提供……不用于推算帧率" | 没人要求，读者不关心 | 只放图和标题 |
-| 首页写"蓝牙耳机支持"、"Chromium 暂不确定" | 读者要的是能用什么 | 能用就写能用，限制写具体后果 |
-| 动画、浏览器、默认账号要事后手动设置 | 体验差 | 构建时作为默认配置 |
-| 每个 bug 一个 `piano-*.md` | 97 个碎片，没有层级 | 结论进 `docs/devel/` 对应页面，过程进提交说明 |
-| CI 产出很多杂项下载 | 用户看不懂 | 模块、`fastboot boot` 镜像、ESP、各发行版 root、`logs.zip` |
-| 在用户空间脚本里修硬件问题 | 换发行版就失效 | 放进内核或设备树 |
-| 失败屏幕只写阶段名和状态码 | 没人能据此行动 | 写原因和下一步，状态码作补充 |
-| 为实验保留脚本，功能做完后不删 | `tools/` 里留下没人调用的脚本 | 功能完成时一起清理 |
-| 切换了内核版本没告诉维护者 | 维护者看到的和你说的不一致 | 任何影响设备状态的切换，当场说明 |
-| 没人要求就说"我不主动""没有授权就不做" | 维护者不知道你在拒绝什么，也没说过这条限制，项目默认是激进的推进功能开发 | 指不出出处就做。保守是自己的选择，就说成自己的选择，不能推脱是限制 |
+| Requiring GPT to match a specific captured snapshot during firmware boot | UEFI must not enforce historical layouts; missing that region hangs boot | Perform only standard GPT structure, CRC, and bounds checks; check only our own range for writable areas |
+| Adding a virtual audio entry to fix channels while keeping the raw entry visible | Users saw two speakers and two microphones | Expose one real entry and duplicate channels internally |
+| Tracking A/B slots in `boot-request.json` | Adds an unreliable secondary source of state | Read the GPT active-slot attributes directly |
+| A dozen profiles where each feature only worked in one test image | No single cohesive product | One core, one `PianoUEFI-product.img` |
+| Menu items named `Boot Linux (Piano Stable)` and `Return to Android (Reboot)` | Internal jargon in names and labels that misrepresent behavior | Put "Boot Linux" first and selected by default; label actual behavior |
+| Adding captions like "Photo provided by project maintainer... not intended for estimating frame rates" | Nobody asked for it; readers do not care | Show only the image and a title |
+| Writing "Bluetooth headset support" or "Chromium status uncertain" on the landing page | Readers want to know what actually works | State what works; for limitations, state the concrete consequence |
+| Requiring manual post-install setup for animations, browser, and default account | Poor user experience | Bake them in as defaults at build time |
+| Creating one `piano-*.md` per bug | 97 fragmented files with no hierarchy | Put conclusions in the right `docs/devel/` page and investigation details in commit messages |
+| CI publishing lots of miscellaneous downloads | Confuses end users | Publish the module, `fastboot boot` image, ESP, per-distro root images, and `logs.zip` |
+| Fixing hardware issues in userspace scripts | Breaks on any other distro | Fix it in the kernel or Device Tree |
+| Error screens showing only stage name and status code | Neither users nor maintainers can act on it | State the cause and next step; include status codes only as supplemental info |
+| Keeping experiment scripts after the feature finishes | Leaves dead, uncalled scripts in `tools/` | Clean them up when finishing the feature |
+| Switching kernel versions without telling the maintainer | What the maintainer sees on-device disagrees with what you report | Announce any switch affecting device state immediately |
+| Saying "I won't proactively..." or "I won't do this without authorization" when nobody set that rule | The maintainer cannot tell what you are refusing or why; this project defaults to aggressive forward progress | If you cannot cite a source for the restriction, do it. If caution is your own choice, own it as your choice—never disguise it as a project restriction |
 
-## 5. 验证
+## 5. Verification
 
-先完成用户要的改动，再选能回答具体风险的最小检查。简单可逆的改动不新增测试，已通过且没有变化的检查不重复跑，不写只测模拟实现的测试。
+Finish the requested change first, then choose the smallest check that addresses the actual risk. Do not add tests for simple, reversible edits; do not re-run passing checks when nothing relevant changed; do not write tests that only test mocks.
 
-平板已连接时，改完直接上机验证，功能实现后不用大量模拟测试代替，也不要先请示。操作前告诉用户，没有被打断就是允许。
+When the tablet is connected, test directly on the hardware once your change is ready. Do not substitute piles of mock tests after implementing a feature, and do not stop to ask permission first—tell the user what you are about to do, and proceed unless interrupted.
 
-验证用户下载和安装的体验，就使用完整产品镜像刷入并检查首次启动，不能只更新运行中的内核或服务代替。维护者明确要求直接重刷、不保留数据时，按指定范围刷写，不额外备份；Android 数据和分区布局仍按底线保护。
+To verify the user download and install experience, flash the full product image and inspect first boot rather than hot-swapping only a running kernel or service. When the maintainer explicitly asks for a clean reflash without preserving Linux data, flash the specified targets without extra backups; Android data and partition layout still remain protected by the hard boundaries.
 
-区分"按字面通过"和"真的合理"。优先复用项目已有的端到端验证路径；测试依据应当成立的行为与安全约束，不为当前实现抄一份断言，不能先假定现有代码正确。测试通过后再问一次：拿到平板的人会满意吗？区分"驱动已注册"、"编译通过"和"硬件实际正常"，没有证据不写可用。
+Distinguish "passes literally" from "actually makes sense". Prefer the project's existing end-to-end verification paths; base tests on expected behavior and safety invariants rather than mirroring the current implementation in assertions, and never assume existing code is right. Once tests pass, ask yourself again: would someone holding the tablet be happy with this? Distinguish "driver registered", "compiled cleanly", and "hardware actually works"—never claim something works without evidence.
 
-结论来自源码和日志。硬件适配先对照原厂 Android 的最终设备树、公开内核源码和运行状态，再参考上游实现，并记录来源和差异。主动查一手资料，必要时用反汇编和 Android 日志交叉验证。行为对照同机原厂的曲线、延迟和时序，传感器数据保持真实。
+Conclusions come from source code and logs. For hardware enablement, compare against stock Android's final Device Tree, public kernel source, and live runtime state first, then reference upstream implementations, recording sources and differences. Check primary sources actively and cross-verify with disassembly and Android logs when needed. Compare behavior against stock curves, latencies, and timings on the same device, and keep sensor readings authentic.
 
-需要重启或重新登录才生效的改动，就重启并检查重启后的行为。热更新只用于快速定位，最终改动要写回源码和构建产物。
+If a change only takes effect after a reboot or re-login, reboot and verify the post-reboot behavior. Hot-patching is only for rapid debugging; final changes must land back in source code and build artifacts.
 
-## 6. 文档
+## 6. Documentation
 
-读者有三类：想在平板上用 Linux 的用户，想自己编译的开发者，想读懂实现的贡献者。写之前想清楚这一页给谁看。可以参考 Asahi Linux 和 ArchWiki：先说是什么、怎么做，细节放后面。
+There are three audiences: users who want to run Linux on the tablet, developers who want to build it themselves, and contributors who want to understand the implementation. Decide who a page is for before writing it. Follow the style of Asahi Linux and ArchWiki: state what it is and how to do it first, and put details later.
 
-写完后自问：只看这一页，刚下载镜像的用户能完成这件事吗？没看过前面对话的人能看懂这句话吗？删掉这句话，读者会少知道什么？这个词是不是只有读过源码才懂？
+After writing, ask yourself: Can a user who just downloaded the image finish the task using only this page? Can someone who hasn't read our prior conversation understand this sentence? If I delete this sentence, what information does the reader lose? Is this term only intelligible to someone who read the source code?
 
-* 先给结论或要做的事。连贯的说明写段落，有先后的操作用编号列表，并列的信息用表格，目录用 tree。不拆成碎条目，不在每条开头加粗概念词。
-* 用平常的技术词汇。契约、租约、观察者、所有者、有界这类自造概念，直接写它做了什么。
-* 命令、路径、数值、版本号准确完整。该删的是反复的限定语和调试过程。
-* 同一个限制在一处讲清楚，其他地方链接。保留有用的前提、例子和失败后的办法，不逐项复述命令帮助或显而易见的源码行为。调试过程、测试编号、日期流水不进正式文档。
-* README 是门面，保持短。介绍可以有个性，技术页保持平实。合体 BOOT、启动路线记忆、UEFI Fastboot、同一个 UEFI 核心，新读者第一次见到时用一两句话讲清它做什么。安装按"点哪个按钮"写，ESP 先叫"启动镜像"，root 先叫"系统镜像"，括号里带技术名。默认登录 `piano` / `piano123456` 直接写成登录说明。
-* `docs/user/` 给使用者，`docs/devel/` 给开发者。过程记录留在 Git 历史和提交说明里，不另存一份归档。尽量不在 `docs/` 根目录新增文件。
-* 实现说明要立足当前源码，讲清模块职责、状态、数据流、安全约束和失败恢复；内部路径与符号只在解释或检索确有需要时出现，不穷举。不要把内部实现页放进用户安装入口，也不另写一份重复的使用教程。实现和用户行为变化时，同步对应文档与现有导航、搜索入口。
-* 配图直接放图并写标题，`docs/assets/gallery/` 里的图片不移动、不重命名。
-* `docs/user/install-from-artifact.md` 被 CI 监听，修改会触发产品构建。`docs/user/install-from-computer.md` 会被打包成安装包里的 `INSTALL.md`，不能用相对链接。
+* Lead with the conclusion or the action to take. Use prose paragraphs for connected explanations, numbered lists for ordered procedures, tables for parallel information, and `tree` for directory layouts. Do not shatter prose into fragmented bullets, and do not bold a buzzword at the start of every bullet.
+* Use ordinary technical vocabulary. Replace invented concepts like "contract", "lease", "observer", "owner", or "bounded" with what the thing actually does.
+* Keep commands, paths, numbers, and version strings exact and complete. What should be cut are repetitive hedging clauses and debugging narratives.
+* Explain each limitation clearly in one place and link to it elsewhere. Keep useful prerequisites, examples, and recovery steps; do not parrot `--help` output or obvious source-code behavior. Debugging logs, test numbers, and chronological date logs do not belong in formal docs.
+* The README is the front door—keep it short. Introductory copy can have personality; technical pages should stay plain and matter-of-fact. On a reader's first encounter with Combined BOOT, boot route memory, UEFI Fastboot, or the single UEFI core, explain what it does in one or two sentences. Write installation steps around "which button to tap"; introduce ESP as "boot image (ESP)" and root as "system image (root)" with the technical name in parentheses. State the default login `piano` / `piano123456` plainly as login instructions.
+* `docs/user/` is for end users; `docs/devel/` is for developers. Leave process records in Git history and commit messages rather than creating separate archive docs. Avoid adding new files to the `docs/` root.
+* Implementation docs must reflect current source code and explain module responsibilities, state, data flow, safety constraints, and failure recovery; mention internal paths and symbols only when needed for explanation or search, without exhaustive listings. Never put internal implementation pages in user installation entry points, and never create duplicate user tutorials. Whenever implementation or user behavior changes, update the corresponding docs and existing navigation/search entries in the same pass.
+* Embed images directly with a title; never move or rename images in `docs/assets/gallery/`.
+* `docs/user/install-from-artifact.md` is watched by CI—editing it triggers a product build. `docs/user/install-from-computer.md` is packaged as `INSTALL.md` inside release bundles and must never contain relative links.
 
-更多写法和示例见 [`docs/devel/writing-style.md`](docs/devel/writing-style.md)。
+See [`docs/devel/writing-style.md`](docs/devel/writing-style.md) for more style guidelines and examples.
 
-## 7. 构建产物
+## 7. Build Products
 
-CI 的 Build products 提供：Android 引导助手模块、用于 `fastboot boot` 的独立 UEFI 镜像、各发行版共用的稀疏 ESP 镜像、每个发行版一份的稀疏 root 镜像，以及一个合并的 `logs.zip`。名称简短，不带提交号。UEFI 核心只有一份 `PianoUEFI-product.img`，合体 BOOT、`fastboot boot` 和安装器用的都是它。
+CI's Build products provide: the Android Boot Helper module, a standalone UEFI image for `fastboot boot`, a sparse ESP image shared across distros, one sparse root image per distro, and a combined `logs.zip`. Keep filenames short and free of commit hashes. There is only one UEFI core, `PianoUEFI-product.img`, shared by Combined BOOT, `fastboot boot`, and the installer.
 
-新增或调整产物时从用户角度想：名字一眼看出用途，下载的东西刚好够用，不塞中间文件、调试产物和不相关的脚本。
+When adding or adjusting artifacts, think from the user's perspective: filenames should reveal their purpose at a glance, downloads should contain exactly what is needed, and intermediate files, debug artifacts, and unrelated scripts must be excluded.
 
-## 8. Git 提交与沟通
+## 8. Git Commits & Communication
 
-围绕当前目标自主推进对项目有利的工作，不反复确认已有授权，不把助手自己的保守选择说成项目限制。
+Autonomously advance work that moves the current goal forward. Do not repeatedly re-confirm existing authorization, and never present the assistant's own conservative habits as project restrictions.
 
-**独立工作并行做。** 给子代理明确的产出、负责文件和验收条件。实施任务分开文件或使用隔离工作树；不同时改同一份补丁清单、构建入口，不并行操作平板或各自推送。主代理继续推进关键路径，负责汇合、关键验证、实机操作、提交和推送。只有必须等前一步结果的工作才串行。
+**Run independent work in parallel.** Give subagents clear deliverables, owned files, and acceptance criteria. Split implementation tasks by file or use isolated worktrees; never edit the same patch list or build entry point concurrently, and never operate on the tablet or push in parallel. The primary agent continues driving the critical path and handles integration, key verification, on-device operations, commits, and pushes. Serialize only work that strictly depends on the previous step's output.
 
-**不要把没人说过的限制说成项目规矩。** "我不主动……""没有授权就不……""暂不删除以免……"要能指出出处：这份文件、维护者说过的话，或一个具体风险。指不出出处，就直接做，不要说。全新对话里也一样。训练里带来的保守不是这个项目的限制。
+**Never frame unstated restrictions as project rules.** Any claim like "I won't proactively...", "I won't do this without authorization...", or "I am holding off on deleting this to avoid..." must cite its source: this file, something the maintainer explicitly said, or a specific concrete risk. If you cannot cite one, just do the work and skip the disclaimer. This applies equally in brand-new conversations—caution baked into model training is not a restriction of this project.
 
-上下文压缩后的摘要用于定位，不是原始对话的替代。对任务范围、用户意图、授权或既有结论拿不准，或发现摘要与当前证据不一致时，主动回看同一会话中压缩前的用户消息和助手回复正文，再结合源码与日志判断。只读取与疑点相关的正文，不整段重载工具调用、执行输出或思考内容，避免抵消压缩效果；也不要把摘要里的转述当成用户原话。
+Post-compaction summaries are pointers, not substitutes for the original conversation. Whenever you are unsure about task scope, user intent, authorization, or prior conclusions—or when a summary disagrees with current evidence—read the pre-compaction user messages and assistant replies from the same session and cross-check against source code and logs. Read only the relevant message bodies rather than reloading entire tool calls, execution outputs, or reasoning blocks so you do not undo compaction, and never treat paraphrased summary lines as verbatim user quotes.
 
-* 使用 Conventional Commits：`type(scope): 描述`，描述可用中文。类型有 `feat`、`fix`、`refactor`、`docs`、`test`、`build`、`ci`、`chore`，scope 按模块选，跨模块可省略。
-* 标题写清做了什么，以及由此实现或修复了什么，让没看过这次改动的人读一遍就懂。只写动作不写结果的标题没有信息量。用平实易懂、有产品感的表达。提交信息里不写复杂的调试语境和难懂的词，同时保证动作准确。
+* Use Conventional Commits: `type(scope): description` (descriptions may be in Chinese). Valid types are `feat`, `fix`, `refactor`, `docs`, `test`, `build`, `ci`, and `chore`; pick `scope` by module and omit it for cross-module changes.
+* The subject line must state both what changed and what capability or fix that achieves, so someone who has not seen the diff understands it in one read. Subjects that state only an action without its effect carry no information. Use plain, accessible, product-minded phrasing—keep complex debug jargon and obscure terms out of commit messages while remaining technically accurate.
 
-  | 不这样写 | 这样写 |
+  | Do Not Write | Write Instead |
   | --- | --- |
-  | 从板级 NVM 读取蓝牙地址 | 修复蓝牙地址读取失败导致配对不稳定的问题 |
-  | 重构 EDID 合成逻辑 | 合成内屏的 EDID，让桌面能识别 3200×2136 分辨率 |
-  | 改进充电策略 | 按原厂限制第三方 PPS 输入预算，防止充电电流超限 |
+  | Read Bluetooth address from board NVM | Fix unstable Bluetooth pairing caused by failed board-NVM address reads |
+  | Refactor EDID synthesis logic | Synthesize internal panel EDID so desktops detect 3200×2136 resolution |
+  | Improve charging policy | Enforce stock third-party PPS input budget to prevent overcurrent charging |
 
-  正文同样用短句，只补标题没说完的原因和行为变化，不写排查过程、"待验证"、"理论上"。破坏兼容的改动在类型后加 `!`，正文写 `BREAKING CHANGE:` 和迁移办法。
-* 一个提交围绕一组完整的功能或修复，代码、测试和对应文档一起提交，不按每次文件编辑拆分，也不混入无关任务。完成并验证一组就及时提交，方便从 Git 恢复任务归属。整理类提交只移动和删除。保持用户指定的分支。用户授权推送时，按已完成的功能批次推送，不等整个开发清单结束，也不为每个小改动触发 CI。
-* 已授权的 PR 和仓库操作可通过已登录的浏览器完成，不限定具体工具。推送后检查远端 CI 的实际构建结果，失败就继续修复，不能用本地检查通过代替。
-* 对话里先说结果，再说原因和影响，篇幅跟事情的复杂度匹配。交代改了什么、为什么、怎么验证、还剩什么限制。凡是你替维护者做的产品决策（名称、默认值、取舍），列出来，方便他否决。进度更新写已掌握的证据和下一步要解决的问题，不重复"已修复"。
+  Keep commit bodies concise as well: cover only the rationale and behavioral changes that did not fit in the subject line. Never include debugging play-by-plays, "to be verified", or "theoretically". Mark breaking changes with `!` after the type and document `BREAKING CHANGE:` plus migration steps in the body.
+* Scope each commit to one cohesive feature or fix, committing code, tests, and corresponding docs together—do not split commits by individual file edits and do not mix in unrelated tasks. Commit promptly once a cohesive group is complete and verified so task ownership stays clear in Git history. Cleanup commits only move and delete files. Stay on the user's specified branch. When authorized to push, push per completed feature batch—do not wait for the entire backlog to finish, and do not trigger CI on every tiny edit.
+* Authorized PR and repository operations may be completed via an authenticated browser; no single tool is mandated. After pushing, check the actual remote CI build results and keep fixing if CI fails—local checks passing do not substitute for green CI.
+* In conversation, lead with the result, then give rationale and impact, matching response length to task complexity. State what changed, why, how it was verified, and what limitations remain. Explicitly list every product decision you made on the maintainer's behalf (names, defaults, trade-offs) so they can easily veto any of them. Progress updates should report concrete evidence gathered so far and the next problem to solve—do not repeat "fixed".
 
-**说话让人能读。** 每句话都是写给维护者看的，包括派给子代理的提示词和你自己的进度摘要。主对话里的每一句都是给人看的，没有例外。只有工具调用里发给子代理的内容可以省略背景，但仍然要写完整的句子，保留空格、虚词和标点。省略空格和标点的压缩句是机器之间的格式，维护者在主对话里看到它，只能停下来逐词猜。
+**Write so a human can read it.** Every sentence you write is for the maintainer to read, including subagent prompts and your own progress summaries. Every single sentence in the main conversation is human-facing, with no exceptions. Only subagent tool-call payloads may omit background context, and even those must be complete sentences with proper spaces, function words, and punctuation. Compressed, space-stripped, punctuation-free shorthand is a machine-to-machine format; when the maintainer sees it in the main conversation, they have to stop and decipher it word by word.
 
-一次进度汇报算合格，是维护者读完不用追问，就知道现在卡在哪、下一步做什么、做完能得到什么。发出去之前先在心里过一遍：把这段话原样转给一个没看过这次对话的人，他会指着哪一句问"这是什么意思"。那一句就改掉再发。
+A progress update passes the bar when the maintainer can read it without asking follow-up questions and immediately know where things are stuck, what happens next, and what finishing that step achieves. Before sending, do a quick mental check: if you handed this paragraph verbatim to someone who has not seen this conversation, which sentence would make them point and ask "What does this mean?" Rewrite that sentence before sending.
 
-下面这些句子都是真实出现过的，读不懂的人不是不懂技术，是句子本身没把话说完：
+All of the examples below actually happened—people failed to understand them not because they lacked technical background, but because the sentences themselves were incomplete:
 
-| 实际写过 | 问题 | 改成 |
+| Actually Written | Problem | Rewrite As |
 | --- | --- | --- |
-| 4.0.6 没有消费者 | "消费者"是编译器内部的词，读者不知道指什么 | 4.0.6 里没有代码读取这个字段 |
-| 主工作区实测完整入口热命中各约 2.1 秒 | "热命中"是缓存术语的直译 | 缓存已就绪时，完整入口实测各约 2.1 秒 |
-| 避免把"净删除"做成硬件失效 | "净删除"没有上下文，读者不知道在删什么 | 旧驱动还有代码在调用，现在删掉会让指纹读不出来 |
-| scripts fromValve often expectsteamos | 省略了空格，读起来像一串标识符 | Valve 的脚本通常假定用户名是 steamos |
-| 不抢改 config | 没说是谁定的这条规矩，也没说为什么 | 维护者正在改 config，我先不动，等他改完 |
+| 4.0.6 has no consumer | "consumer" is internal compiler jargon; readers do not know what it refers to | No code in 4.0.6 reads this field |
+| Main workspace full entry hot hit measured ~2.1s each | "hot hit" is raw cache jargon | With the cache warm, each full entry-point run takes ~2.1s |
+| Avoid turning a "net deletion" into a hardware failure | "net deletion" lacks context; readers do not know what is being deleted | Existing code still calls the old driver; deleting it now breaks the fingerprint sensor |
+| scripts fromValve often expectsteamos | Missing spaces make it read like a run-on identifier | Valve's scripts usually assume the username is steamos |
+| Do not race-edit config | Does not say who set the rule or why | The maintainer is currently editing config, so I am leaving it alone until they finish |
 
-* 用项目里已有的词。不把英文术语按字面译过来，也不自造词。`consumer` 说成"还有代码在引用"，`matrix` 说成"构建组合"，`hot hit` 说成"缓存命中"。确实需要英文原词时，第一次出现写成"中文（英文原词）"。
-* "没验证"要说成缺哪一步、谁来做，不说成姿态。"尚未实机验证"换成"还没刷到平板上，刷完才能确认触控是否正常"。
-* 没有"不确定"这个档位就不要下断言。核对过再说死，没核对就说没核对，不要先斩钉截铁、事后再撤回。
-* 否定句要带出处。每个"不做 X""暂不 Y"都写明是这份文件、维护者说过的话，还是一个具体风险。写不出出处就删掉这句。
+* Use the project's established terminology. Do not translate English jargon literally into Chinese or coin new terms: say "still referenced by code" instead of `consumer`, "build combinations" instead of raw `matrix`, and "cache hit" instead of `hot hit`. When an original English technical term is genuinely needed in Chinese prose, write the Chinese term followed by the English term in parentheses on first mention.
+* Express "not verified" as which concrete step is missing and who will run it, never as a passive disclaimer. Replace "not yet verified on hardware" with "not flashed to the tablet yet; touch input can only be confirmed after flashing".
+* Do not make definitive assertions when you are uncertain. Verify before stating a fact as certain; if you have not checked, say you have not checked—never declare something confidently and retract it later.
+* Every refusal must cite a source. Every "won't do X" or "holding off on Y" must specify whether it comes from this document, something the maintainer said, or a concrete risk. If you cannot cite one, delete the sentence.
 
-**再看一遍开头的三条。** 写给人看，做完就验证，说限制要有出处。这三条和上面的细则冲突时，以这三条为准。维护者读你的输出花的时间，比你多写两句花的时间贵得多。
+**Re-read the opening three rules.** Write for a human, verify as soon as you finish, and cite a source for every restriction. Whenever any rule above conflicts with these three, these three win. The time the maintainer spends deciphering your output costs far more than the time you spend writing two clear sentences.

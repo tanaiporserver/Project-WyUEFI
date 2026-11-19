@@ -1,19 +1,19 @@
-# Mutter 适配
+# Mutter Adaptation
 
-Debian sid 沿发行版原始 `debian/rules`、`debian/control` 和 quilt 构建，与 Nyarch 共用空 Gamma LUT 和取消触摸 grab 两项修复。共享系列在 `patches/mutter/51.0/series.json`，覆盖 51.0 和 51.1。源码版本从目标 ARM64 APT 候选的 `Source` 字段选择，包版本在该版本后追加 `+sunuefi1`，不固定旧 Debian 13 的 ABI。
+Debian sid builds using the distribution's original `debian/rules`, `debian/control`, and quilt setup, sharing two fixes with Nyarch: empty Gamma LUT handling and cancelled touch grabs. The shared patch series is defined in `patches/mutter/51.0/series.json`, covering versions 51.0 and 51.1. The source version is selected from the `Source` field of the target ARM64 APT candidate, with `+sunuefi1` appended to the package version instead of pinning the legacy Debian 13 ABI.
 
-`0001-kms-empty-gamma-bypass.patch` 将零项 Gamma LUT 表示为已有的 NULL bypass，避免重采样时除以零和访问空数组，非空曲线不变。签名 sid 源码的 `meta-kms-update.c` 仍将零项 LUT 传入 `meta_gamma_lut_copy_to_size()`，所以这项补丁仍需保留。
+`0001-kms-empty-gamma-bypass.patch` represents a zero-entry Gamma LUT using the existing NULL bypass path, avoiding division by zero and empty array accesses during resampling while leaving non-empty curves unchanged. Signed sid sources in `meta-kms-update.c` still pass zero-entry LUTs into `meta_gamma_lut_copy_to_size()`, so this patch must remain in place.
 
-`0003-wayland-touch-ignore-cancelled-grab.patch` 在触摸序列取消、focus 已清除后拒绝交互移动和缩放请求，避免解引用空指针。sid 源码的 `touch_can_grab_surface()` 仍直接读取 `focus_surface->surface`。这两项均为 downstream 补丁，尚未声明上游接受；删除前按共享系列的条件核对发行源码和功能。
+`0003-wayland-touch-ignore-cancelled-grab.patch` rejects interactive move and resize requests after a touch sequence is cancelled and focus has been cleared, preventing a null pointer dereference. In sid sources, `touch_can_grab_surface()` still dereferences `focus_surface->surface` directly. Both are downstream patches with no claim of upstream acceptance; before dropping either one, verify the distribution source code and runtime behavior against the conditions in the shared series.
 
-无 EDID 输出不再使用本地补丁。发行版 Mutter 的 `meta-color-store.c` 已按真实 device ID 生成 sRGB fallback，`meta-color-device.c` 保留 colord 默认 profile；内核内屏也提供匹配面板的合成 EDID。通用 sRGB 不是面板实测校准，不能据此声明 HDR 或色彩精度。
+No local patch is used anymore for EDID-less outputs. Upstream distribution Mutter's `meta-color-store.c` already generates an sRGB fallback keyed by the real device ID, and `meta-color-device.c` preserves the default colord profile; the kernel internal display driver also supplies a panel-matched synthetic EDID. Generic sRGB is not a measured panel calibration and cannot be used to claim HDR support or color accuracy.
 
 ```sh
 sudo ./build.sh mutter --sysroot build/distros/release/rootfs --jobs 4
 ```
 
-输入是已完成的 sid ARM64 sysroot，保留签名 APT 二进制与源码索引。工具先克隆，再在独立 chroot 校验 InRelease、Sources、`.dsc` 与 archive 的 SHA256。缓存绑定当前源码、目标桌面 ABI 和补丁，不能复用旧 `libmutter-16` 包。
+The input is a completed sid ARM64 sysroot with signed APT binary and source indices intact. The build tool clones it first, then verifies the SHA256 hashes of `InRelease`, `Sources`, `.dsc`, and source archives inside an isolated chroot. The cache is bound to the current source version, target desktop ABI, and patch set, and cannot reuse legacy `libmutter-16` packages.
 
-已有独立 builder 可用 `--builder-root 路径 --skip-install-dependencies`，仍执行实际 `dpkg-checkbuilddeps -Pnocheck`。不要传设备或已封存的产品 rootfs。
+If an isolated builder already exists, pass `--builder-root <path> --skip-install-dependencies`; `dpkg-checkbuilddeps -Pnocheck` is still executed. Do not pass a live device rootfs or a finalized release rootfs.
 
-`build/mutter/runtime/` 提供五个标准运行包，包括 `libmutter-51-0` 和 `gir1.2-mutter-51`。输出同时保留 `.changes`、`.buildinfo`、`SOURCE.json` 与 `SHA256SUMS`。使用 `DEB_BUILD_OPTIONS=nocheck parallel=4` 不执行完整上游测试套件；设备验证仍需在正常安装、重启 GNOME 后检查标准 Night Light、空 LUT 往返和原状态恢复。
+`build/mutter/runtime/` provides five standard runtime packages, including `libmutter-51-0` and `gir1.2-mutter-51`. Outputs also preserve `.changes`, `.buildinfo`, `SOURCE.json`, and `SHA256SUMS`. Building with `DEB_BUILD_OPTIONS=nocheck parallel=4` skips the full upstream test suite; on-device verification must still install the packages normally, restart GNOME, and test standard Night Light, empty-LUT round-trips, and original state restoration.

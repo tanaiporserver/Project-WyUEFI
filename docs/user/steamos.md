@@ -1,44 +1,44 @@
 # SteamOS
 
-SteamOS 镜像在平板上提供 Steam 游戏模式和 KDE 桌面模式，默认进入游戏模式。游戏模式的显示、输入，以及游戏模式和 KDE 桌面之间的切换可用，Proton 与 FEX 支持良好。个别游戏自身的启动配置（如锁处理）与系统本身无关。
+The SteamOS image provides both Steam Gaming Mode and KDE Desktop Mode on the tablet, booting into Gaming Mode by default. Display and input in Gaming Mode, as well as switching between Gaming Mode and KDE Desktop, work properly, with solid Proton and FEX support. Game-specific launch configurations (such as lock handling) are specific to individual games and unrelated to the OS itself.
 
-## 实机画面
+## On-Device Screenshots
 
-| Steam 游戏模式 | 原神游戏内 |
+| Steam Gaming Mode | Genshin Impact In-Game |
 | --- | --- |
-| ![中文 Steam 游戏模式与游戏库](../assets/gallery/steamos-gaming-mode.webp) | ![原神角色进入游戏世界](../assets/gallery/steamos-genshin-world.webp) |
-| **原神官方启动器** | **魔法少女的魔女审判** |
-| ![原神官方启动器](../assets/gallery/steamos-genshin-launcher.webp) | ![魔法少女的魔女审判剧情画面](../assets/gallery/steamos-witch-trial.webp) |
+| ![Chinese Steam Gaming Mode and game library](../assets/gallery/steamos-gaming-mode.webp) | ![Genshin Impact character inside the game world](../assets/gallery/steamos-genshin-world.webp) |
+| **Official Genshin Impact Launcher** | **Magical Girl Witch Trials** |
+| ![Official Genshin Impact Launcher](../assets/gallery/steamos-genshin-launcher.webp) | ![Magical Girl Witch Trials story scene](../assets/gallery/steamos-witch-trial.webp) |
 
-## 安装
+## Installation
 
-在 [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml) 里下载 `SunUEFI-Module`、`SunUEFI-ESP` 和 `SunUEFI-Root-steamos`。启动镜像和其他发行版共用，安装步骤和 Debian 一样，见[安装指南](install-from-artifact.md)。
+Download `SunUEFI-Module`, `SunUEFI-ESP`, and `SunUEFI-Root-steamos` from [Build products](https://github.com/slwyts/Project-SunUEFI/actions/workflows/build-products.yml). The boot image (ESP) is shared with other distributions, and the installation steps are the same as for Debian; see the [Installation Guide](install-from-artifact.md).
 
-系统镜像是 16 GiB，独立 root 分区至少也要这么大。登录用户名 `piano`，密码 `piano123456`。第一次启动 Steam 需要联网检查客户端更新并登录。
+The system image (root) is 16 GiB, so the dedicated root partition must be at least that large. The login username is `piano` and the password is `piano123456`. Launching Steam for the first time requires an internet connection to check for client updates and sign in.
 
-## 日常使用
+## Daily Use
 
-* 输入法：默认带 IBus 拼音，按 `Ctrl+空格` 切换中英文。
-* 触控板：游戏模式默认开启自然滚动，Steam 里没有对应的设置页。KDE 桌面模式可以在系统设置的触控板页调整，两种模式各自保存输入偏好。
-* 显示：游戏模式分辨率是 3200×2136，菜单固定 120 Hz。KDE 桌面默认两倍缩放，可在显示设置中开启 HDR 和广色域。
-* 电源：游戏模式下短按电源键挂起。KDE 桌面默认 2 分钟熄屏，用电池 5 分钟、接电 10 分钟后挂起。
-* 自动亮度：Steam 里的自动亮度没有接通，需要手动调节背光。
-* 重装系统：SteamOS 没有 Valve 的出厂恢复功能，需要重装时在引导助手里重新安装系统镜像。
+* Input method: Ships with IBus Pinyin by default; press `Ctrl+Space` to switch between Chinese and English.
+* Touchpad: Natural scrolling is enabled by default in Gaming Mode, and Steam has no settings page to change it. In KDE Desktop Mode, you can adjust it on the Touchpad page in System Settings; the two modes save input preferences independently.
+* Display: Gaming Mode runs at 3200×2136 with menus locked at 120 Hz. KDE Desktop defaults to 2x scaling; HDR and wide color gamut can be enabled in Display Settings.
+* Power: In Gaming Mode, short-press the power button to suspend. KDE Desktop turns off the screen after 2 minutes by default, and suspends after 5 minutes on battery or 10 minutes on AC power.
+* Auto-brightness: Auto-brightness in Steam is not wired up; adjust backlight brightness manually.
+* Reinstalling the OS: SteamOS here does not include Valve's factory reset feature. To reinstall, flash the system image (root) again from the Boot Helper.
 
-## 系统更新
+## System Updates
 
-游戏模式的系统更新、KDE Discover 和 `sudo pacman -Syu` 使用同一套软件源，不走 Valve 的 A/B 镜像更新。`sunuefi-steamos` 优先提供按 Valve 依赖构建的覆盖包，`sunuefi` 提供共用内核和设备包；两套软件源都需要验签。Steam 客户端仍按自己的方式更新。
+Gaming Mode system updates, KDE Discover, and `sudo pacman -Syu` all use the same package repositories instead of Valve's A/B image updates. `sunuefi-steamos` takes priority and provides override packages built against Valve's dependencies, while `sunuefi` provides the shared kernel and device packages; both repositories require signature verification. The Steam client still updates via its own updater.
 
-用 `pacman-conf --repo-list` 可以查看这两个软件源。没有列出它们的早期镜像，只能从原有软件源获取更新，看不到项目的设备包。更新和选择旧内核的办法见[安装指南](install-from-artifact.md#后续更新)。
+Run `pacman-conf --repo-list` to check for these two repositories. Earlier images that do not list them can only pull updates from the original repositories and will not see the project's device packages. For updating and selecting an older kernel, see the [Installation Guide](install-from-artifact.md#updating-the-system).
 
-## 运行《原神》
+## Running Genshin Impact
 
-原神国服 7.1.0 可以通过官方启动器进入游戏世界。由于其引擎本身的锁机制，如果卡在协议页，可在启动项中加入该游戏自身的参数（与系统本身无关）：
+Genshin Impact (CN server) 7.1.0 can enter the game world through the official launcher. Due to a locking mechanism in the game engine itself, if it hangs on the user agreement screen, add the following game-specific launch option (unrelated to the OS itself):
 
 ```text
 STEAM_FEX_MULTIBLOCK=0 %command%
 ```
 
-镜像预装了 ARM64 版的 GE-Proton11-11 和 Steam Linux Runtime 4.0，默认兼容工具已经配置好。Proton 里自带 FEX、DXVK 和 vkd3d-proton，首次启动游戏时不需要再下载运行库。Steam 登录、游戏内容和后续更新仍然需要网络。技术原因详见[Proton/FEX 协作挂起](../devel/linux/steamos-proton-fex-suspend.md)。
+The image comes preinstalled with ARM64 builds of GE-Proton11-11 and Steam Linux Runtime 4.0, with the default compatibility tool already configured. Proton bundles FEX, DXVK, and vkd3d-proton, so no runtime downloads are needed on first launch. Steam login, game content, and subsequent updates still require network access. For technical details, see [Proton/FEX Cooperative Suspend](../devel/linux/steamos-proton-fex-suspend.md).
 
-构建方式、补丁和调试记录见[SteamOS ARM64（开发文档）](../devel/linux/steamos.md)。
+For build instructions, patches, and debugging notes, see [SteamOS ARM64 (Developer Docs)](../devel/linux/steamos.md).

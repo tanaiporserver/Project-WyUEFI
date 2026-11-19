@@ -1,462 +1,459 @@
-# 内核来源与配置
+# Kernel Source and Configuration
 
-Debian GNOME、Debian KDE、Nyarch GNOME 和 SteamOS 共用同一套设备内核。
-默认构建使用稳定版 Linux 7.3.3，版本名为 `7.3.3-piano-sunuefi-cachy-optimize`。
-桌面名称属于 root 镜像，内核名称不带 `gnome` 或构建目录的 Git 后缀。
+Debian GNOME, Debian KDE, Nyarch GNOME, and SteamOS share the same device kernel.
+The default build uses stable Linux 7.3.3, with the version string `7.3.3-piano-sunuefi-cachy-optimize`.
+The desktop name belongs to the root image; the kernel version string does not include `gnome` or the build directory's Git suffix.
 
-## 源码与硬件适配
+## Source Code and Hardware Adaptation
 
-Linux 基线为上游 `v7.3`，提交
-`c03c1a14507dfaf8b856c2608f9ac216021fc222`。Piano 的公开硬件适配来自
-`blu-sharky/linux-piano`，在新基线上继续保留本项目的显示、音频、输入、
-充电、睡眠和编解码修正。
+The Linux baseline is upstream `v7.3`, commit
+`c03c1a14507dfaf8b856c2608f9ac216021fc222`. Public hardware adaptation for Piano comes from
+`blu-sharky/linux-piano`, while retaining this project's display, audio, input,
+charging, sleep, and codec fixes on the new baseline.
 
-补丁按平台、显示、输入与无线、媒体、音频、Gunyah、BORE 分组，
-后续接口修正单独追加。原始来源、补丁摘要、应用顺序与每一步的源码树
-记录在 [`series.json`](../../../patches/linux/7.3/series.json)；
-旧版本补丁保留作来源参照，不会再叠加到新版本上。
+Patches are grouped by platform, display, input and wireless, media, audio, Gunyah, and BORE,
+with subsequent interface fixes appended separately. Original provenance, patch summaries, application order, and the source tree for each step
+are recorded in [`series.json`](../../../patches/linux/7.3/series.json);
+older kernel patches are kept for provenance reference and are no longer layered onto the new version.
 
-`./build.sh linux` 从固定上游提交准备源码，在 `build/kernel-worktrees/`
-中应用补丁，使用独立编译副本生成 `artifacts/kernels/release/`。
-`upstream/` 中的工作区不被改写。本地与 CI 使用同一入口和配置。
+`./build.sh linux` prepares the source from the pinned upstream commit, applies patches in `build/kernel-worktrees/`,
+and produces `artifacts/kernels/release/` from an isolated build copy.
+Worktrees under `upstream/` are never modified. Local builds and CI share the same entry point and configuration.
 
-7.3 改动了 DRM 原子提交、显存分配、内存反向映射等内部接口，因此升级
-包含的驱动移植。保留旧功能代码并不保证运行行为完全相同，升级后
-仍需检查实机显示、输入、无线、音频、相机和电源。更新时必须同时安装
-新内核的模块、`v4l2loopback` 相机模块和 initramfs，不能只替换 `Image`。
+Linux 7.3 changed internal interfaces for DRM atomic commits, video memory allocation, reverse memory mapping, and other subsystems, so the upgrade
+includes driver ports. Preserving legacy feature code does not guarantee identical runtime behavior; after upgrading,
+on-device display, input, wireless, audio, camera, and power must still be verified. When updating, the new kernel's
+modules, `v4l2loopback` camera module, and initramfs must all be installed together—do not replace only `Image`.
 
-启动参数只来自启动镜像，不编进内核。`config/release.json` 的
-`kernel.command_line` 是初装发布参数来源，默认写入 BLS 启动项，
-选择 UKI 时写入其 `.cmdline`。
-内核使用 `CONFIG_CMDLINE=""`，关闭 `CONFIG_CMDLINE_FORCE`，不保留内建后备。
-打包检查根分区、`rdinit=/pianoinit` 和参数长度，并读回校验启动文件；
-安装后的原生内核包使用发行版 initramfs 和标准 `root=` 参数。
+Boot arguments come solely from the boot image (ESP) and are not compiled into the kernel. `kernel.command_line` in `config/release.json`
+is the source of initial release parameters, written by default to BLS boot entries,
+or to the `.cmdline` section when UKI is selected.
+The kernel uses `CONFIG_CMDLINE=""` with `CONFIG_CMDLINE_FORCE` disabled and keeps no built-in fallback.
+Packaging verifies the root partition, `rdinit=/pianoinit`, and command-line length, then reads back the boot files for validation;
+native kernel packages installed later use the distribution's initramfs and standard `root=` parameters.
 
-当前 DTB 包含启用的 `simple-framebuffer`，内核通过标准 Linux EFI stub 启动。
-`console=tty0` 在 framebuffer 控制台注册后才有输出；
-`console=ttyGS0` 也需要 USB gadget 建立后才可用，不能作为最早期串口。
-屏幕停留在固件交接页不等于内核没有运行，定位需结合 pstore、initramfs
-日志、USB 状态与后续显示接管，而不是直接归因于固件死循环。
+The current DTB includes an enabled `simple-framebuffer`, and the kernel boots via the standard Linux EFI stub.
+`console=tty0` produces output only after the framebuffer console registers;
+`console=ttyGS0` also becomes available only after the USB gadget is brought up, so it cannot serve as an earliest-stage serial console.
+The screen remaining on the firmware handoff page does not mean the kernel is not running; diagnosis must combine pstore, initramfs
+logs, USB state, and subsequent display takeover rather than attributing it directly to a firmware hang.
 
-## 内屏低分辨率与硬件缩放
+## Internal Display Low Resolution and Hardware Scaling
 
-内屏低分辨率由 DPU 的 SSPP 缩放到 `3200×2136`，DSI、DSC 和面板
-继续使用相同刷新率的原生时序。支持的尺寸、刷新率和标准属性见
-[分辨率与刷新率](../hardware/display-depth.md#分辨率与刷新率)。
+Low resolutions on the internal display are scaled up to `3200×2136` by the DPU's SSPP, while DSI, DSC, and the panel
+continue using native timings at the same refresh rate. Supported sizes, refresh rates, and standard properties are listed in
+[Resolutions and Refresh Rates](../hardware/display-depth.md#resolutions-and-refresh-rates).
 
-KDE 中选择低分辨率后，将显示缩放设为 100%。桌面的逻辑尺寸与原生
-分辨率下的 200% 相同，但应用和合成器可以生成低分辨率缓冲区。
-仅将原生模式设为 200% 不会启用这条硬件缩放路径。
+After selecting a low resolution in KDE, set display scaling to 100%. The desktop's logical dimensions match
+200% scaling at native resolution, while applications and the compositor can render lower-resolution buffers.
+Setting the native mode to 200% scaling alone does not activate this hardware scaling path.
 
-DSI bridge 从连接器模式表选择同刷新率的原生 `adjusted_mode`；DPU plane
-在完成桌面坐标裁剪后，只转换每路硬件的目标矩形，不修改用户提交的位置和尺寸。
-缩放器申请和双 DSI 分割使用转换后的硬件尺寸。检查时应同时确认
-framebuffer 大小、plane 的源和目标矩形，以及 CRTC 的实际输出时序。
+The DSI bridge selects the native `adjusted_mode` at the same refresh rate from the connector mode list; after desktop-coordinate
+clipping, the DPU plane transforms only each hardware pipe's destination rectangle without modifying the user-submitted position or size.
+Scaler allocation and dual-DSI splitting use the transformed hardware dimensions. When inspecting this path, verify the
+framebuffer size, plane source and destination rectangles, and the CRTC's actual output timings together.
 
-Piano 的 QSEED 3.4 在线性 RGB、无旋转的两倍放大路径中使用水平
-preload 7，使每路输出从对应源像素开始。内部切分边界补取一个后续源像素，
-供最后半步的双线性插值使用；屏幕外边界不越过图层源区域取样。
-这避免默认 preload 在每路起始处重复像素，形成中央模糊竖带。
-Alpha 通道的纵向像素扩展也使用对应的纵向寄存器配置。
+Piano's QSEED 3.4 uses a horizontal preload of 7 on the linear RGB, unrotated 2× upscale path
+so that each pipe starts from the corresponding source pixel. At the internal split boundary, one extra subsequent source pixel is fetched
+for bilinear interpolation of the final half-step; outer screen edges do not sample past the layer's source region.
+This prevents the default preload from repeating pixels at the start of each pipe and creating a blurry vertical seam down the center.
+Vertical pixel extension for the alpha channel likewise uses the corresponding vertical register configuration.
 
-## CachyOS 与通用配置
+## CachyOS and General Configuration
 
-* 引入 CachyOS 为 Linux 7.3 整理的 **BORE 6.8.0**，保留其默认参数。
-  它在公平调度器基础上根据任务的运行特征调整调度，目标是改善负载下的
-  交互响应；具体帧率、功耗和温度收益需要测量，不能仅凭启用选项判断。
-* 启用 **MGLRU**，让内核按多代页面访问情况回收内存。既有 Zstd ZRAM
-  继续保留，这两个功能属于 Linux 本身。
-* 使用 **300 Hz** 定时配置、动态抢占并默认完整抢占，保留空闲时停用
-  周期时钟的 `NO_HZ_IDLE` 和 `schedutil` 动态调频。
-* 不另设 CPU 频率上限，不引入 x86 专用优化或已经不适用于当前 BORE 的
-  sysctl 参数。300 Hz 也不等于屏幕刷新率或输入采样率。
+* Incorporates **BORE 6.8.0** prepared by CachyOS for Linux 7.3, keeping its default parameters.
+  Built on the fair scheduler, it adjusts scheduling based on task runtime characteristics to improve interactive
+  responsiveness under load; actual frame rate, power consumption, and thermal gains must be measured rather than inferred from enabling the option.
+* Enables **MGLRU**, allowing the kernel to reclaim memory based on multi-generational page access tracking. Existing Zstd ZRAM
+  is retained; both features are part of mainline Linux.
+* Uses **300 Hz** timer frequency, dynamic preemption defaulting to full preemption, and retains `NO_HZ_IDLE` (stopping periodic ticks
+  while idle) and `schedutil` dynamic frequency scaling.
+* Does not impose extra CPU frequency caps, and does not introduce x86-specific optimizations or sysctl parameters
+  that no longer apply to current BORE. Note that 300 Hz is neither the display refresh rate nor the input polling rate.
 
-具体配置位于 [`piano-platform.config`](../../../linux/configs/piano-platform.config)，
-来源及许可见 [THIRD_PARTY.md](../../../THIRD_PARTY.md)。
+Specific options live in [`piano-platform.config`](../../../linux/configs/piano-platform.config),
+with provenance and licenses documented in [THIRD_PARTY.md](../../../THIRD_PARTY.md).
 
-内核与外部相机模块使用固定的 LLVM 23.1.5，下载地址和摘要见
-[`kernel-llvm.json`](../../../config/kernel-llvm.json)。编译启用 `-O3`、
-ThinLTO、`-march=armv8.7-a` 和 `-mtune=oryon-1`。后者是 LLVM 提供的
-Oryon 调度模型，不表示它完整描述了 SM8750 的第二代核心。通用内核代码仍使用
-`-mgeneral-regs-only`，保留指针认证及标准运行时指令选择；不启用硬件未提供的
-SVE／SME，也不通过编译选项调整频率或温控。
+Both the kernel and the out-of-tree camera module are built with a pinned LLVM 23.1.5; download URLs and checksums are in
+[`kernel-llvm.json`](../../../config/kernel-llvm.json). Compilation enables `-O3`,
+ThinLTO, `-march=armv8.7-a`, and `-mtune=oryon-1`. The latter is the Oryon scheduling model provided by LLVM
+and does not imply a complete description of SM8750's second-generation cores. General kernel code still uses
+`-mgeneral-regs-only`, retaining pointer authentication and standard runtime instruction selection; SVE/SME (not present in hardware)
+are not enabled, nor are compiler flags used to alter frequencies or thermal control.
 
-## 可移动存储的文件系统
+## Filesystems for Removable Storage
 
-原厂 `piano_defconfig` 只启用 `VFAT_FS`。FAT32 介质因此可以直接挂载，
-而消费级 U 盘更常见的 exFAT 和 NTFS 会在挂载阶段被拒绝，报
-`Filesystem type exfat not configured in kernel`。分区枚举本身是好的，
-`lsblk` 能看到设备，只有挂载失败。
+The stock `piano_defconfig` enables only `VFAT_FS`. FAT32 media can therefore be mounted directly,
+whereas exFAT and NTFS—far more common on consumer USB flash drives—are rejected at mount time with
+`Filesystem type exfat not configured in kernel`. Partition enumeration itself works and
+`lsblk` shows the device; only mounting fails.
 
 [`piano-filesystem.config`](../../../linux/configs/piano-filesystem.config)
-补齐 `EXFAT_FS`、`NTFS3_FS` 和两者挂载时都要读取的 `NLS_UTF8`。这些编进
-内核而不做成模块，理由与 `CONFIG_USB_HID` 相同：介质插入后应当直接可用，
-不应依赖之后手工加载模块。`NLS_UTF8` 是最容易漏的一项——缺它时文件系统
-检查能通过，挂载才失败，报的是 `Unable to load IO charset utf8`，看起来
-像另一个问题。
+adds `EXFAT_FS`, `NTFS3_FS`, and `NLS_UTF8`, which both filesystems require at mount time. These are built into
+the kernel rather than compiled as modules for the same reason as `CONFIG_USB_HID`: removable media should work immediately upon insertion
+without depending on manual module loading later. `NLS_UTF8` is the easiest item to overlook—without it, filesystem
+probing succeeds and mounting fails with `Unable to load IO charset utf8`, which looks like an unrelated error.
 
-新增配置只证明内核具备这些驱动，实际读写仍需插入介质确认。
+Adding these options only proves the kernel contains the drivers; actual read/write behavior still requires testing with physical media.
 
 ## Gunyah
 
-原厂启动链已由 Gunyah 占用 EL2。这里接入其资源管理器和虚拟机接口，
-不会替换原厂 Hypervisor，也不等于直接提供 KVM。
-驱动编进内核，以保留借出内存时取消内核直接映射的处理。
+The stock boot chain already has Gunyah occupying EL2. Integrating its resource manager and VM interfaces here
+does not replace the stock Hypervisor, nor does it directly provide KVM.
+The drivers are built into the kernel to preserve unmapping from the kernel direct map when lending memory.
 
-原厂设备树中的资源句柄只对测试启动有效。UEFI 在早期保留这些数据，
-在 raw 和 EFI 两条 Linux 启动交接路径中更新目标设备树。没有取得有效数据
-时只禁用 Gunyah 资源管理器，Linux 仍可正常启动。
-源码位于 `uefi/handoff/early-memory/PianoColdBootObjects.c` 和
-`uefi/core/PianoProductBootObjects.c`。
+Resource handles in the stock Device Tree are valid only for test boots. UEFI preserves these objects early in boot
+and updates the target Device Tree along both the raw and EFI Linux handoff paths. If valid data is not obtained,
+only the Gunyah resource manager is disabled and Linux still boots normally.
+Source files are located at `uefi/handoff/early-memory/PianoColdBootObjects.c` and
+`uefi/core/PianoProductBootObjects.c`.
 
-GNOME 的“关于”页面对高通主系统域省略通用的 `vm-other` 行，
-底层 systemd 检测与 Gunyah 接口保留。桌面补丁与打包状态见
-[系统信息适配](../../../linux/desktops/gnome/patches/control-center/README.md)。
-Gunyah 虚拟机运行仍需实机验证，不能以设备节点出现代替。
+GNOME's "About" page omits the generic `vm-other` line on Qualcomm's primary system domain,
+while keeping underlying systemd detection and Gunyah interfaces intact. Desktop patches and packaging status are in
+[System Information Adaptation](../../../linux/desktops/gnome/patches/control-center/README.md).
+Gunyah VM execution still requires on-device verification; the presence of device nodes alone is not sufficient proof.
 
+## Piano Boot Configuration
 
-## Piano 启动配置
+During packaging, `tools/package_release.py` converts the flattened stock DT into the final Device Tree used by mainline.
+Legacy SDE/CPAS/VIDC/SPF nodes are replaced by mainline display, CAMSS, Iris, and audio nodes; legacy ICC
+arguments and vendor flags misidentified as GPIOs are no longer passed to the kernel as standard bindings. ADSP firmware,
+memory, and power resources are preserved, removing only legacy ICC properties unused by the mainline PAS driver.
 
-打包时由 `tools/package_release.py` 将折叠后的原厂 DT 转成主线使用的最终设备树。
-旧 SDE／CPAS／VIDC／SPF 节点由主线显示、CAMSS、Iris 和音频节点接管；旧 ICC
-参数和被误识别为 GPIO 的厂商标志不再作为标准绑定传给内核。ADSP 的固件、
-内存和电源资源保留，只删除主线 PAS 驱动不使用的旧 ICC 属性。
+Legacy GPIO regulators, CCI, and debug UARTs for display and camera, as well as unconsumed legacy touch power rails
+and empty USB PHY nodes, are also excluded from probing. Display, camera, and Bluetooth use their respective mainline nodes
+and no longer wait on Android's `pinctrl@f000000`. Legacy display/camera nodes are disabled only when their mainline replacements
+exist and are enabled. Zero-address, zero-length Demura placeholders are disabled while valid memory
+reservations remain intact.
 
-显示和相机的旧 GPIO 稳压器、CCI、调试 UART，以及没有消费者的旧触控供电
-和 USB 空 PHY 节点也不参与探测。显示、相机和蓝牙使用各自的主线节点，
-不再等待 Android 的 `pinctrl@f000000`。主线替代节点必须存在且启用，才停用
-对应的旧显示／相机节点。Demura 的零地址、零长度占位项禁用，有效的内存
-预留保持不变。
+In the flattened tree, `bias-disable = <0>` is converted into a standard boolean flag, preserving zero-argument pinconf semantics.
+The legacy `cnss_pci0` placeholder node without a `compatible` string has its empty `reg` removed while preserving memory and IOMMU references;
+valid PCI addresses remain unchanged. Both formatting errors block schema decoding, so validator exit codes alone cannot be trusted
+to indicate a clean pass—binding errors in diagnostic output must also be inspected.
 
-折叠树中 `bias-disable = <0>` 转成标准空标志，保留 pinconf 的零参数语义。
-无兼容串的旧 `cnss_pci0` 占位节点去掉空 `reg`，保留内存和 IOMMU 引用；
-有效 PCI 地址不变。这两类格式错误会阻断 schema 解码，不能靠验证器退出码
-判断通过；还需检查诊断输出中的绑定错误。
+Stock `sdam@7000/sm1510_present@5d` declares an invalid bit range of offset 5 and length 5 within a single byte.
+Mainline has no consumer for this vendor flag, so the full raw byte is retained and the invalid bit slice is dropped
+without guessing its intended width. This allows the SDAM provider and OCP records in the same region to register normally.
 
-原厂 `sdam@7000/sm1510_present@5d` 在一字节内声明了偏移 5、长度 5 的
-无效位范围。主线没有该厂商标志的消费者，因此保留完整原始字节，去掉无效的
-位切片，不猜测其正确位宽。这样 SDAM 提供者及同区的 OCP 记录可以正常注册。
+Four optional PMICs that likewise fail to probe on this board under stock Android, along with two hardware-voted RSC nodes
+not belonging to the AP, are disabled in the final tree; the AP's `rsc@16500000` and peripheral supplies remain enabled.
+`piano-platform.config` excludes NXP SCMI extensions while keeping the standard protocols used by Qualcomm.
+The USB PHY connects to standard orientation and mode-switching interfaces via the USB-C connector topology.
 
-原厂在本板同样无法探测的四个可选 PMIC，以及不属于 AP 的两个硬件投票 RSC
-节点，在最终树中禁用；AP 的 `rsc@16500000` 和外设供电保持启用。
-`piano-platform.config` 排除 NXP 的 SCMI 扩展，保留 Qualcomm 使用的标准协议。
-USB PHY 通过的 USB-C 连接器拓扑接入标准方向和模式切换接口。
+This configuration has been verified against clean-boot kernel logs: the aforementioned reference, SPMI, SCMI, DRM bridge, and RSC
+errors disappear, while ADSP, audio, keyboard, Bluetooth, and USB debug networking continue working.
 
-这套配置已从正常启动的内核日志核对：上述引用、SPMI、SCMI、DRM 桥及 RSC
-报错消失，ADSP、音频、键盘、蓝牙和 USB 调试连接保持工作。
+SoC thermal zones use the complete `thermal-zones` definitions from the pinned kernel's `sm8750.dtsi`. During packaging,
+they are extracted as an include and merged into the root node by `piano-tsens.dtso`, preserving all 47 sensor mappings,
+temperature thresholds, and eight GPU cooling maps; GPU references point to the board mainline node `gpu_ml` with `#cooling-cells`
+added. Android's vendor `/soc/thermal-zones` policy is not used as mainline thermal zones.
+CPU throttling adds cooling maps from the nine stock zones to `cpu0`/`cpu6`:
+verified from stock Android sysfs on the same device as 95°C passive with 8°C hysteresis, corresponding to
+`policy0` (CPUs 0–5) and `policy6` (CPUs 6–7). The other seven per-core zones use high-temperature core-offlining protection
+in stock firmware and are not part of the 95°C throttling policy; the four `cpuss` zones have no cooling maps in stock.
+Linux preserves the SoC's native hot/critical thresholds without replicating vendor core-offlining policies.
+The existing `piano-skin` charging thermal zone is retained. Kernel thermal and hwmon
+interfaces expose readings directly with no userspace polling daemon required; SoC temperatures and battery JEITA temperatures are handled separately.
+After on-device boot and resume from deep suspend, all 47 SoC thermal readings are accessible, and all eight GPU thermal zones bind to the
+`devfreq-3d00000.gpu` cooling device.
 
-SoC 温区使用锁定内核 `sm8750.dtsi` 中的完整 `thermal-zones` 定义。打包时
-提取为 include，由 `piano-tsens.dtso` 合入根节点，保留 47 个传感器映射、
-温度阈值及八个 GPU 降温映射；GPU 引用连接到板级主线节点 `gpu_ml`，并补齐
-`#cooling-cells`。不将 Android 的 `/soc/thermal-zones` 厂商策略当作主线温区，
-CPU 降频补齐原厂九个温区到 `cpu0`／`cpu6` 的 cooling map：
-从同机 Android 的 sysfs 核对为 95°C passive、8°C 回差，分别对应
-policy0 的 CPU 0–5 和 policy6 的 CPU 6–7。其余七个单核温区在原厂使用
-高温停核保护，不属于 95°C 降频策略；四个 `cpuss` 温区原厂没有冷却映射。
-Linux 保留 SoC 原有的 hot／critical 阈值，没有复制厂商停核策略。
-已有 `piano-skin` 充电温区保留。内核 thermal 和 hwmon
-接口直接提供读数，不需要用户空间采集服务；SoC 温度与电池 JEITA 温度分别处理。
-实机启动和深度挂起恢复后，47 路 SoC 温度均可读取，八路 GPU 温区均绑定
-`devfreq-3d00000.gpu` 降温设备。
+### Gamepads
 
-### 游戏手柄
+[`piano-gamepad.config`](../../../linux/configs/piano-gamepad.config) enables mainline `xpad`, `hid-microsoft`, `hid-nintendo`, `hid-playstation`,
+and `hid-sony` for all four systems, along with joystick device interfaces, force feedback, and driver-supported LEDs.
+USB Xbox/XInput controllers use `xpad`; Bluetooth HID devices reach evdev through BlueZ, UHID/HIDP, and the
+corresponding HID driver rather than USB `xpad`. When a controller connects successfully but produces no input in Steam,
+inspect HID binding, input events, and Steam permissions separately—do not assume Bluetooth pairing means the driver is working.
+These options do not include out-of-tree `xpadneo`, nor do they guarantee that all third-party compatibility modes use the same protocol.
 
-[`piano-gamepad.config`](../../../linux/configs/piano-gamepad.config) 为四个
-系统启用主线 `xpad`、`hid-microsoft`、`hid-nintendo`、`hid-playstation`
-和 `hid-sony`，同时开启 joystick 设备接口、振动及驱动支持的指示灯功能。
-USB Xbox／XInput 设备使用 `xpad`；蓝牙 HID 通过 BlueZ、UHID／HIDP 和
-对应 HID 驱动进入 evdev，不使用 USB xpad。设备连接成功但 Steam 没有输入时，
-应分别检查 HID 绑定、输入事件和 Steam 权限，不能把蓝牙配对当成驱动正常。
-这些选项不包含树外 xpadneo，也不保证所有第三方兼容模式使用相同协议。
+Disk boot uniformly uses `linux/userspace/disk-bootstrap`, supporting `LABEL` for release images and
+`PARTUUID` for development images. ext4 replays its journal normally before switching to read-write; the rescue environment includes
+the GENI I²C, GPI, and Nanosic drivers along with MCU RAM firmware required by the official magnetic keyboard.
 
-磁盘启动统一使用 `linux/userspace/disk-bootstrap`，支持发布镜像的 LABEL 和
-开发镜像的 PARTUUID。ext4 先正常回放日志，再转为读写；救援环境包含磁吸键盘
-所需的 GENI I²C、GPI、Nanosic 驱动和 MCU RAM 固件。
-
-相机和视频初始化脚本在内存映射已经为 `DMA` 或 `DMA-FQ` 时直接沿用，
-可以正常重启服务。驱动绑定后重复写 IOMMU group 的类型会被内核拒绝，
-不能把这类服务重启失败误判为相机硬件故障，更不能解绑正在使用的映射。
+Camera and video initialization scripts reuse existing IOMMU mappings when the domain type is already `DMA` or `DMA-FQ`,
+allowing services to be restarted cleanly. Rewriting an IOMMU group's type after drivers are bound is rejected by the kernel;
+do not misdiagnose such service restart failures as camera hardware faults, and never unbind active mappings.
 
 ## USB Type-C
 
-[`piano-usb-typec.dtso`](../../../linux/dts/piano-usb-typec.dtso) 连接 PMIC GLINK、
-QMP PHY 和 DWC3 的标准端点，参照高通上游的
-[`sm8750-qrd.dts`](https://github.com/torvalds/linux/blob/master/arch/arm64/boot/dts/qcom/sm8750-qrd.dts)。
-同机 HyperOS 4 的配置和引脚状态确认，GPIO61 是插头方向输入；
-UCSI 读取该信号，通过 Type-C switch 控制 QMP，而不是在设备树中固定方向。
-原厂 DWC3 的速率上限为 SuperSpeed，也就是 5 Gbit/s。
+[`piano-usb-typec.dtso`](../../../linux/dts/piano-usb-typec.dtso) wires the standard endpoints of PMIC GLINK,
+QMP PHY, and DWC3 following Qualcomm's upstream
+[`sm8750-qrd.dts`](https://github.com/torvalds/linux/blob/master/arch/arm64/boot/dts/qcom/sm8750-qrd.dts).
+Configuration and pin states from HyperOS 4 on the same device confirm that GPIO61 is the plug-orientation input;
+UCSI reads this signal and controls QMP through the Type-C switch rather than hardcoding orientation in the Device Tree.
+The stock DWC3 speed limit is SuperSpeed (5 Gbit/s).
 
-DWC3 使用双角色模式并注册 USB role switch，默认仍为设备模式，
-供现有 USB 调试网络使用。固定为 `peripheral` 时，即使设备树声明了
-`usb-role-switch`，驱动也不会创建角色切换提供者，UCSI 无法取得该接口。
+DWC3 runs in dual-role mode and registers a USB role switch, while still defaulting to peripheral mode
+for existing USB debug networking. When fixed to `peripheral`, the driver does not create a role-switch provider even if the Device Tree declares
+`usb-role-switch`, leaving UCSI unable to acquire that interface.
 
-PMIC GLINK 下同时存在 USB 连接器和手写笔稳压器。内核补丁 0019、0020
-使 GLINK 的模式和 UCSI 驱动只枚举连接器；0021 使 UCSI 核心优先匹配明确的
-`reg` 端口编号，随后才使用旧固件的顺序回退。否则排在前面的稳压器会被当成
-端口，界面虽然能报告方向，却没有取得 PHY 的方向开关。
-0022 补齐已在开机前连接的 USB 伙伴所需的初始 USB 模式设置，
-使其与热插拔路径一致；模式设置先于方向和角色通知。
+Both the USB connector and the stylus regulator sit under PMIC GLINK. Kernel patches 0019 and 0020
+make the GLINK altmode and UCSI drivers enumerate connectors only; 0021 makes the UCSI core match explicit
+`reg` port numbers first before falling back to legacy firmware ordering. Otherwise, the earlier regulator node is mistaken for a
+port—the interface appears to report orientation, yet never acquires the PHY orientation switch.
+0022 adds the initial USB mode configuration required for USB partners already attached before boot,
+aligning it with the hotplug path; mode setup runs before orientation and role notifications.
 
-GLINK 在 ADSP 重启后会复用 UCSI 实例。0025 在注销端口并释放连接器数组后
-清空指针；否则下一次初始化若提前失败，再次注销就会访问已经释放的内存，
-使 USB-C 恢复流程触发内核错误。
+GLINK reuses the UCSI instance after an ADSP restart. 0025 clears the pointer after unregistering ports and freeing the connector array;
+otherwise, if the next initialization fails early, a second unregister accesses freed memory and
+causes a kernel error during USB-C recovery.
 
-充电固件在重新连接后可能仍把电源类型报告为 `Unknown`，导致 MCA 将输入
-限制在 500 mA。0026 同时核对同一 PMIC GLINK 下 UCSI 电源报告的 PD 受电状态、
-充电通路、原厂 `SNK_Ready` 状态和有效的固定 5 V PDO，再恢复普通 PD 分类。
-电压、电流和温度限制继续由原有充电策略处理；读取失败跳过该轮策略。
-类型恢复后的高压重试沿用单次连接的次数限制，UCSI 属性读取与电源注销通过
-电源子系统现有信号量同步，避免 ADSP 重启时访问已释放的连接器。
-普通 PD 沿用原厂 buck 策略的 `in_pd = 1600 mA`，并受电源 PDO 的电流上限约束。
-这是普通 PD 通路的限制，不能按充电器的额定功率判断实际输入。
-0027 在现有充电工作队列中完成小米 MiPPS 挑战应答，以标准电源属性
-`authentic` 报告结果，无需认证服务。固件漏报或保留旧充电器 ID 时，依据
-随机挑战的真实应答搜索并校验 ID；恢复搜索最多执行 65536 次，读到的有效
-32 位 ID 直接校验。无法匹配就继续普通 PD/PPS，不根据铭牌或缓存身份放宽电流。
+Charging firmware may still report the supply type as `Unknown` after reconnection, causing MCA to cap input current
+at 500 mA. 0026 cross-checks the PD sink state reported by the UCSI power supply under the same PMIC GLINK,
+the charging path, the stock `SNK_Ready` state, and a valid fixed 5 V PDO before restoring normal PD classification.
+Voltage, current, and temperature limits remain governed by existing charging policies; read failures skip that policy cycle.
+High-voltage retries after type recovery keep the per-connection retry limit, and UCSI property reads synchronize with supply unregistration via
+the power supply subsystem's existing semaphore to prevent accessing freed connectors during ADSP restarts.
+Normal PD retains the stock buck policy's `in_pd = 1600 mA`, further bounded by the supply's PDO current limit.
+This is a limit of the normal PD path; actual input cannot be judged from the charger's rated wattage.
+0027 performs the Xiaomi MiPPS challenge-response inside the existing charging workqueue and reports the result via the standard power-supply
+`authentic` property without requiring an authentication daemon. When firmware omits or retains a stale charger ID, the driver searches for and verifies
+the ID against the real response to a random challenge; recovery search runs at most 65,536 iterations, while a valid
+32-bit ID read directly is verified immediately. If no match is found, charging continues with ordinary PD/PPS without relaxing current limits based on nameplate ratings or cached identity.
 
-Piano 的原厂认证顺序是命令 7、命令 6，不发送会使固件后续 PD 请求失败的
-反向认证命令 8。认证不切换 USB 数据角色；ADSP 重启后失效，每次连接只尝试
-一次。UCSI 处理连接变化时同步通知 MCA，以连接代数记录拔插；即使轮询前已重新
-接通，也会清除旧认证和充电策略。普通 PD 电压复位不产生这个连接事件，因此保留
-同一电源认证后的短暂复位流程，不沿用直充电流回退所用的 10 秒间隔。
-认证与普通降压充电均沿用本轮采样时的 ADSP、连接代数，电源能力读取、
-PMIC 限值和 5／9 V 请求在取得传输锁后再次校验；拔插或 ADSP 重启后，
-丢弃旧采样产生的请求，不重新取得代数后继续发送。温度读取失败跳过该轮策略。
-固件类型沿用 4.0.6 枚举：PPS 为 11，已认证 PD 为 12。直充保存所选
-APDO 的最低、最高电压，请求始终落在该范围内；不能只校验全局上限。
-认证成功后重新读取开放的 PPS
-档位，仍由既有充电策略选择降压或 SC8541 直充通路，保留电池电压、温度和
-电流限制。
+Piano's stock authentication sequence is command 7 followed by command 6, omitting reverse-authentication command 8 which causes subsequent
+firmware PD requests to fail. Authentication does not switch USB data roles; it invalidates on ADSP restart and is attempted only once
+per connection. When UCSI processes a connection change, it notifies MCA synchronously and tracks unplug/replug cycles with a connection generation counter;
+even if reconnected before the next poll, stale authentication and charging policies are cleared. Ordinary PD voltage resets do not emit this connection event,
+so the brief post-authentication reset flow for the same supply is preserved without reusing the 10-second backoff interval meant for direct-charging current rollback.
+Both authentication and normal buck charging bind to the ADSP and connection generation sampled for that cycle, re-checking supply capability reads,
+PMIC limits, and 5/9 V requests after acquiring the transport lock; after unplug/replug or ADSP restart,
+requests generated from stale samples are discarded rather than re-fetching the generation and continuing. Temperature read failures skip that policy cycle.
+Firmware types follow the 4.0.6 enumeration: PPS is 11, and authenticated PD is 12. Direct charging stores the minimum and maximum voltage
+of the selected APDO and keeps all requests strictly within that window rather than checking only the global ceiling.
+After successful authentication, the unlocked PPS profiles are re-read,
+and the existing charging policy still selects between buck and SC8541 direct charging while preserving battery voltage, temperature, and
+current limits.
 
-认证请求绑定 GLINK 的服务代数，实际发送时在服务状态锁内校验，避免把旧会话的
-命令发给重启后的 ADSP。`VERIFY_PROCESS` 在置位前登记清理义务；请求或清理
-应答丢失时，由后续轮询重试。失败的认证同时清除 `PD_VERIFIED`，清理完成前不
-公开成功结果，也不继续高压和直充策略。解绑时先禁用并排空轮询，防止尚未注销的
-GLINK 回调再次排队。
+Authentication requests are bound to GLINK's service generation and verified under the service-state lock at transmission time so commands from old sessions
+are never sent to a restarted ADSP. `VERIFY_PROCESS` registers a cleanup obligation before being asserted; if a request or cleanup
+response is lost, subsequent polls retry it. Failed authentication also clears `PD_VERIFIED`, and neither a success result is exposed
+nor high-voltage/direct-charging policies proceed until cleanup finishes. On unbind, polling is disabled and drained first to prevent still-registered
+GLINK callbacks from requeuing work.
 
-0028 对照原厂 `qcom_subpmic_sync_cfg_work()`，把已有设备树节点
-`mca,qcom_subpmic` 的 OTG 配置通过 `0x201a` 同步给 ADSP。四个小端 32 位
-字段依次为 `otg_boost_src`、`gpio_chip_type`、`vdd_boost_en`、`otg_ovp_en`；
-Piano 的前两项为 0、1，后两项 GPIO 未配置，沿用原厂的 `-1`。
-驱动只接受这组接线，每次 ADSP 启动后重新同步，失败时保留普通充电并重试。
-漏掉初始化时，固件的 `mca_misc_enable_usb_otg()` 会报告 `gpio not init`，
-重试超时返回 `FFFF`，在拔掉供电角色的拓展坞时导致 `TCPC_0` 崩溃。
+0028 mirrors stock `qcom_subpmic_sync_cfg_work()` by syncing OTG configuration from the existing `mca,qcom_subpmic` Device Tree node
+to ADSP via `0x201a`. The four little-endian 32-bit fields are
+`otg_boost_src`, `gpio_chip_type`, `vdd_boost_en`, and `otg_ovp_en`;
+on Piano the first two are 0 and 1, while the latter two GPIOs are unconfigured and keep stock `-1`.
+The driver accepts only this wiring, re-syncs after every ADSP boot, and keeps ordinary charging while retrying on failure.
+When this initialization is omitted, firmware's `mca_misc_enable_usb_otg()` reports `gpio not init`,
+times out with `FFFF`, and crashes `TCPC_0` when unplugging a dock acting as power source.
 
-ADSP 崩溃恢复还会同步注销 ASoC 声卡；音频进程保留已移除声卡的句柄时，
-`snd_card_disconnect_sync()` 会等待句柄关闭，进而阻塞 PDR 与 ADSP 重启。
-此时充电属性返回 `-ENODEV`，需要与正常的功耗和温度限流区分。0028 处理
-上述 OTG 初始化触发源，没有改变声卡注销和 DMA 资源释放的等待条件。
+ADSP crash recovery also synchronously unregisters the ASoC sound card; if an audio process holds an open handle to the removed card,
+`snd_card_disconnect_sync()` waits for that handle to close, blocking PDR and ADSP restart.
+During this state, charging properties return `-ENODEV`, which must be distinguished from normal power or thermal throttling. 0028 addresses
+the OTG initialization trigger above and does not alter the wait conditions for sound-card unregistration or DMA resource release.
 
-未启用直充时，Linux 的电池充电电流从 38°C 以上每升高 1°C 下调 300 mA，普通 PD 在
-47°C 起降至 500 mA；降温后每 30 秒最多恢复一级，并留出 1°C 的回差。
-这项调节不降低 USB 输入电流上限。判断断连需要结合输入电压、电流和
-UCSI 连接状态，不能只看电池的 `Charging` / `Discharging`。使用中的现象和
-处理办法见[电源和睡眠](../../user/known-issues.md#电源和睡眠)。
+When direct charging is not active, Linux steps battery charging current down by 300 mA per 1°C above 38°C, dropping ordinary PD to
+500 mA from 47°C upward; as temperature falls, it recovers at most one step every 30 seconds with 1°C hysteresis.
+This adjustment does not lower the USB input current limit. Detecting disconnects requires checking input voltage, current, and
+UCSI connection state rather than relying solely on the battery's `Charging` / `Discharging` status. User-visible symptoms and
+workarounds are documented in [Power and Sleep](../../user/known-issues.md#power-and-sleep).
 
-ADSP 初始化加载标准 `pmic_glink_altmode` 和 `ucsi_glink`，MCA 只处理
-小米充电协议，其 `pan_ack` 关闭，避免两个驱动重复确认同一组通知。
-现有 USB 网络服务由 Type-C 端口的标准 udev 就绪状态启动：方向有效且数据角色
-为设备模式时启动，断开或切换为主机模式时停止。方向已经应用到 PHY 后才连接
-调试设备，未插线开机也不等待 USB。服务名称保持 `piano-usb.service`，
-没有新增常驻服务。
+ADSP initialization loads standard `pmic_glink_altmode` and `ucsi_glink`; MCA handles only
+Xiaomi's charging protocol with `pan_ack` disabled so the two drivers do not double-acknowledge the same notifications.
+The existing USB networking service is started via standard udev readiness on the Type-C port: started when orientation is valid and data role
+is device mode, and stopped on disconnect or host-role switch. The debug gadget connects only after orientation has been applied to the PHY,
+and booting unplugged does not wait for USB. The service name remains `piano-usb.service` with
+no additional resident daemon introduced.
 
-### 普通充电表
+### Normal Charging Table
 
-`cp_charge=1` 使用 Piano 国行 `lwn` 电池的普通充电表，电流为两颗电芯
-合计值。普通模式不超过 8 A，`cp_ibat_max`、皮温和用户限额可以进一步收紧。
-温度范围、电压阶段和 PMIC 浮充电压分别处理；PMIC 完成尾段恒压、终止和再充。
-满足下节条件时使用 FFC 表，两种模式共用保护和恢复路径。
+`cp_charge=1` uses the normal charging table for Piano's CN variant `lwn` battery, with currents stated as the sum across both cells.
+Normal mode does not exceed 8 A, and `cp_ibat_max`, skin temperature, and user limits can tighten it further.
+Temperature zones, voltage stages, and PMIC float voltages are handled separately; the PMIC handles final CV taper, termination, and recharge.
+When the conditions in the next section are met, the FFC table is used instead; both modes share protection and recovery paths.
 
-| 温度 | 电荷泵电池电流上限 | 普通电压阶段 | PMIC 浮充电压 |
+| Temperature | Charge-Pump Battery Current Cap | Normal Voltage Stages | PMIC Float Voltage |
 | --- | --- | --- | --- |
 | 8–<13°C | 4.32 A | 4.493 V | 4.500 V |
 | 13–<18°C | 7.10 A | 4.493 V | 4.500 V |
-| 18–<48°C | 8 A，转段后 5.94 A | 4.150 V → 4.473 V | 4.480 V |
+| 18–<48°C | 8 A, 5.94 A after stage transition | 4.150 V → 4.473 V | 4.480 V |
 | 48–<55°C | 4.32 A | 4.053 V | 4.060 V |
 
-4.150 V 处先恒压，电流降到 7.23 A 后才进入下一段；同一温区组合内的
-阶段只前进，挂起不会重置。最后一段电荷泵电压目标低于表值 9 mV，
-常温下为 4.464 V；电压至少 4.460 V 且净充电电流低于 3 A 持续 3.5 秒后，
-停止电荷泵并交给 PMIC 完成 4.480 V 尾充。PMIC 终止电流按本机原厂程序
-设置为 472 mA，即普通表 452 mA 加 20 mA 补偿；这与电荷泵交接时的
-3 A 阈值分别处理。没有引入原厂代理未提供的终止使能开关。
+Constant voltage is held at 4.150 V until current drops to 7.23 A before advancing to the next stage; within the same temperature-zone combination,
+stages only advance and are not reset by suspend. The final stage's charge-pump voltage target sits 9 mV below the table value,
+which is 4.464 V at room temperature; once voltage is at least 4.460 V and net charging current remains below 3 A for 3.5 seconds,
+the charge pump stops and hands off to the PMIC for the 4.480 V taper phase. Per the stock program on this device, PMIC termination current
+is set to 472 mA (the normal table's 452 mA plus 20 mA compensation); this is handled separately from the 3 A charge-pump
+handoff threshold. No termination-enable switch absent from the stock proxy is introduced.
 
-普通整包满充、停充和回充由内核管理。只有当前普通 FV 高于 4.400 V、
-电荷泵已停且输入在线时才判满：PMIC `charge_status=5`，或最高电芯电压
-至少达到 FV−8 mV、两芯合计净充电电流低于 259 mA，取得五次间隔至少
-一秒的有效样本。259 mA 来自原厂 FG 终止电流 226 mA 的 115%，不是
-PMIC 的 472 mA。低 FV 温区的暂时终止不会报告为普通满充。
+Normal full-pack completion, charge stop, and recharge are managed by the kernel. Full charge is declared only when the current normal FV exceeds 4.400 V,
+the charge pump is stopped, and input is online: either PMIC `charge_status=5`, or the highest cell voltage
+is at least FV−8 mV and combined net charging current is below 259 mA for five valid samples spaced at least
+one second apart. 259 mA is 115% of the stock FG termination current of 226 mA, not the
+PMIC's 472 mA. Temporary termination in a low-FV thermal zone is never reported as normal full charge.
 
-满充后关闭电池充电，继续维护 FV 和系统输入。按原厂各芯 FCC 百分比权重
-和整数计算顺序重建 0.01% 精度的 raw SOC，降至 97.00% 或以下才撤销
-满充停止；不使用桌面显示的整数电量。真实连接变化也清除该票，ADSP
-重启、温区变化、提高限额或退出手动停充均不会自行清除。原厂逐芯 CO
-隔离没有移植，这里按整包停止，不写电池数据闪存。
+After full charge, battery charging is disabled while maintaining FV and system input. Raw SOC at 0.01% resolution is reconstructed using
+the stock per-cell FCC percentage weights and integer arithmetic order; the full-charge stop vote is cleared only when raw SOC drops to 97.00% or below,
+without using the integer percentage shown on the desktop. A real connection change also clears this vote, whereas ADSP
+restarts, temperature-zone transitions, raising current limits, or leaving manual charge inhibition do not clear it automatically. Stock per-cell CO
+isolation is not ported; charging stops for the whole pack without writing to battery data flash.
 
-两颗电芯和固件电池包的温度读数都必须有效，使用最低、最高温度选择更严格
-的电流和电压。PMIC 另按普通 JEITA 表处理低于 8°C 的慢充，自身电流仍不
-超过 3 A；低于 -9°C 或达到 55°C 时停止充电。项目在收紧限制时立即生效，
-升回电压时保留温度余量：48°C 进入低电压区后，降至 46°C 以下才恢复；高温
-停充后降至 53°C 以下、低温停充后升至 -8°C 才恢复 PMIC。电荷泵低温退出后需
-高于 8°C 才重试。重新插线不会清除这些温度恢复条件，也不会修改传感器读数。
+Temperature readings from both cells and the firmware battery pack must all be valid, using the minimum and maximum temperatures to pick the stricter
+current and voltage limits. The PMIC separately handles slow charging below 8°C per the normal JEITA table while capping its own current at
+3 A; charging stops below -9°C or at/above 55°C. Tighter limits take effect immediately,
+while restoring higher voltages keeps thermal hysteresis: after entering the low-voltage zone at 48°C, recovery requires dropping below 46°C;
+after high-temperature stop, PMIC recovery requires dropping below 53°C; after low-temperature stop, recovery requires rising to -8°C.
+After a low-temperature charge-pump exit, retries require temperature above 8°C. Replugging the cable neither clears these thermal recovery conditions nor alters sensor readings.
 
-保留已在本机验证的 PMIC 2 A 分流以分担电荷泵发热，两条通路共享普通表的
-总电流预算。这是项目的热分担策略。已核对的原厂单泵逻辑在非 FFC 模式下，
-要求最终电池电流目标至少 9 A 且适配器类型为 PPS（11）才允许并联；否则
-通过输入限流投票暂停 buck。因此普通 8 A 策略达不到该门槛，不能把本项目
-的分流称为原厂普通表行为，也不直接照搬原厂的 buck 输入暂停。
+The on-device-verified 2 A PMIC current sharing is retained to share heat with the charge pump, with both paths sharing the normal table's
+total current budget. This is a project thermal-sharing policy. Verified stock single-pump logic in non-FFC mode
+requires a final battery current target of at least 9 A and adapter type PPS (11) to allow parallel operation; otherwise it
+suspends buck via an input current-limit vote. Because the normal 8 A policy never reaches that threshold, this project's
+current sharing must not be called stock normal-table behavior, nor is stock buck input suspension copied verbatim.
 
-原厂的 `single_cp_pmic` 4650 mV buck FV 覆盖只在电量计快充标志非零、
-单泵路径已启用且温区仍允许快充时生效。非 FFC 路径取消该覆盖；停止时先
-关闭电荷泵，再撤销覆盖并重新执行当前 FV 选举。该覆盖只用于 FFC 的低电压
-分流阶段，不用于普通模式或高温停充。
+The stock `single_cp_pmic` 4650 mV buck FV override applies only when the fuel-gauge fast-charge flag is non-zero,
+the single-pump path is active, and the temperature zone still permits fast charging. Non-FFC paths drop this override; on stop, the
+charge pump is shut down first before revoking the override and re-running the current FV election. This override is used solely for the low-voltage
+sharing phase of FFC, never for normal mode or high-temperature charge stop.
 
-普通模式使用 4.060、4.480 和 4.500 V，并按已认证电池的老化状态减压；
-终止电流为原厂普通值 472 mA。FFC 的补偿电压和终止电流单独检查，所有写入
-要求固件确认，并绑定当前 ADSP 和连接代数。
-固件的 FCC、ITERM 读取是成功但不填数据的空操作，不能用返回零确认设置；
-型号 `0x56` 的 FV getter 还使用了 setter 两倍的步进，不能把原始返回值
-当作实际电芯浮充电压。PMIC 启停通过原厂 `0x2003` 单字节布尔接口控制，
-其 getter 实际读取充电使能位。读数失败时先确认电荷泵停止，再关闭 PMIC
-充电；不能用 500 mA 代替停充。进入热区且电池已高于
-新的浮充电压时，同样先关闭电荷泵。SC8541 使用本机原厂的 4.800 V 电池
-过压和 4.600 V 报警阈值，并保留写入读回、硬件看门狗和软件超时；报警只
-触发中断，不能代替软件恒压调节。2:1 总线上限按原厂 `div_max_curr`
-恢复为 6 A（12 A 电池侧），总线 OCP 使用原厂 7 A。第三方 PPS 按国行
-`third_pps_*` 将适配器请求限制在 11 V、4.1 A；它是适配器总预算，
-电荷泵还需减去 PMIC 输入份额与 200 mA 余量。电池目标在已有温区和
-循环限额上再减 200 mA，最高 8 A。失去原装适配器认证后，先停泵再按
-第三方限值重建，不能沿用原有高电流请求。SC8541 总线过压阈值为原厂
-13 V，报警阈值保留 10.5 V，软件电压窗口继续限制实际请求。
+Normal mode uses 4.060, 4.480, and 4.500 V, derated by the authenticated battery's aging state;
+termination current is the stock normal value of 472 mA. FFC's compensated voltages and termination currents are checked separately, and every write
+requires firmware acknowledgment bound to the current ADSP and connection generation.
+Firmware FCC and ITERM reads are no-ops that return success without populating data, so a zero return cannot confirm a setting;
+model `0x56`'s FV getter also uses twice the setter's step size, so its raw return value must not be treated
+as the actual cell float voltage. PMIC enable/disable goes through the stock `0x2003` single-byte boolean interface,
+whose getter actually reads the charge-enable bit. On read failures, confirm charge-pump stop first and then disable PMIC
+charging—never substitute 500 mA for stopping charging. When entering a warm zone with the battery already above the
+new float voltage, shut down the charge pump first as well. SC8541 uses this device's stock 4.800 V battery
+overvoltage and 4.600 V alarm thresholds, retaining write-readback, hardware watchdog, and software timeout; alarms only
+trigger interrupts and cannot replace software CV regulation. The 2:1 bus ceiling is restored to the stock `div_max_curr`
+of 6 A (12 A battery-side), with bus OCP at stock 7 A. Third-party PPS follows the CN variant's
+`third_pps_*` to cap adapter requests at 11 V and 4.1 A; this is the total adapter budget, from which the
+charge pump also subtracts the PMIC input share and a 200 mA margin. The battery target subtracts an additional 200 mA from existing thermal-zone and
+cycle limits, capped at 8 A. If stock adapter authentication is lost, stop the pump first and rebuild under
+third-party limits rather than carrying over previous high-current requests. SC8541 bus overvoltage is set to stock
+13 V, the alarm threshold stays at 10.5 V, and the software voltage window continues bounding actual requests.
 
-原厂 `support_mode=3` 允许 1:1 和 2:1。初始能力选择比较各 APDO 的
-`min(div_max_curr, 适配器电流 × 倍率)`，取电池侧能力最高的模式；能力相同
-时保留 1:1。4.0.6 只向已认证 PD（类型 12）开放 1:1，要求 APDO 最低
-电压不高于 3.6 V、最高不低于 4.5 V；请求另受 5.5 V 上限约束。
-1:1 的模式比较上限为 5 A，单颗电荷泵路径使用 4.5 A 限额，启动门限为
-800 mA。总线电流换算、PMIC 份额、开泵电压、软件电压窗口和 CV 调压
-按实际倍率计算，仍保留两芯、来源、温区与用户预算约束。1:1 的五字段
-步长表在电流差达到 2 A 时使用 40 mV，其余为 20 mV。
+Stock `support_mode=3` permits both 1:1 and 2:1. Initial capability selection compares
+`min(div_max_curr, adapter_current × ratio)` across APDOs and chooses the mode with the highest battery-side capability, keeping 1:1 on a tie.
+4.0.6 exposes 1:1 only to authenticated PD (type 12), requiring an APDO minimum voltage
+at most 3.6 V and maximum at least 4.5 V; requests are additionally capped at 5.5 V.
+Mode comparison caps 1:1 at 5 A, the single charge-pump path uses a 4.5 A limit, and the start threshold is
+800 mA. Bus current conversion, PMIC share, pump-enable voltage, software voltage window, and CV regulation
+all calculate using the active ratio while preserving dual-cell, source, temperature-zone, and user budgets. The five-field 1:1
+step table uses 40 mV when the current delta reaches 2 A, and 20 mV otherwise.
 
-SC8541 通过标准 `charge_type` 的 `Standard`／`Bypass` 选择 2:1／1:1，
-只在已停泵且延迟停止检查完成后允许写入，并读回模式位。MCA 配置模式
-与过流保护成功后才请求适配器电压；任一步失败保持停泵。Piano 没有启用
-`support-cp-mode-switch`，因此不会在充电中按电流动态切换倍率。由 9 V
-buck 进入 1:1 时，先等待输入降到目标窗口，再启用电荷泵。
+SC8541 selects 2:1/1:1 via standard `charge_type` values `Standard`/`Bypass`,
+allowing writes only after the pump is stopped and the delayed stop check completes, followed by reading back the mode bit. MCA requests adapter voltage only after
+configuring mode and overcurrent protection successfully; if any step fails, the pump remains stopped. Piano does not enable
+`support-cp-mode-switch`, so the ratio never switches dynamically mid-charge based on current. When entering 1:1 from 9 V
+buck, wait for input voltage to drop into the target window before enabling the charge pump.
 
-正常熄屏仍会继续充电。真正进入系统挂起或关闭驱动前，先确认电荷泵停止，
-再确认 PMIC 充电使能关闭并下发 FCC=0；任一步失败就拒绝挂起。
-这是因为主机休眠后软件 JEITA 不再执行，尚不能把完整普通表交给固件自主
-运行。停充不额外改写 FV、ITERM；唤醒后重新读取电池状态，按当前温区
-配置限值后才重新开启充电。
+Normal screen-off continues charging. Before entering actual system suspend or shutting down the driver, confirm charge-pump stop first,
+then confirm PMIC charge enable is off and issue FCC=0; if any step fails, reject suspend.
+This is because software JEITA stops running while the host is suspended, and the full normal table cannot yet be delegated autonomously to firmware.
+Stopping charging does not overwrite FV or ITERM; on resume, battery state is re-read and limits are configured for the current temperature zone
+before re-enabling charging.
 
-参数来自本机最终设备树的 `batt_para_lwn`、`normal_volt_para*` 和普通
-`jeita_para`；字段解析与 CC/CV 顺序参考公开的同架构 MCA 实现，版本和
-来源记在补丁系列清单中。温区回差、尾充条件和固件读写接口还通过本机
-原厂充电代理、JEITA、buck 与 quickchg 模块反汇编交叉核对；参考实现的
-拓扑枚举、固件属性编号与本机不同，本机沿用 Piano 双电量计和已核对的映射。
+Parameters come from `batt_para_lwn`, `normal_volt_para*`, and normal `jeita_para` in this device's final Device Tree;
+field parsing and CC/CV ordering reference public MCA implementations of the same architecture, with versions and
+provenance recorded in the patch series manifest. Temperature hysteresis, taper-charge criteria, and firmware read/write interfaces were also cross-checked by disassembling
+this device's stock charging proxy, JEITA, buck, and quickchg modules; topology enums and firmware property IDs differ from reference implementations,
+so this device keeps Piano's dual fuel gauges and verified mappings.
 
-### Quick Charge 输入与直充
+### Quick Charge Input and Direct Charging
 
-QC2 和普通 QC3 使用 buck 降压通路请求 9 V；QC3-B、QC3+（固件类型
-`HVDCP3P5`）还可进入 SC8541 的 2:1 直充。沿用已有 `hv_charge` 和
-`cp_charge` 设置，不增加协议专用开关。buck 输入上限分别为 QC2 1.2 A、
-QC3／QC3+ 1.6 A；这是 PMIC 通路的输入限制，不是电荷泵总线能力。
+QC2 and standard QC3 use the buck path to request 9 V; QC3-B and QC3+ (firmware type
+`HVDCP3P5`) can also enter SC8541 2:1 direct charging. Existing `hv_charge` and
+`cp_charge` settings are reused without adding protocol-specific switches. Buck input ceilings are 1.2 A for QC2 and
+1.6 A for QC3/QC3+; these are PMIC-path input limits, not charge-pump bus capabilities.
 
-| 直充类型 | 总线电压上限 | 总线电流上限 | 两芯合计电流上限 | 调压步长 |
+| Direct-Charging Type | Bus Voltage Cap | Bus Current Cap | Combined Two-Cell Current Cap | Voltage Step |
 | --- | --- | --- | --- | --- |
 | QC3-B | 9.5 V | 2.5 A | 5 A | 200 mV |
 | QC3+ | 10 V | 2.1 A | 4.2 A | 20 mV |
 
-启动先确认停泵并配置过流保护，关闭 PMIC 电池充电，再按电芯电压两倍加
-300 mV 请求适配器电压。保留原厂三秒爬升等待，输入进入目标窗口后才
-启用电荷泵；适配器不响应时最多检查 40 次，然后停泵回退，不无限升压。
-运行时用电荷泵总线电压、电流和两颗电量计的合计电流调节，每 700 ms
-最多一次脉冲。QC3-B 与 QC3+ 保留各自的电流、电压余量和降压次数条件，
-同时遵守温区、循环次数、用户与 thermal 限额。脉冲不能跨过表中的电压上限。
+Startup first confirms the pump is stopped, configures overcurrent protection, disables PMIC battery charging, and requests an adapter voltage
+equal to twice cell voltage plus 300 mV. The stock 3-second ramp wait is retained, and the charge pump is enabled only after input enters the target window;
+if the adapter does not respond, at most 40 checks are performed before stopping the pump and falling back rather than ramping voltage indefinitely.
+At runtime, regulation uses charge-pump bus voltage, bus current, and the combined current of both fuel gauges, issuing at most one pulse every 700 ms.
+QC3-B and QC3+ preserve their respective current, voltage-margin, and step-down count criteria
+while honoring thermal-zone, cycle-count, user, and thermal limits. Pulses never exceed the voltage ceilings in the table.
 
-绝对电压请求使用 4.0.6 的 `0x2011`，脉冲使用 `0x201d`，升、降命令
-分别为 `0x20`、`0x10`；不是旧公开源码的枚举值，也不写 `0x2018`。
-QC 尾段在 FV 下方 29 mV（QC3-B）或 24 mV（QC3+）、电流低于 2.4 A
-持续 3.5 秒后交给 PMIC。退出先确认停泵，再请求 buck 的 9 V；确认失败
-保留停止状态继续重试，不发 PD／PPS 请求。挂起、解绑及连接代数检查
-与既有直充路径共用。源码与原厂模块对应关系见补丁清单的 `quick_charge`。
+Absolute voltage requests use 4.0.6's `0x2011` and pulses use `0x201d`, with step-up and step-down commands
+`0x20` and `0x10` respectively—not the older public-source enum values, and `0x2018` is never written.
+QC taper hands off to the PMIC once voltage is within 29 mV (QC3-B) or 24 mV (QC3+) below FV and current stays below 2.4 A
+for 3.5 seconds. Exit confirms pump stop first and then requests 9 V for buck; if confirmation fails,
+it stays stopped and retries without issuing PD/PPS requests. Suspend, unbind, and connection-generation checks
+are shared with the existing direct-charging path. Source-to-stock module mappings are listed under `quick_charge` in the patch manifest.
 
-### FFC 快速充电
+### FFC Fast Charging
 
-FFC 需要原装适配器通过 MiPPS 认证、两颗电量计通过电池认证、两芯温度都在
-18–<48°C，且六路 IIO 温度采样有效。FFC 模式入口要求 raw SOC 低于 95%；
-电荷泵启动另受原厂 `enable_cp_para` 的 SOC 和最后阶段电压余量约束。
-手动停充、满充停止和热限流仍独立生效；这不是绕过温控提高上限。
+FFC requires an original adapter that passes MiPPS authentication, both fuel gauges passing battery authentication, both cell temperatures within
+18–<48°C, and all six IIO temperature channels valid. FFC mode entry requires raw SOC below 95%;
+charge-pump startup is additionally bounded by stock `enable_cp_para` SOC and final-stage voltage headroom limits.
+Manual charge inhibition, full-charge stop, and thermal throttling still apply independently; FFC does not bypass thermal limits to raise ceilings.
 
-| 阶段电压 | 两芯合计电流上限 | 转段电流 |
+| Stage Voltage | Combined Two-Cell Current Cap | Stage-Transition Current |
 | --- | --- | --- |
 | 4.144 V | 12.40 A | 10.65 A |
 | 4.300 V | 10.65 A | 9.04 A |
 | 4.475 V | 9.04 A | 7.23 A |
-| 4.540 V | 7.23 A | 18–<35°C 为 2.350 A，35–<48°C 为 3.164 A |
+| 4.540 V | 7.23 A | 2.350 A for 18–<35°C, 3.164 A for 35–<48°C |
 
-第一段按原厂 stage mask 跳过 CV。电芯 FV 为 4.550 V，按循环次数分别减
-0、20、40、50 mV（≤100、≤300、<1000、≥1000 次）；200–800 次且
-容量健康度低于 85% 再减 40 mV。1000 次以上同时降低各段电流。原厂
-`drop_fcc_para` 在 <300、300–799、≥800 循环分别减 0、500、1000 mA，
-与 thermal、用户预算共同生效。
+The first stage skips CV per the stock stage mask. Cell FV is 4.550 V, derated by cycle count by
+0, 20, 40, or 50 mV (for ≤100, ≤300, <1000, and ≥1000 cycles); between 200 and 800 cycles with
+capacity health below 85%, an extra 40 mV is subtracted. Above 1000 cycles, per-stage currents are also reduced. Stock
+`drop_fcc_para` subtracts 0, 500, and 1000 mA for <300, 300–799, and ≥800 cycles respectively,
+acting alongside thermal and user budgets.
 
-电荷泵启动还按原厂 `enable_cp_para` 收紧：<300、300–799、800–1199、
-≥1200 循环的 SOC 上限为 90/85/80/70%，最后阶段电压余量下限为
-70/90/200/250 mV；达到 300 循环后余量再加 20 mV。FFC 模式入口的
-95% raw SOC 条件保留，两者分别判断。
+Charge-pump startup is further tightened per stock `enable_cp_para`: for <300, 300–799, 800–1199, and
+≥1200 cycles, SOC ceilings are 90/85/80/70% and final-stage voltage headroom floors are
+70/90/200/250 mV; at 300 cycles and above, an additional 20 mV of headroom is added. The 95% raw SOC
+FFC mode entry criterion remains intact and is evaluated independently.
 
-低于 4.480 V 时可使用原厂单泵 PMIC 分流，基础 FV 覆盖为 4.650 V，叠加
-40/45 mV buck 温补；达到 4.480 V 后关闭 PMIC 分流。尾充使用电芯 FV
-加相同温补，软件 CV 每次降低 5 mV、最多 25 mV。温度越界、认证失效、
-传感器错误或会话变化时先确认停泵和 PMIC 停充，再改变两颗电量计模式。
-任一模式写入失败会尝试将两颗恢复普通模式，未确认前不提高充电电压。
+Below 4.480 V, stock single-pump PMIC current sharing may be used with a base FV override of 4.650 V plus
+40/45 mV buck temperature compensation; PMIC sharing stops upon reaching 4.480 V. Taper charging uses cell FV
+plus the same temperature compensation, with software CV stepping down 5 mV at a time up to 25 mV. On temperature out-of-range, authentication loss,
+sensor errors, or session changes, confirm both charge-pump stop and PMIC charge stop before switching modes on the two fuel gauges.
+If either gauge mode write fails, the driver attempts to restore both to normal mode and does not raise charging voltage until confirmed.
 
-同一次连接完成 FFC 尾充后不重新进入；普通满充和 97% raw SOC 回充保持原有
-逻辑。实现和参数来自同机最终设备树、原厂充电模块与有效 BAA 配置，摘要见
-补丁清单的 `authenticated_ffc`。这些是充电策略参数，不能用编译或事务回归
-代替适配器输入功率与实际充电曲线测量。
+Once FFC taper finishes during a connection, FFC is not re-entered during that same connection; normal full-charge and 97% raw SOC recharge keep their existing
+logic. Implementation and parameters come from this device's final Device Tree, stock charging modules, and active BAA configuration, summarized under
+`authenticated_ffc` in the patch manifest. These are charging-policy parameters; builds or transaction regression tests cannot
+substitute for measuring adapter input power and real charging curves.
 
-4.0.6 的 `non_mi_pps_max_curr` 虽然被解析并保存到工作模式参数，实际限流
-分支要求 `support_pps_100w` 开启。Piano 该值为 0，仍使用上述国行
-`third_pps_*`；不启用 100 W 策略，也不套用 Global 的 10 V／5 A 参数。
+Although 4.0.6 parses and stores `non_mi_pps_max_curr` into working-mode parameters, the active limiting
+branch requires `support_pps_100w` to be enabled. On Piano this value is 0, so the CN variant's
+`third_pps_*` remains in effect; the 100 W policy is not enabled, nor are the Global variant's 10 V / 5 A parameters applied.
 
-PPS 调压使用原厂五字段 `vstep_para`，依次为转换倍率、循环次数上限、
-电池电流差、电芯电压余量和 20 mV 步长倍数。2:1 的电流差达到
-600／1000／2000／3000／4000 mA 时，分别使用 40／80／140／160／200 mV；
-差值更小时为 20 mV。恒压阶段的升压、达到 800 循环、接近末段目标
-100 mV 内均使用 20 mV，8–<13°C 的大步长最多 80 mV。总线和电池电流
-仍需同时满足升压条件；恒压超调按电芯电压误差回落，每次最多 100 mV，
-不会绕过来源、电流与温度限制。
+PPS voltage regulation uses the stock five-field `vstep_para` (conversion ratio, cycle-count ceiling,
+battery current delta, cell voltage headroom, and 20 mV step multiplier). For 2:1, current deltas reaching
+600/1000/2000/3000/4000 mA use steps of 40/80/140/160/200 mV respectively,
+and 20 mV for smaller deltas. Step-ups during CV, at ≥800 cycles, or within 100 mV of the final-stage target
+all use 20 mV, and large steps in the 8–<13°C zone are capped at 80 mV. Both bus and battery current
+must still satisfy step-up conditions; CV overshoot backs off based on cell voltage error by at most 100 mV per step
+without bypassing source, current, or temperature limits.
 
-原厂 DTPT 电池告警通过两颗电量计的标准 `HEALTH` 传递。板级
-`ti,health-alerts` 启用原厂扩展 SOA `0x70`、ISC `0x72` 只读字节寄存器；
-SOA 非零或 ISC 为 3 时报告 `Unspecified failure`，MCA 取两芯结果。
-直充电池目标降至当前表值的 80% 再减 200 mA，随后继续受循环、thermal、
-用户和来源上限约束。告警读取失败暂停充电，不把失败当作告警清除；不写
-电量计数据闪存、不另加私有充电属性。
+Stock DTPT battery alerts are conveyed through the two fuel gauges' standard `HEALTH` property. Board-level
+`ti,health-alerts` enables the stock extended read-only byte registers SOA `0x70` and ISC `0x72`;
+when SOA is non-zero or ISC is 3, `Unspecified failure` is reported and MCA evaluates both cells.
+The direct-charging battery target drops to 80% of the current table value minus 200 mA, still subject to cycle, thermal,
+user, and source caps. Alert read failures pause charging rather than treating the failure as a cleared alert;
+fuel-gauge data flash is never written, and no private charging properties are added.
 
-### 标准充电降流
+### Standard Charge Current Limiting
 
-MCA 的 `charge_control_limit` 以微安设置两颗电芯的合计充电上限，范围为
-`100000`–`12400000`、步进 `1000`，`0` 表示停止给电池充电；它不关闭外部电源输入。
-`charge_control_limit_max` 提供上限。普通 PMIC 和电荷泵使用同一预算，
-不会分别各用一份限额；电源能力、JEITA 和硬件保护仍可进一步收紧。
+MCA's `charge_control_limit` sets the combined charging cap across both cells in microamperes, ranging from
+`100000` to `12400000` in steps of `1000`, where `0` stops battery charging without disabling external power input.
+`charge_control_limit_max` exposes the upper bound. Normal PMIC and charge pump share a single budget
+rather than each taking a separate allowance; supply capability, JEITA, and hardware protections can still tighten it further.
 
-板级设备树提供递减限额，由标准 `piano-charger` thermal cooling device
-控制。降档时先确认电荷泵停止，再收紧 PMIC 电流，随后按新的合计预算
-决定是否重新启动电荷泵。通信失败保留更严格的要求并返回错误，由已有
-充电工作项重试；挂起、关闭和限额切换互相串行，不增加用户空间守护进程。
-恢复限额会重新配置电荷泵保护，只取消这一项限制，不清除已有硬件故障或
-尾充停止，不绕过温度保护或改变普通充电表的电压。
+The board Device Tree provides descending limit steps controlled by the standard `piano-charger` thermal cooling device.
+When stepping down, the driver confirms charge-pump stop first, tightens PMIC current next, and then decides whether to restart the charge pump
+under the new combined budget. Communication failures retain the stricter requirement and return an error for the existing
+charging work item to retry; suspend, shutdown, and limit transitions are serialized with no extra userspace daemon.
+Restoring limits reconfigures charge-pump protections and lifts only this single restriction—it does not clear existing hardware faults or
+taper-charge stops, bypass thermal protections, or alter normal-table voltages.
 
-外部 cooling 限额取自同机 `wired_thermal` 直充列，并增加 `0` 停充档和
-12.4 A 无额外限流状态。普通表仍不超过 8 A。内核同时执行同机 Global 原厂高负载充电策略，
-采用其亮屏档位，不依赖 Android 的应用场景或亮熄屏选择器，不合并普通
-场景曲线。两套约束与手动充电上限取最小值。
+External cooling steps come from this device's `wired_thermal` direct-charging column, adding a `0` stop state and a
+12.4 A unthrottled state. The normal table still never exceeds 8 A. The kernel simultaneously runs the Global stock high-load charging policy from the same device
+using its screen-on tiers, without depending on Android's app-scene or screen-state selector and without merging the normal
+scene curve. The effective limit is the minimum of both constraints and any manual limit.
 
-| 模型升温阈值 | 降温清除阈值 | 原厂档位 | 整包上限 | 5 V buck FCC | 9 V buck FCC |
+| Model Trip-Up Threshold | Cooldown Clear Threshold | Stock Tier | Pack Ceiling | 5 V Buck FCC | 9 V Buck FCC |
 | --- | --- | --- | --- | --- | --- |
 | 35°C | 32°C | 1 | 10.5 A | 1.8 A | 3.5 A |
 | 37°C | 35°C | 2 | 9 A | 1.8 A | 3.5 A |
@@ -465,437 +462,434 @@ MCA 的 `charge_control_limit` 以微安设置两颗电芯的合计充电上限�
 | 44°C | 42°C | 12 | 2 A | 1.2 A | 2 A |
 | 45°C | 44°C | 15 | 0.7 A | 1 A | 0.7 A |
 
-整包上限还受当前普通或 FFC 表约束，PMIC 受对应分流、温区和整包预算限制，
-所以最后一档即使在 5 V 下也不会超过 0.7 A。buck 按实测输入电压选择
-FCC 列，电荷泵分流也使用该限制；这条皮温策略不额外降低系统输入 ICL。
-JEITA、电芯电压及硬件保护继续独立生效。
+The pack ceiling remains bounded by the active normal or FFC table, and the PMIC is constrained by sharing, thermal zone, and pack budget,
+so even at 5 V the highest tier never exceeds 0.7 A. Buck chooses its FCC column from measured input voltage,
+and charge-pump sharing uses the same limit; this skin-temperature policy does not separately reduce system input ICL.
+JEITA, cell voltage, and hardware protections continue operating independently.
 
-普通充电在实测最高电芯温度为 48–54°C 时，按原厂标定给 PMIC 浮充电压
-加 30 mV，暖区写入值为 4090 mV。JEITA 的停充和恢复仍使用原来的
-4060 mV 目标，不随硬件补偿上调；FFC 使用独立的补偿规则。
+During normal charging, when the highest measured cell temperature is 48–54°C, PMIC float voltage adds 30 mV per stock calibration,
+writing 4090 mV in the warm zone. JEITA charge-stop and recovery thresholds still use the uncompensated
+4060 mV target rather than rising with hardware compensation; FFC uses separate compensation rules.
 
-皮温模型读取两颗 BQ27Z561 的原始温度寄存器 `0x1e`，以及 quiet、
-charger1、Wi-Fi、CPU 四路板温。原有电量计 `TEMP` 的 `0x06` 用途保持。
-原厂冷区取两芯原温的较低值，暖区取较高值；模型保留权重
-`500, 131, -9, 89, 232`、分母 `1000` 和固定偏移 `1600`。
-标准 IIO 接口使用毫摄氏度，模型内部将四路板温转回原校准采用的 Q10
-单位。板级补偿保留公开原厂内核的默认 `0`，不引入 Android 用户空间的
-运行时覆盖；没有把未采集的原机覆盖值声称为零。
+The skin-temperature model reads raw temperature register `0x1e` from both BQ27Z561 gauges together with four board thermistors: quiet,
+charger1, Wi-Fi, and CPU. Existing use of gauge `TEMP` register `0x06` is unchanged.
+Stock cold-zone logic uses the lower of the two raw cell temperatures and warm-zone logic uses the higher; the model keeps weights
+`500, 131, -9, 89, 232`, denominator `1000`, and fixed offset `1600`.
+Standard IIO exposes millidegrees Celsius, so the model internally converts the four board temperatures back to the Q10 units used by the original calibration.
+Board-level offset keeps the public stock kernel default of `0` without introducing Android userspace
+runtime overrides; uncollected device-specific overrides are not claimed to be zero.
 
-`piano-skin` 是该模型的计算温区，不是新增的表面测温探头。传感器缺失、
-读错或原温越界时停止给电池充电，保留输入、FV 和各档回差；有效读数恢复
-后再按条件恢复。温区拒绝报告超过四秒的旧样本。板级 ADC 使用原有热敏
-输入状态，PMIH010x GPIO 匹配同机原厂的标准 18 引脚布局；不改写充电
-模式寄存器。运行时充电状态机留在内核，关机充电沿用原厂启动链。
+`piano-skin` is this model's virtual thermal zone, not an added physical surface thermistor. If sensors are missing,
+fail to read, or raw temperatures are out of range, battery charging stops while preserving input, FV, and tier hysteresis; charging resumes conditionally
+once valid readings return. The thermal zone refuses to report samples older than four seconds. Board ADC keeps existing thermistor
+input states, and PMIH010x GPIOs match this device's stock standard 18-pin layout without altering charging
+mode registers. The runtime charging state machine stays in the kernel; power-off charging continues using the stock boot chain.
 
-### USB-C 接口过热保护
+### USB-C Port Overheat Protection
 
-MCA 通过 IIO 读取原厂两路接口热敏电阻，取较热一路。接口达到 65°C、
-接口达到 60°C 且板温不高于 50°C、或接口达到 35°C 且温升达到 4°C/s，
-均触发保护。板温复用同机原厂 `VIRTUAL-SENSOR` 的五路模型；板温无法读取
-时使用 60°C 阈值。任一路接口温度读不到时也执行隔离，不用旧温度继续充电。
+MCA reads the two stock port thermistors via IIO and uses the hotter channel. Protection triggers when the port reaches 65°C,
+reaches 60°C while board temperature is at most 50°C, or reaches 35°C with a temperature rise rate of at least 4°C/s.
+Board temperature reuses the five-channel model from stock `VIRTUAL-SENSOR` on the same device; if board temperature cannot be read,
+the 60°C threshold is used. If either port thermistor cannot be read, isolation is triggered as well rather than continuing to charge on stale readings.
 
-达到保护阈值或接口温度不可读时，驱动先通过 PM8550 GPIO9 隔离接口，再
-停止电荷泵、PMIC 充电和 USB 供电。ADSP 通信超时不会推迟已触发的隔离。
-隔离后用平板侧的 VBUS 读数核对结果。MCA USB 电源通过标准 `health` 报告过热。
-解除隔离需要 UCSI 确认拔线。ADSP 的 CID、OTG 或仍高于隔离阈值的 VBUS 会阻止恢复。总线电压低只能用来复核 UCSI 的拔线结果。
-拔线、退出 OTG 且接口低于 55°C、温升低于 4°C/s 后才解除过热保护；
-恢复期间接线或 GPIO 写入失败都会保留停充。
+When a protection threshold is reached or port temperature is unreadable, the driver isolates the port via PM8550 GPIO9 first, then
+stops the charge pump, PMIC charging, and USB power delivery. ADSP communication timeouts never delay an already-triggered isolation.
+After isolation, tablet-side VBUS readings verify the result. The MCA USB supply reports overheating via standard `health`.
+Clearing isolation requires UCSI to confirm cable removal. ADSP CID, OTG, or VBUS still above the isolation threshold blocks recovery; low bus voltage serves only to cross-check UCSI's unplug result.
+Overheat protection clears only after unplugging, exiting OTG, port temperature dropping below 55°C, and rise rate falling below 4°C/s;
+any cabling or GPIO write failure during recovery keeps charging stopped.
 
-插线或无法确认拔线时可以熄屏，但不进入系统挂起，以便继续测温。
-确认拔线后，挂起前隔离接口电源，唤醒后先重新测温，再决定是否恢复供电。
+While plugged in or unable to confirm unplugging, the screen may turn off, but system suspend is blocked so temperature monitoring continues.
+Once unplugging is confirmed, port power is isolated before suspend, and temperature is re-measured on resume before deciding whether to restore power.
 
-### 输入恢复与充电停止
+### Input Recovery and Charging Stop
 
-电荷泵每次启动都按当前 APDO、普通温区与合计充电预算重新计算目标，
-在确认电荷泵关闭后配置对应的总线过流保护，再启用电荷泵。一次输入丢失
-不能证明电源的能力低于其 APDO，不再把掉线前电流减去固定值永久作为
-输入上限。实际测到 VBUS 离线时，可在同一连接内重建普通策略；非认证
-掉线累计达到 11 次后只使用 buck，真实连接变化才清除该计数。原厂的
-同一阈值用于更广的充电错误；这里其他硬件故障已直接锁定停止，不自动重开。
+Every charge-pump startup recalculates targets from the current APDO, normal temperature zone, and combined charging budget,
+configures the corresponding bus overcurrent protection after confirming the pump is off, and only then enables the pump. A single input loss
+does not prove the adapter is weaker than its APDO, so pre-drop current minus a fixed margin is no longer latched permanently as an
+input cap. When actual VBUS offline is observed, normal policy can be rebuilt within the same connection; after 11 cumulative non-authenticated
+dropouts, charging falls back to buck-only until a real connection change clears the counter. Stock uses the same
+threshold across broader charging errors; here, other hardware faults latch stopped directly and never auto-restart.
 
-温区、用户停充与电流限额是可恢复的策略暂停；硬件故障和尾充完成保持
-停止。确认停止失败时保留原来的恢复权限，用户在确认前切回自动模式也
-不会丢失自己的停充归属。普通 VBUS 波动、ADSP 重启、挂起或提高电流
-限额不能清除已有故障。新的启动尝试不继承上一次暂停对故障的恢复权限。
+Temperature zones, user charge inhibition, and current limits are recoverable policy pauses; hardware faults and taper completion stay
+stopped. If stop confirmation fails, the original recovery ownership is preserved, and switching back to `auto` before confirmation completes
+does not lose the user's inhibition ownership. Ordinary VBUS fluctuations, ADSP restarts, suspend, or raising current
+limits never clear an existing fault. A new startup attempt does not inherit fault-recovery authority from a previous pause.
 
-零充电限额和用户停充都继续维护普通 JEITA FV、有效来源协商与输入限流。
-停止电荷泵并确认关闭后，同次轮询完成 buck 接管；切换输入电压前先确认
-输入上限满足切换前后两份电源能力，收紧限流失败时不执行对应切压；
-降回 5 V 未确认前不提高电流，失败后只重试降压。
-PPS 调节会发送数值未变的请求，沿用原厂 HLOS 请求语义；固件本身也包含
-PPS timer／ping 实现，不能据此将自然重协商归因为主机漏发保活。
+Both a zero charge limit and user charge inhibition continue maintaining normal JEITA FV, valid source negotiation, and input current limits.
+After stopping the charge pump and confirming shutdown, buck takeover finishes within the same poll cycle; before switching input voltage, the driver ensures the
+input current cap satisfies both pre-switch and post-switch supply capabilities, skipping the voltage switch if tightening ICL fails;
+when stepping back down to 5 V, current is never raised before confirmation, and failures retry only the step-down.
+PPS regulation still sends unchanged request values, matching stock HLOS request semantics; firmware itself also implements a
+PPS timer/ping, so natural renegotiation cannot be attributed solely to missing host keepalives.
 
-总线电压、电流、输入限流或来源类型读取失败时先停止电荷泵和 PMIC 充电，
-不把失败值解释为零、真实断线或新的认证会话。认证过程状态未知时不允许
-新的升压或直充；活动阶段遇到 ADSP 会话变化时先确认停泵，再用新会话
-重建配置，不能使用旧 APDO。工作项按 ADSP 代和连接变化丢弃主机电流与电压缓存，
-避免迟到的旧结果掩盖固件默认限流；用户要求、故障和掉线计数保持各自归属。
-电芯温度、电压回差和硬件保护继续独立生效。
+When bus voltage, bus current, input current limit, or source type reads fail, both charge pump and PMIC charging stop first
+without interpreting failed reads as zero, a real disconnect, or a new authentication session. No new voltage boost or direct charging is allowed while authentication state is unknown;
+if an ADSP session change occurs during active charging, confirm pump stop first and rebuild configuration under the new session
+without reusing old APDOs. Work items discard cached host current and voltage values across ADSP generations and connection changes
+so late stale results never mask firmware default limits; user requests, faults, and dropout counts each keep their own ownership.
+Cell temperatures, voltage hysteresis, and hardware protections continue operating independently.
 
-### 高温停充与系统供电
+### High-Temperature Charge Stop and System Power
 
-原厂 Android 在常温、FV 为 4480 mV 时，已持续停充约 178 秒，两颗电量计
-全程为 0–6 mA；首尾各 12 秒负载的 USB 输入分别约 2.88、3.02 W。
-整段采集的两颗电芯满充标志均为 0，停充前与解除限制后都重新出现充电电流，
-因此该结果不局限于满充终止。记录没有精确 SOC，不能据此补写电量百分比。
-这支持正常 FV 下保留外部系统供电，尚无电池被物理断开的证据。低 FV 下的
-供电仍不稳定，高温实机条件未验证。
+On stock Android at room temperature with FV at 4480 mV, charging remained stopped for roughly 178 seconds with both fuel gauges
+staying at 0–6 mA throughout; during the first and last 12-second load intervals, USB input was roughly 2.88 W and 3.02 W respectively.
+Both cells' full-charge flags remained 0 across the entire capture, and charging current resumed both before the stop and after lifting the restriction,
+so this result is not limited to full-charge termination. The capture lacks exact SOC, so battery percentage cannot be backfilled from it.
+This supports preserving external system power at normal FV, though there is no evidence the battery is physically disconnected. Power delivery at low FV
+remains unstable, and real high-temperature on-device conditions have not yet been verified.
 
-Piano 原厂代理分别提供充电使能 `0x2003`、电池充电电流 `0x2005`、
-输入限流 `0x2008` 和输入暂停 `0x2019`；使能和暂停使用单字节布尔值，
-电流使用小端 32 位 mA。原厂 JEITA 的 `jeita-hot` 关闭充电投票，不暂停输入。
-来源沿用补丁系列清单的 `normal_charging`，不能套用参考机型的属性编号。
+Piano's stock proxy exposes charge enable `0x2003`, battery charge current `0x2005`,
+input current limit `0x2008`, and input suspend `0x2019`; enable and suspend take single-byte booleans,
+while currents take little-endian 32-bit mA values. Stock JEITA's `jeita-hot` clears the charging vote without suspending input.
+Provenance follows `normal_charging` in the patch series manifest; property IDs from reference devices cannot be substituted.
 
-0079 中的 `piano_mca_normal_buck()` 在温区要求停充时，成功关闭充电后
-仍返回 `-ERANGE`，导致 `piano_mca_apply_policy()` 跳过 9 V 协商和输入限流
-恢复，可能保留直充的 500 mA 或并联阶段的 1500 mA 输入上限。成功停充
-应继续输入策略，通信和停止失败仍应返回错误；该遗漏不能单独解释输入归零。
+In 0079, `piano_mca_normal_buck()` still returned `-ERANGE` after successfully disabling charging when a temperature zone required charge stop,
+causing `piano_mca_apply_policy()` to skip 9 V negotiation and input current-limit
+recovery, potentially leaving behind a 500 mA direct-charging cap or 1500 mA parallel-phase input cap. Successful charge stop
+should continue input policy, while communication and stop failures still return errors; however, this omission alone does not explain input dropping to zero.
 
-原厂普通 JEITA 对表内 FV 小于 4201 mV 的温区另有停充投票：两颗电芯中
-较高的电压达到 `FV - 5 mV` 时停充，低于 `FV - 150 mV` 才恢复，中间保留
-原投票；表内 FV 回到 4201 mV 以上时撤销限制。4060 mV 温区对应 4055 mV
-停充、低于 3910 mV 恢复，等于 3910 mV 时保持。原厂先停充，再降低 FV；
-判断用表内 FV，`smart_fv` 附加减量不参与温区判断。
+Stock normal JEITA has an additional charge-stop vote for zones whose table FV is below 4201 mV: charging stops when the higher
+of the two cell voltages reaches `FV - 5 mV`, resumes only below `FV - 150 mV`, and holds the existing vote in between;
+the restriction clears when table FV returns to 4201 mV or above. For the 4060 mV zone, this means stopping at 4055 mV,
+resuming below 3910 mV, and holding at exactly 3910 mV. Stock stops charging first before lowering FV;
+evaluation uses the table FV, without `smart_fv` reductions participating in the zone check.
 
-0079 缺少该电压停充和恢复投票。电池约 4.39 V 进入 48–<55°C 温区时，
-PMIC 仍会先降到 4060 mV，再设置电流并使能；电荷泵退出与重启也未共用
-这项状态，可能在 4000 mV 的保持区间提前重启。补齐这些条件可以修正普通
-充电表的执行，却不能保证低 FV 时外部输入持续供给系统。
+0079 lacked this voltage stop and recovery vote. When a battery around 4.39 V entered the 48–<55°C zone,
+the PMIC would still drop to 4060 mV first, then set current and enable charging; charge-pump exit and restart did not share
+this state either, potentially restarting prematurely in the 4000 mV hold band. Adding these conditions fixes normal
+charging-table execution, but does not guarantee continuous external power to the system at low FV.
 
-温度从常温直接进入 ≥55°C 停充区时，普通 buck 路径还会在更新 FV 前
-提前返回，可能保留之前的 4480 mV。先前研究原型虽然补了电压停充回差，
-这条早退路径仍会跳过状态更新：从 56°C 降至 52°C、电芯电压为 4000 mV
-时，可能在尚未低于 3910 mV 前恢复充电。温区停充与 FV 更新应分开处理：
-确认停止后继续应用 4060 mV，并更新电压回差；FV 写入失败或 ACK 丢失时
-保持停充，不继续提高输入或使能充电。先前一项测试错误地接受了高温保留
-4480 mV，已依据原厂表纠正。这些修正随 0093 纳入正式补丁系列；真实驱动
-UML 回归覆盖温区、电压回差、通信失败和用户停充，不能模拟 PMIC 电气外供。
+When temperature jumped directly from room temperature into the ≥55°C stop zone, the normal buck path also returned early before updating FV,
+potentially retaining the previous 4480 mV. Even though an earlier research prototype added voltage-stop hysteresis,
+that early return still skipped state updates: dropping from 56°C to 52°C with cell voltage at 4000 mV
+could resume charging before voltage fell below 3910 mV. Thermal-zone stop and FV updates must be handled separately:
+after confirming stop, continue applying 4060 mV and updating voltage hysteresis; if an FV write fails or its ACK is lost,
+keep charging stopped and do not raise input or enable charging. An earlier test mistakenly accepted retaining
+4480 mV at high temperature and has been corrected against the stock table. These fixes enter the formal patch series in 0093; real-driver
+UML regressions cover thermal zones, voltage hysteresis, communication failures, and user inhibition, but cannot simulate PMIC electrical power-path behavior.
 
-负温转换需要独立对齐整条输入链：相同输入 -90 或 -99（单位 0.1°C），
-原厂 JEITA 得到 -10°C，Linux `/ 10` 得到 -9°C；但原厂 quickchg 也使用
-向零取整，不能全局照搬 JEITA 的负值处理。原厂电量计温度字减 2730，Linux
-减 2731，且原厂还聚合、补偿温度。忽略补偿时，同一原始字 2641 经两条现有
-路径都得到 -9°C，单独改变 Linux 取整反而会偏离。因此局部转换差异尚不能
-证明实机阈值错误，本轮保持原实现。温区来自电量计和固件电池包，不使用 SoC 温度。
+Negative-temperature conversion requires aligning the entire input chain separately: for the same input of -90 or -99 (in 0.1°C units),
+stock JEITA produces -10°C whereas Linux `/ 10` produces -9°C; however, stock quickchg also truncates
+toward zero, so JEITA's negative-value handling cannot be applied globally. Stock fuel-gauge raw temperature words subtract 2730 while Linux
+subtracts 2731, and stock additionally aggregates and compensates temperatures. Ignoring compensation, the same raw word 2641 yields -9°C through both existing
+paths, so changing Linux's rounding in isolation would actually diverge. Local conversion differences therefore do not yet
+prove an on-device threshold error, and the existing implementation is kept for this cycle. Thermal zones use fuel-gauge and firmware battery-pack readings, not SoC temperatures.
 
-`0x2003` 是复合操作，getter 只读 CHGR `0x2646 bit0`；关闭时还会设置
-`0x2c42` 的 bit1、清 bit0，并向 `0x2641[2:0]` 写 4，使能分支写 5。
-定点读回确认正常 FV 4480 mV 与低 FV 4060 mV 都保持充电位为 0、
-模式低三位为 4、`0x2c42=0x52`；核对的四项中只有 FV 编码 `0xb0` → `0x5c`
-变化，低 FV 闲置、负载和撤载均一致。Linux 每次发送完整的布尔设置操作，
-不再凭单个使能位相等跳过 DCDC 配置；原厂投票写入成功也不保证底层应答。
-该 getter 仍不能确认所有模式字段。但低 FV 反例的
-使能和模式均已到位，不能归因于没有执行停充。ACK 或单个位也不能确认
-系统外供，缺少正式定义的模式不命名为旁路或电池隔离。
+`0x2003` is a composite operation whose getter reads only CHGR `0x2646 bit0`; disabling also sets
+bit1 and clears bit0 of `0x2c42` and writes 4 to `0x2641[2:0]`, while the enable branch writes 5.
+Targeted readbacks confirmed that both normal FV 4480 mV and low FV 4060 mV keep the charge bit at 0,
+the low three mode bits at 4, and `0x2c42=0x52`; of the four checked items, only the FV encoding changed (`0xb0` → `0x5c`),
+remaining identical across low-FV idle, load, and unload. Linux now sends the full boolean set operation every time
+instead of skipping DCDC configuration when the single enable bit already matches; even a successful stock vote write does not guarantee a low-level ACK.
+The getter still cannot verify all mode fields. Nevertheless, because both enable and mode bits were already in place during the low-FV counterexamples,
+the failure cannot be blamed on unexecuted charge stop. Neither an ACK nor a single bit confirms
+external system power, and undocumented modes are not labeled as bypass or battery isolation.
 
-常温下将 FV 寄存器设为 4060 mV，以及原厂部分温区补偿后的 4090 mV，
-均能在持续负载下复现 USB 输入归零、
-两颗电芯各约 0.32–0.35 A 放电；先请求停充也有同样反例。输入限流
-暂停后恢复、FCC 编码 0 和重新执行停充回调均未恢复该负载下的外供。
-保持低 FV 撤去负载，部分试验能恢复，但恢复并非总在数秒内完成。因此
-不能把预先停充、重发命令或提高输入限流当作已经确认的恢复方法。
+At room temperature, setting the FV register to 4060 mV—or to 4090 mV after partial stock warm-zone compensation—both
+reproduced USB input dropping to zero under sustained load, with
+each cell discharging at roughly 0.32–0.35 A; requesting charge stop beforehand produced the same counterexample. Suspending and resuming
+input current limit, setting FCC code 0, and re-running the charge-stop callback all failed to restore external power under that load.
+Removing the load while keeping low FV recovered in some trials, though not always within a few seconds. Consequently,
+pre-stopping charging, resending commands, or raising ICL cannot be treated as confirmed recovery methods.
 
-改用实际约 8.9 V 输入后，4090 mV FV 下仍能复现输入归零；硬件 ICL
-读回仍为 1600 mA，输入暂停配置未置位。因此故障不局限于 5 V 供电，
-也不能仅用缓存中的输入上限解释。
+Switching to roughly 8.9 V actual input still reproduced zero input at 4090 mV FV; hardware ICL
+read back as 1600 mA and input suspend was not asserted. The fault is therefore neither limited to 5 V supplies
+nor explainable solely by cached input limits.
 
-另一次在降 FV 前同时请求停充和 FCC 编码 0 的试验，在约 12 秒负载
-采样区间保持外供。该结果与此前失败条件存在状态和时序差异，尚未建立
-因果关系；随后研究模块尝试经物理 SPMI 写入 SYS_MIN，触发内核崩溃，供电试验
-已停止。原厂诊断包保存的上一启动日志明确记录 `run_pulse` 经
-`regmap_update_bits` 进入 `pmic_arb_write_cmd`，在写数据寄存器处发生
-同步外部异常；模块 Build ID 与研究二进制一致，尚未执行后续的命令提交。
-只读通道可用不能证明物理写窗口可访问，具体的执行域或安全权限仍需核对。
-原先依据缺少成功输出推断没有写入尝试的结论错误：脚本中 `set -e` 不会
-因 `&&` 左侧条件失败而退出。直接物理写入原型和脚本现已禁用。
-重启后 FV 减量为 0，原厂满充策略正常，研究模块未加载；原厂诊断包可
-保全实际故障，当前 pstore 中的旧 UEFI 内容不能代替上一启动日志。
+Another trial that requested both charge stop and FCC code 0 before lowering FV maintained external power across an approximately 12-second load
+sampling window. Because state and timing differed from earlier failures, causality was not established;
+a subsequent research module attempted to write `SYS_MIN` over physical SPMI and triggered a kernel crash, halting power-path experiments.
+The previous-boot log preserved in the stock diagnostic bundle explicitly recorded `run_pulse` entering `pmic_arb_write_cmd` via
+`regmap_update_bits` and taking a synchronous external abort at the data-register write; the module Build ID matched the research binary, and the subsequent command commit never executed.
+Availability of a read-only channel does not prove a physical write window is accessible; exact execution-domain or security permissions still need verification.
+An earlier inference that no write was attempted based on missing success output was wrong: in shell scripts, `set -e` does not exit
+when the left-hand side of `&&` fails. Direct physical-write prototypes and scripts are now disabled.
+After reboot, FV reduction was 0, stock full-charge policy operated normally, and the research module was unloaded; stock diagnostic bundles
+preserve actual crash evidence, whereas stale UEFI content in current pstore cannot substitute for the previous-boot log.
 
-0093 同时通过标准 `charge_behaviour` 提供 `auto` / `inhibit-charge`。
-用户模式切换与休眠、移除串行处理；停充请求在通信失败后保留，仍维护温区
-FV。恢复 `auto` 重新执行正常策略，不直接强开充电；只有被该请求停止并确认
-停止的电荷泵才能由它重新参与策略，原有故障停止保持有效。
-读回表示请求模式，不承诺物理断电池或异常外供恢复，也不为外供保留较高的旧 FV。
+0093 also exposes `auto` / `inhibit-charge` via standard `charge_behaviour`.
+User mode switches are serialized with suspend and driver removal; inhibition requests persist across communication failures while continuing to maintain thermal-zone
+FV. Restoring `auto` re-evaluates normal policy without forcibly enabling charging; only a charge pump stopped and confirmed
+stopped by this request can re-enter policy through it, while existing fault latches remain active.
+Readback reflects the requested mode—it does not promise physical battery disconnection or recovery from abnormal input loss, nor does it hold a higher stale FV to keep external power alive.
 
-正式测试入口仅在 UML 下可选，使用虚拟传输与电源设备运行真实驱动回归，
-不接触平板电源；ARM64 产品配置不包含它。功能不引入项目专用开关或
-rootfs 服务；实机验证还需覆盖物理供电通路、完整温度链和复合使能读回。
+The formal test entry point is selectable only under UML, running real-driver regressions against mock transports and power supplies
+without touching tablet hardware; ARM64 production configs exclude it. No project-specific switches or
+rootfs daemons are added; on-device verification still needs to cover physical power paths, the full temperature chain, and composite enable readbacks.
 
-Piano 使用 PMIH010x／PM8750BH 系列，不能直接套用 PM8550B 的暂停位；
-已核对的 MCA 属性没有可用的独立系统供电下限写入口，`0x200c` 的写操作无效。
-原厂 PmicDxe 的资源构造、架构分派、设置和读取路径则指向 CHGR
-`0x2640[3:0]`；实机资源 subtype 为 `0xba`、CHGR subtype 为 `0xbe`、
-架构字节为 0，与该路径相符。SYS_MIN 的 16 档表在末端不再按 100 mV
-递增，最后四档是 4000、4200、4400、4600 mV；当前编码 4 对应 3000 mV。
-上述物理通道没有寄存器成功改写的证据。后述固件代理已完成原值写回及
-短时升压试验；升压值成功读回，但没有恢复低 FV 下的外供，尚未实现旁路。
+Piano uses the PMIH010x/PM8750BH family and cannot directly reuse PM8550B suspend bits;
+verified MCA properties have no usable standalone system-power-floor write entry point, and writes to `0x200c` have no effect.
+Stock PmicDxe resource construction, architecture dispatch, and get/set paths instead point to CHGR
+`0x2640[3:0]`; on-device resource subtype `0xba`, CHGR subtype `0xbe`, and
+architecture byte 0 match this path. The 16-step `SYS_MIN` table stops incrementing by 100 mV at the top end,
+with its final four steps at 4000, 4200, 4400, and 4600 mV; current code 4 corresponds to 3000 mV.
+No register write succeeded over the physical channel above. The firmware proxy described below completed both a same-value writeback and a
+brief boost trial; the boosted value read back successfully, yet failed to restore external power at low FV, so bypass is not achieved.
 
-原厂另有通过固件转发的寄存器代理，使用 GLINK owner `32783`，读写操作码
-分别为 `55`、`56`；现有代理已只读返回 PMIC 类型字节。ADSP 配置数据
-`adsp_dtb.b01` 的平台配置原本设置 `gen-test-interface = [02]`，附加配置
-没有覆盖该项；匹配固件的写处理允许值 2，通过固件处理访问而非 HLOS
-直接写物理窗口。配置未改动。原厂代理把非零写应答记日志后等待至超时，
-且没有事务编号，错误、迟到应答和恢复顺序需要单独处理；读取成功和静态
-许可都不能代替实测。经用户批准，临时模块完成只读预检和一次 3000 mV
-原值写回，固件返回成功，独立读回仍为编码 4；启动标识未改变，临时模块和
-文件已经移除，原厂满充策略正常。该结果确认固件代理的这次写请求可用，
-不证明改变系统下限后的电气效果。
+Stock provides another firmware-forwarded register proxy using GLINK owner `32783` with read and write opcodes
+`55` and `56` respectively; the existing proxy already returns the PMIC type byte read-only. ADSP configuration data
+in `adsp_dtb.b01` originally sets `gen-test-interface = [02]` in platform config, and overlay configs
+do not override it; matching firmware write handling permits value 2, routing access through firmware rather than HLOS
+writing the physical window directly. Configuration was left untouched. The stock proxy logs non-zero write responses and waits until timeout
+without transaction IDs, so errors, late replies, and recovery ordering must be handled explicitly; successful reads and static
+permissions never substitute for live testing. With user approval, a temporary module ran read-only prechecks and a single 3000 mV
+same-value writeback; firmware returned success, independent readback stayed at code 4, boot ID did not change, temporary modules and
+files were removed, and stock full-charge policy remained normal. This confirmed the firmware proxy accepts the write request,
+without proving the electrical effect of raising the system floor.
 
-经另一次明确批准，在实际约 4.95 V 输入、停充、FCC 编码 0 和 FV
-4090 mV 条件下，先确认负载使输入归零，再通过固件代理将 SYS_MIN
-从编码 4 改为 15，约 8.06 秒后恢复为 4。期间 10 个样本均读回 15，
-USB 电流始终为 0；两颗电芯平均各放电约 373、381 mA，VPH 平均
-约 4.385 V，没有升至 4.6 V。恢复 SYS_MIN 后，低 FV 下仍未恢复输入；
-随后恢复 FV 4480 mV 时，输入重新出现。恢复阶段有一个 VPH ADC
-读数为 3.938 V，相邻采样约 4.418 V；单点数据尚不能区分真实瞬态与
-采样异常，未确认持续时间。保持原厂配置、不改变供电设置的后续 120 组
-对照采样中，也出现两次约 4.04 V 的 VPH 读数，同组 VBAT ADC 和两颗
-电量计电压仍约 4.42 V。VPH 使用 PMK8550 的 ADC5 Gen3，并非 GLINK
-ADC；这些低点不只出现在试验中，尚不能证明其成因。设备未重启，热保护未修改。
+With separate explicit approval, under roughly 4.95 V actual input, charge stop, FCC code 0, and FV
+4090 mV, load-induced zero input was first confirmed, after which the firmware proxy changed `SYS_MIN`
+from code 4 to 15 and restored it to 4 after roughly 8.06 seconds. All 10 samples during the window read back 15,
+USB current stayed at 0 throughout, the two cells discharged at averages of roughly 373 and 381 mA, and VPH averaged
+roughly 4.385 V without rising to 4.6 V. After restoring `SYS_MIN`, input remained absent at low FV
+and reappeared only after restoring FV to 4480 mV. One VPH ADC sample during recovery
+read 3.938 V with adjacent samples around 4.418 V; a single sample cannot distinguish a real transient from a
+sampling glitch, and its duration is unconfirmed. In 120 follow-up control samples taken under untouched stock settings,
+two VPH readings around 4.04 V also appeared while simultaneous VBAT ADC and both
+fuel-gauge voltages stayed near 4.42 V. VPH uses PMK8550's ADC5 Gen3 rather than GLINK
+ADC; these dips are not unique to the experiment and their cause remains unproven. The device did not reboot and thermal protections were untouched.
 
-该结果否定本次条件下单独提高 SYS_MIN 作为故障恢复的方法；尚未覆盖
-9 V、预先设置 SYS_MIN 的顺序或真实高温，不能泛化为寄存器没有作用。
-试验的恢复分支始终只重试原值，未重复升压；错误或代理失联时保留停充
-约束，不能保证超时条件下也在 8 秒内恢复。该调试代理不是已验证的生产接口。
+This result rules out raising `SYS_MIN` alone as a recovery method under these conditions; it does not cover
+9 V input, pre-setting `SYS_MIN` beforehand, or real high temperature, and cannot be generalized to mean the register does nothing.
+The trial's recovery branch retried only the original value without re-boosting; on error or proxy loss, charge stop remained enforced,
+though recovery within 8 seconds cannot be guaranteed under timeouts. This debug proxy is not a verified production interface.
 
-结束后独立核对 SYS_MIN 为 3000 mV、FV 为 4480 mV、FCC 为原厂
-3000 mA；试验停充投票已恢复中性值 1，FCC 临时投票已禁用，所有强制
-投票均为 0。原厂满充投票仍为 0，因此最终充电关闭符合原厂策略。投票
-汇总中的有效客户端名称仍可能显示试验名，不能据此判断试验约束未解除，
-应核对各客户端自身的值。临时模块和上传文件已移除，debugfs 已恢复。
+Afterward, independent checks confirmed `SYS_MIN` at 3000 mV, FV at 4480 mV, and FCC at stock
+3000 mA; the trial's charge-stop vote returned to neutral 1, the temporary FCC vote was disabled, and all forced
+votes were 0. Stock's full-charge vote remained 0, so charging staying off matched stock policy. The voter
+summary's effective client name may still display the trial client name and should not be mistaken for an unreleased constraint—check
+each individual client's value instead. Temporary modules and uploaded files were removed, and debugfs was restored.
 
-输入暂停再恢复不等于 AICL restart。匹配固件的属性 `0x2014` 经 DCDC
-回调向 `0x2c50 bit1` 发出一次命令；该回调不修改 SYS_MIN、FV、充电
-使能或热保护。`0x2013` 的 rerun 还有额外状态与控制步骤，两者不能混用。
-原厂接口会丢弃 restart 回调错误，ACK 本身不能证明完成。经用户单独
-批准，在实际约 4.95 V、FV 4090 mV、FCC 编码 0、充电关闭且输入已
-丢失的条件下，通过固件代理发出一次该命令；固件返回成功，命令字节随后
-读回 0。后续 13.18 秒的 10 个样本中 USB 电流仍全部为 0，两颗电芯
-平均各放电约 375、381 mA，VPH 约 4.383 V；SYS_MIN 始终为 3000 mV。
-恢复 FV 4480 mV 后输入才出现。该命令在本次条件下也不足以恢复外供，
-尚未证明 AICL 的全部阶段完成，未覆盖预置顺序、9 V 或真实高温。
+Suspending and resuming input is not equivalent to an AICL restart. Matching firmware property `0x2014` issues a single command to
+`0x2c50 bit1` via the DCDC callback; that callback does not touch `SYS_MIN`, FV, charge
+enable, or thermal protections. `0x2013`'s rerun involves additional state and control steps, so the two must not be conflated.
+The stock interface discards restart callback errors, so an ACK alone does not prove completion. With separate user
+approval, under roughly 4.95 V actual input, FV 4090 mV, FCC code 0, charging disabled, and input already
+lost, one such command was issued via the firmware proxy; firmware returned success and the command byte subsequently
+read back 0. Across 10 samples over the next 13.18 seconds, USB current remained 0, the two cells
+discharged at averages of roughly 375 and 381 mA, VPH averaged roughly 4.383 V, and `SYS_MIN` stayed at 3000 mV.
+Input returned only after restoring FV to 4480 mV. This command is likewise insufficient to restore external power under these conditions;
+completion of all AICL stages was not proven, and pre-set ordering, 9 V, and real high temperature remain untested.
 
-硬件 ICL 反馈从命令前编码 `0x0c` 变为命令后 `0x0a`，恢复原厂 FV 后
-为 `0x0b`；原厂软件输入限流投票仍为 1600 mA。反馈属于自动运行结果，
-不能宣称所有硬件状态数值都恢复为试验前值。FV、FCC 和试验投票已经
-独立核对恢复，命令字节为 0；两颗电量计电流均为 0，设备没有重启，
-临时模块和上传文件已移除，debugfs 已恢复，不新增生产接口或驱动补丁。
+Hardware ICL feedback changed from code `0x0c` before the command to `0x0a` afterward, and settled at
+`0x0b` after restoring stock FV; the stock software ICL vote stayed at 1600 mA. Because feedback is an automatic runtime result,
+one cannot claim every hardware status register returned to its exact pre-trial value. FV, FCC, and trial votes were
+independently verified restored, the command byte read 0, both fuel-gauge currents read 0, the device did not reboot,
+temporary modules and uploaded files were removed, debugfs was restored, and no production interface or driver patch was added.
 
-保持充电位关闭、FCC 编码 0、FV 4090 mV 和 SYS_MIN 3000 mV，
-另一次获批试验只把 `0x2641[2:0]` 从 4 改为 5、`0x2c42[1:0]` 从 2
-改为 1，随后恢复原值。这是匹配固件普通使能分支使用的字段值，不是已知的
-旁路枚举。开始与恢复日志间隔约 8.10 秒；期间 9 个样本均读回测试值，
-USB 电流全部为 0，两颗电芯平均各放电约 371、353 mA，VPH 约 4.383 V。
-恢复字段后仍无输入，恢复 FV 4480 mV 后输入才出现。该组合在已测 5 V、
-常温条件下也不足以恢复外供。设备未重启，模式字段、FV、FCC 和投票已
-独立核对恢复，临时模块和文件已移除；初始化顺序、9 V 和高温尚未覆盖。
+Keeping the charge bit off, FCC code 0, FV 4090 mV, and `SYS_MIN` 3000 mV,
+another approved trial changed only `0x2641[2:0]` from 4 to 5 and `0x2c42[1:0]` from 2
+to 1, then restored both. These are the field values used by the matching firmware's normal-enable branch, not a known
+bypass enum. Start and restore logs were separated by roughly 8.10 seconds; all 9 samples in between read back the test values,
+USB current stayed 0 throughout, the two cells discharged at averages of roughly 371 and 353 mA, and VPH averaged roughly 4.383 V.
+Restoring the fields still yielded no input, which returned only after restoring FV to 4480 mV. This combination is also insufficient
+to restore external power under the tested 5 V room-temperature conditions. The device did not reboot, mode fields, FV, FCC, and votes were
+independently verified restored, and temporary modules and files were removed; initialization order, 9 V, and high temperature remain untested.
 
-原厂 `smart_bypass` 是按 SOC、板温等条件选择 FCC 的策略：工作函数向
-`smartchg_fcc_voter` 投票，`set_fcc` 回调再进入普通充电电流投票，传入 0
-会撤销这张限流票。已核对的调用链没有独立切换系统供电或隔离电池。
-设备树 `smart_bypass_support = <0>` 表示该策略关闭，改为 1 不能据此获得
-所需旁路功能。现装 `OS3.0.304.0.WPYMIXM` 的安全中心包含 SideRoad 与
-旁路充电 Plus 相关实现，但 `persist.vendor.smart.bypass.plus` 为空，
-电池保护入口因此隐藏，服务也不初始化 SideRoad 管理器。该管理器向
-`smart_chg` 发送 bit 10 请求，最终进入上述 FCC 策略；只显示入口不能
-证明底层功能可用，也不能将当前 ROM 的关闭配置当作硬件不支持的证据。
+Stock `smart_bypass` is a policy that selects FCC based on SOC, board temperature, and similar inputs: its worker votes on
+`smartchg_fcc_voter`, whose `set_fcc` callback feeds into the normal charge-current voter, and passing 0
+revokes that limit vote. Nothing in the verified call chain independently switches system power or isolates the battery.
+`smart_bypass_support = <0>` in the Device Tree means this policy is disabled; setting it to 1 will not grant
+the desired bypass capability. Security Center in installed `OS3.0.304.0.WPYMIXM` contains SideRoad and
+Bypass Charging Plus code, but `persist.vendor.smart.bypass.plus` is empty,
+so the battery-protection entry is hidden and the service does not initialize the SideRoad manager. That manager sends a
+bit 10 request to `smart_chg`, which ends up in the FCC policy above; merely exposing the UI entry neither
+proves the underlying capability works nor serves as evidence from current ROM defaults that hardware lacks support.
 
-`/sys/devices/platform/soc/soc:smart_charge/smart_night` 与
-`/sys/class/xm_power/charger/smart_charge/smart_night` 是同一节点，当前值为 0。
-原厂处理非零请求时将目标固定设为 80%，参数本身不是电量百分比。
-这项请求未被更高优先级策略覆盖时，SOC 达到 80% 暂停充电，降至 75%
-撤销停充请求，中间保持原状态。写 0 只移除此策略，不覆盖其他停充条件。
-[HyperSmartCharge](https://github.com/buffcow/HyperSmartCharge) 通过
-`IMiCharge.setMiChargePath("smart_chg", …)` 设置自定义 SOC 阈值，
-使用 bit 4 请求；它与 `smart_night` 经同一 SOC 工作函数和
-`set_soc_limit_sts` 回调进入 `soc_limit` 充电使能投票。普通有线路径还会
-向 `input_voltage` 投票 0，令输入目标为 5000 mV；该投票位于结构偏移
-`0xe8`，由匹配原厂 BTF 和 probe 回调绑定共同确认，不是电荷泵使能投票。
-这不表示新增独立 PMIC 旁路模式，也不能只凭软件目标判断实际适配器电压。
-本机内核包含这两条路径，本轮仅核对代码和节点，未执行控制写入或安装模块。
-它们提供原厂停充入口，尚不能证明低 FV、高温时输入仍能供给系统。
+`/sys/devices/platform/soc/soc:smart_charge/smart_night` and
+`/sys/class/xm_power/charger/smart_charge/smart_night` are the same node, currently 0.
+Stock handling of any non-zero request fixes the target at 80%; the argument itself is not a battery percentage.
+When not overridden by a higher-priority policy, charging pauses at 80% SOC, clears the pause at 75% SOC,
+and holds state in between. Writing 0 removes only this policy without overriding other stop conditions.
+[HyperSmartCharge](https://github.com/buffcow/HyperSmartCharge) sets custom SOC thresholds via
+`IMiCharge.setMiChargePath("smart_chg", …)` using bit 4; together with `smart_night`, it goes through the same SOC worker and
+`set_soc_limit_sts` callback into the `soc_limit` charge-enable vote. The normal wired path also
+votes 0 on `input_voltage`, targeting 5000 mV input; this voter sits at struct offset
+`0xe8`, confirmed by both matching stock BTF and probe callback bindings, and is not a charge-pump enable voter.
+This does not represent a separate PMIC bypass mode, nor does a software target alone reveal actual adapter voltage.
+Both paths exist in this device's stock kernel; this cycle inspected only code and sysfs nodes without issuing control writes or loading modules.
+They provide stock charge-stop hooks, but do not yet prove external input continues powering the system at low FV and high temperature.
 
-同平台 OnePlus 的
-[PLC 实现](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/1328964c65419be8d970f05cd61f15de5cc81cd8/vendor/oplus/kernel/charger/v2/oplus_chg_plc.c)
-在 buck 路径中停充并保持输入未暂停，还经 HAL 发送独立 OEM 固件状态；
-这些命令与 Piano MCA 的对应关系尚未确认，不能移植属性编号。
-SC8541 的 `bypass` 是适配器向电池的 1:1 直充，见
-[厂家评估板指南](https://www.southchip.com/rest/assets/2226fc0b-727f-4cc2-a865-63ed16233dc1/SC8541_EVM_User%2520guide_20241217.pdf)，与停充后供给系统不同。
+On the same platform, OnePlus's
+[PLC implementation](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/1328964c65419be8d970f05cd61f15de5cc81cd8/vendor/oplus/kernel/charger/v2/oplus_chg_plc.c)
+stops charging on the buck path while keeping input unsuspended and also sends separate OEM firmware state via HAL;
+any correspondence between those commands and Piano's MCA is unconfirmed, so property IDs cannot be ported.
+SC8541's `bypass` mode is 1:1 direct charging from adapter to battery—see the
+[vendor EVM user guide](https://www.southchip.com/rest/assets/2226fc0b-727f-4cc2-a865-63ed16233dc1/SC8541_EVM_User%2520guide_20241217.pdf)—which is different from powering the system while battery charging is stopped.
 
-真实高温仍需区分电池温区停充、USB 接口过热和功率器件保护，不能要求
-硬件极限保护触发后维持输入。验证应同时观察输入功率随负载变化、两颗电芯
-各自电流及系统电压，并核对降温、拔插和挂起恢复；现有结果不表示 Linux
-高温外供已经可用。
+Under real high temperature, battery thermal-zone stop, USB port overheat, and power-device protections must still be distinguished;
+maintaining input after hardware safety limits trip cannot be required. Verification must simultaneously observe input power tracking load changes, individual currents of both cells,
+and system voltage, plus cooldown, replug, and suspend/resume; current findings do not indicate that high-temperature external power
+is working on Linux.
 
-### 关机充电
+### Power-Off Charging
 
-Piano 的原厂引导器需要 `charger` 分区偏移 `0x1000` 的小端 32 位
-`power_off_mode` 等于 1，才会在 USB 供电唤醒后进入关机充电。原厂 Android
-由 `MiuiBatteryServiceImpl` 在用户关机广播中经充电服务设置此字段；
-`svc power shutdown` 不使用用户主动关机的原因值，不能替代电源菜单对照。
+Piano's stock bootloader requires the little-endian 32-bit `power_off_mode` field at offset `0x1000` in the `charger` partition
+to equal 1 in order to enter power-off charging after a USB-power wakeup. On stock Android,
+`MiuiBatteryServiceImpl` sets this field via the charging service during user shutdown broadcasts;
+`svc power shutdown` does not pass a user-initiated shutdown reason and cannot substitute for testing via the power menu.
 
-MCA 在设备关闭前处理 `xiaomi,piano` 的 `SYS_POWER_OFF`。开始事务和写入前
-都在同一个 ADSP 和 USB 连接周期中重新读取 VBUS 和 OTG，并要求 UCSI 报告
-平板已经连接且处于受电角色。只有这些条件同时满足时，才更新关机充电标记。
-这是原厂分区只读规则的明确例外：只允许将上述四字节置为 1，不提供任意写入
-接口，不在普通充电、重启、挂起或解绑时写盘，也不修改零速、保护策略或分区头。
+MCA handles `SYS_POWER_OFF` on `xiaomi,piano` before device shutdown. Both when starting the transaction and immediately before writing,
+it re-reads VBUS and OTG within the same ADSP and USB connection cycle and requires UCSI to report
+the tablet as connected in the sink role. The power-off charging flag is updated only when all of these conditions hold simultaneously.
+This is an explicit exception to the read-only rule for stock partitions: only those four bytes may be set to 1, no arbitrary write
+interface is exposed, no disk write occurs during normal charging, reboot, suspend, or unbind, and zero-speed, protection policies, and partition headers are never modified.
 
-驱动通过内部 SM8750 UFS 设备下唯一的 GPT 标签 `charger` 和有效分区 UUID
-选择目标，不依赖 `/dev/sdX`、分区编号或某台设备的固定 UUID。独占打开后，
-只读核对原厂 magic、版本 2、初始化状态 0/1 和空闲状态，再读改写包含标记的
-一个逻辑块，保留其中所有其他字节。写前复核分区头、原块和供电状态，完成后
-刷盘并读回整块比较。格式不支持或分区忙时不写入；I/O 失败时停止后续操作并记录错误。
-USB 仍接电可能启动 Android，拔线后可保持关机。原厂引导器负责消费标记并置回 2。
+The driver selects the target by the unique GPT label `charger` and valid partition UUID under the internal SM8750 UFS controller,
+without relying on `/dev/sdX`, partition numbers, or a device-specific fixed UUID. After opening exclusively,
+it performs a read-only check of the stock magic, version 2, initialized state 0/1, and available state, then read-modify-writes the single
+logical block containing the flag while preserving every other byte. Before writing, it re-verifies the partition header, original block, and power state,
+then flushes to disk and reads back the entire block for comparison. Unsupported formats or a busy partition skip writing; I/O errors halt further operations and log the failure.
+Remaining connected to USB power may boot Android, while unplugging stays powered off. The stock bootloader consumes the flag and resets it to 2.
 
-原厂模块、系统服务和格式证据记录在补丁系列的 `poweroff_charging` 来源项。
-内核 KUnit 直接调用驱动的读改写事务，覆盖块边界、相邻字段、重复调用、拔线
-以及读写、刷盘和读回失败；这些检查不能替代实机电源菜单与 USB 供电关机对照。
+Stock module, system service, and format evidence is recorded under the `poweroff_charging` entry in the patch series.
+Kernel KUnit tests call the driver's read-modify-write transaction directly, covering block boundaries, neighboring fields, repeated calls, unplugging,
+and read, write, flush, and readback failures; these tests do not replace on-device power-menu and USB-powered shutdown checks.
 
-### 电池组与状态通知
+### Battery Pack and Status Notifications
 
-两组并联电芯各有一颗 BQ27Z561。`piano-battery.dtso` 将它们标为
-`ti,cell-monitor`，保留原始电流、电压和温度供充电策略读取，由
-`piano_battery` 提供唯一的系统电池。电池组的电流和电量求和，电压取均值，
-SOC 按各组满充容量加权；充放电状态由合计净电流和满充标志决定。
-内部电量计不再单独注册为系统 Battery，因此 UPower 和 GNOME 只显示一个
-完整电池组，不需要桌面补丁或过滤规则。
+Each of the two parallel cell banks has its own BQ27Z561 fuel gauge. `piano-battery.dtso` marks them as
+`ti,cell-monitor`, retaining raw current, voltage, and temperature for charging policies while
+`piano_battery` exposes the single system battery. Pack current and charge are summed, voltage is averaged,
+and SOC is weighted by each bank's full-charge capacity; charging/discharging status is determined by combined net current and full-charge flags.
+Internal gauges no longer register separately as system batteries, so UPower and GNOME display a single
+unified battery pack with no desktop patches or filter rules needed.
 
-两颗电量计的 `current_now` 读取 `0x0c` 的测量电流，`current_avg` 读取
-`0x14` 的滤波电流，均以有符号微安报告。系统电池分别汇总两组对应的读数；
-充放电状态和 MCA 策略继续用滤波电流，停充、回充及快充阈值不变。
+For both gauges, `current_now` reads measured current from `0x0c` and `current_avg` reads
+filtered current from `0x14`, both reported in signed microamperes. The system battery aggregates each pair of readings separately;
+charging/discharging status and MCA policies continue using filtered current, leaving stop, recharge, and fast-charge thresholds unchanged.
 
-[TI 技术手册](https://www.ti.com/lit/ug/sluuc54c/sluuc54c.pdf#page=80) §12.1.15
-规定标准 BQ27Z561 `AveragePower()` 读取 `0x22/0x23`，返回有符号毫瓦，
-充电为正、放电为负。Piano 的 HyperOS 4 电量计驱动读取另外两个寄存器，
-将 `0x7b` 报为功率偏差（`power_deviation`），`0x89` 报为 `action_power`。
-偏差不是平均功率，`action_power` 的单位与平均窗口也没有核实，
-不能套用标准命令的换算。
-在平板上，两颗电量计的 `power_avg` 均返回 `ENODATA`，各自的电压和电流
-仍能读取；充电调节不依赖这个功率字段。
+Section 12.1.15 of the [TI Technical Reference Manual](https://www.ti.com/lit/ug/sluuc54c/sluuc54c.pdf#page=80)
+specifies that standard BQ27Z561 `AveragePower()` reads `0x22/0x23` and returns signed milliwatts
+(positive for charging, negative for discharging). Piano's HyperOS 4 gauge driver reads two different registers instead,
+reporting `0x7b` as `power_deviation` and `0x89` as `action_power`.
+Deviation is not average power, and neither the unit nor averaging window of `action_power` has been verified,
+so standard command scaling cannot be assumed.
+On the tablet, `power_avg` returns `ENODATA` on both gauges while voltage and current
+remain readable; charging regulation does not depend on this power field.
 
-FFC 使用前还需要两颗电量计通过电池认证，不能把充电器 MiPPS 认证当成
-电池认证。BQ27Z561 驱动使用原厂 32 字节随机挑战及 HMAC-SHA256 邮箱，
-结果通过标准只读 `authentic` 属性提供，电池组只有在两组都通过时才报告
-成功。供应商公用校验参数由板级设备树提供；没有该配置的其他 BQ27xxx
-设备保持原有测量行为。原厂 `batterysecret` 的算法已在本机两组 `lwn`
-电池上用新挑战核对，驱动不接受用户空间写入“认证成功”。
+Before enabling FFC, both fuel gauges must also pass battery authentication—charger MiPPS authentication must not be confused with
+battery authentication. The BQ27Z561 driver uses the stock 32-byte random challenge and HMAC-SHA256 mailbox,
+exposing results through the standard read-only `authentic` property; the battery pack reports success only when both banks pass.
+Vendor public verification parameters come from the board Device Tree; other BQ27xxx
+devices without that property keep their original measurement behavior. The stock `batterysecret` algorithm has been verified with fresh challenges on both `lwn`
+cell banks of this device, and the driver rejects userspace attempts to write authentication success.
 
-电量计的 FFC 模式使用原厂 `0x003e`／`0x003f` 命令及校验和，通过标准
-`charge_type` 控制；启用前要求认证成功，通信错误和唤醒后清除旧结果，
-挂起或拆除前恢复普通模式。这个属性记录已成功发送的模式命令，与原厂
-一样不是硬件位的读回。充电策略使用该标准属性切换普通与 FFC 模式，启用
-条件和电压、电流范围见上文；来源与同机二进制摘要记在补丁系列清单中。
+Gauge FFC mode uses stock `0x003e`/`0x003f` commands with checksums, controlled via standard
+`charge_type`; enabling requires successful authentication, communication errors and resume clear cached results,
+and suspend or driver removal restores normal mode. This property records the last successfully sent mode command and, as in stock,
+is not a hardware-bit readback. The charging policy switches between normal and FFC modes through this standard property, under the entry
+conditions and voltage/current bounds described above; provenance and on-device binary hashes are in the patch series manifest.
 
-若挂起前关闭快充模式的 MAC 写入失败，驱动返回原错误并立即恢复电量计
-轮询。失败设备不会收到系统挂起回滚的 resume 回调，不能依赖下一次读数
-或插线通知才恢复工作。UML 回归直接调用真实 PM 回调和 MAC 设置函数，
-分别覆盖命令帧失败、校验帧失败、正常关闭及无认证参数设备。
+If the MAC write to disable fast-charge mode fails before suspend, the driver returns the original error and immediately rearms gauge
+polling. Failed devices do not receive a resume callback during system suspend rollback, so recovery cannot depend on the next read
+or plug notification. UML regressions directly invoke the real PM callbacks and MAC setter,
+covering command-frame failure, checksum-frame failure, clean disable, and devices without authentication parameters.
 
-关机和重启时，BQ27xxx 驱动先等正在执行的读写结束，再停止轮询。
-已经排队的供电通知仍可运行，但不会通过电量计访问已关停的 I²C 总线。
-这条路径不改变关机充电设置或运行中的电流读数。
+On shutdown and reboot, the BQ27xxx driver waits for any in-flight reads or writes to finish before stopping polling.
+Already-queued power-supply notifications may still run, but will not access the shut-down I²C bus through the gauge.
+This path alters neither power-off charging configuration nor runtime current readings.
 
-插线只表示外部电源在线，不保证输入足够供给系统。MCA 在实测电流方向
-变化时通过已有供电关系通知电量计，电量计再通知电池组；认证或调压后
-开始充电不必等待电量计的慢速后台轮询，也不会把真实负电流显示成充电。
+Being plugged in only indicates external power is online and does not guarantee input is sufficient to power the system. Whenever measured current direction
+changes, MCA notifies the gauges through existing power-supply links, and the gauges notify the battery pack; starting to charge after authentication or voltage adjustment
+does not wait for slow background gauge polling, nor is actual negative current displayed as charging.
 
-### MiPPS 认证与连接恢复验证
+### MiPPS Authentication and Connection Recovery Verification
 
-参数对照测试每次只改变一个参数，并保持启动文件、模块与 root 中的配置匹配。
-产品共用初装启动镜像，SimpleInit 无操作五秒后启动；需要停留菜单时用
-按键或触摸取消。启动失败可从前面的安卓／UEFI 选择器进入 Android，
-再更新启动镜像，不修改原厂系统分区。
+Parameter comparison tests change only one parameter per boot and keep boot files, modules, and root configurations synchronized.
+Products share the initial boot image (ESP), where SimpleInit boots automatically after 5 seconds of inactivity; press a key or touch the screen
+to stay in the menu. If a boot fails, enter Android from the preceding Android/UEFI selector
+and update the boot image (ESP) without modifying stock system partitions.
 
-Piano 只有一个 USB-C 口。测试原装充电器和线材直连时，先确认 Wi-Fi SSH 与
-持久 journal 可用，通过 Wi-Fi 采集；拔掉电脑后 USB 串口和 USB 网络断开是
-正常现象。PD 扩展坞不能代替充电器直连认证。
+Piano has only one USB-C port. When testing direct connections to an original charger and cable, ensure Wi-Fi SSH and
+persistent journald are working first and collect data over Wi-Fi; losing USB serial and USB networking upon unplugging from a computer is
+expected. A PD dock cannot substitute for direct charger authentication.
 
-每次启动记录源码版本、`uname -r`、`/proc/sys/kernel/random/boot_id`、
-`/proc/cmdline` 和 `/sys/module/piano_mca/parameters/` 的实际值。充电策略参数
-`charge_policy=1 hv_charge=1 charge_current=1 pan_ack=0` 保持不变。
-`mipps_auth` 和 `cp_charge` 的权限为 `0444`，在发行版的模块参数配置中设置，
-更新启动项并重启后生效，不写 sysfs，也不解绑 MCA 来热切换。
+On every boot, record the source revision, `uname -r`, `/proc/sys/kernel/random/boot_id`,
+`/proc/cmdline`, and the live values under `/sys/module/piano_mca/parameters/`. Keep the charging policy parameters
+`charge_policy=1 hv_charge=1 charge_current=1 pan_ack=0` unchanged.
+`mipps_auth` and `cp_charge` have `0444` permissions; set them in the distribution's module parameter configuration,
+update boot entries, and reboot for changes to take effect—do not write sysfs or unbind MCA to toggle them live.
 
-| 阶段 | 操作 | 通过条件 |
+| Stage | Procedure | Pass Criteria |
 | --- | --- | --- |
-| 原参数回归 | `mipps_auth=0 cp_charge=0`；检查桌面、触摸、Wi-Fi、USB、挂起恢复和普通 PD 充电，持续 15 分钟 | 无异常重启、ADSP 异常和 USB 角色故障，`authentic=0`，普通充电正常 |
-| 认证 | 下一次启动仅改 `mipps_auth=1`，直连已知支持 MiPPS 的充电器与线材，独立连接 3 次 | 每次最终为 `authentic=1`、`xiaomi/pd_verifed=1`、`xiaomi/verify_process=0`；同一次连接不重复认证 |
-| 普通 PD 负例 | 换用已知不支持 MiPPS 的 PD/PPS 电源 | `authentic=0`，认证尝试结束后 `verify_process=0`，普通 PD/PPS 仍能充电 |
-| 快速拔插 | 拔插间隔小于 3 秒，重复 10 轮；覆盖成功后重插、认证中拔出、普通 PD 尝试后立即换 MiPPS 电源 | UCSI 记录连接变化，每次新连接重新认证，不复用旧结果或旧尝试标志，不沿用旧 CP/HV 策略 |
-| 电源自身复位 | 用会在认证后自行复位的 MiPPS 电源观察自然行为 | 只有 VBUS/PD 复位、没有连接变化时保留证明；若 CC 实际断开，则重新认证 |
-| 直充 | 前述步骤通过后，另一次启动仅改 `cp_charge=1`，保持默认电流上限 | SC8541 正常进入和退出，拔线后停止，不把上一电源的直充状态用于新连接 |
+| Baseline regression | `mipps_auth=0 cp_charge=0`; verify desktop, touch, Wi-Fi, USB, suspend/resume, and normal PD charging for 15 minutes | No unexpected reboots, ADSP faults, or USB role failures; `authentic=0`; normal charging works |
+| Authentication | Next boot, change only `mipps_auth=1`; connect directly to a known MiPPS-capable charger and cable across 3 independent attachments | Each attachment ends at `authentic=1`, `xiaomi/pd_verifed=1`, `xiaomi/verify_process=0`; no duplicate authentication within the same attachment |
+| Normal PD negative test | Switch to a PD/PPS supply known not to support MiPPS | `authentic=0`, `verify_process=0` after the attempt finishes, normal PD/PPS still charges |
+| Rapid replug | Unplug/replug with <3 s intervals for 10 rounds; cover replug after success, unplug mid-authentication, and immediate switch to MiPPS after normal PD | UCSI logs connect changes; every new attachment re-authenticates without reusing stale results, attempt flags, or old CP/HV policies |
+| Supply self-reset | Observe natural behavior with a MiPPS supply that self-resets after authentication | Proof is retained on VBUS/PD-only resets without a connect change; if CC physically disconnects, re-authentication runs |
+| Direct charging | After all prior stages pass, change only `cp_charge=1` on a new boot with default current caps | SC8541 enters and exits cleanly, stops on unplug, and never carries a prior supply's direct-charging state to a new attachment |
 
-直充启动要求电池电压至少 `3.5 V`、低于当前普通表的恒压目标，所有温度读数
-处于对应窗口并满足恢复回差；条件不满足时不要求进入直充。低温或故障复现
-测试可显式设置 `cp_ibus_max=4000`、`cp_ibat_max=8000`，不沿用发布默认上限；
-实际输入还受 PDO、电池状态和温度限制，不能用充电器铭牌功率或桌面
-`Charging` 字样判断结果。
+Direct-charging startup requires battery voltage at least `3.5 V` and below the active normal-table CV target, with all temperature readings
+inside their windows and satisfying recovery hysteresis; direct charging is not required to engage when these conditions are not met. Low-temperature or fault-reproduction
+tests may explicitly set `cp_ibus_max=4000` and `cp_ibat_max=8000` instead of release defaults;
+actual input remains bounded by PDO, battery state, and temperature, so results cannot be judged by charger nameplate wattage or desktop
+`Charging` labels.
 
-SC8541 启动前写入并读回保护阈值和 5 秒硬件看门狗，同时保留 3 秒软件失联
-停止。根据[南芯 SC8541 手册](https://www.southchip.com/rest/assets/8fa17c3a-a4a3-4044-a7dc-3fd3c2f56767)
-第 9.2.6 节，任意寄存器读写都会重置硬件看门狗，因此持续读取 ADC 的采样不能
-证明控制线程失联后的硬件超时。停止电荷泵后等待 500 毫秒，再次停止并读回
-`CHG_EN`；确认失败时保留停止重试，不继续请求高压，挂起也会返回失败。
-调压使用启动直充时的 ADSP 和连接代数，两颗电芯的最低、最高温度分别参与
-低温和高温检查。MCA 的可冻结工作队列与设备依赖保证挂起前先停止充电策略，
-再挂起电荷泵和 I²C 控制器。
+Before enabling SC8541, the driver writes and reads back protection thresholds and a 5-second hardware watchdog while keeping a 3-second software communication-loss
+stop. Per Section 9.2.6 of the [Southchip SC8541 datasheet](https://www.southchip.com/rest/assets/8fa17c3a-a4a3-4044-a7dc-3fd3c2f56767),
+any register read or write resets the hardware watchdog, so continuous ADC polling cannot
+prove hardware timeout behavior when the control thread stalls. After stopping the charge pump, the driver waits 500 ms, stops again, and reads back
+`CHG_EN`; if confirmation fails, it keeps retrying stop, stops requesting high voltage, and fails suspend.
+Voltage regulation binds to the ADSP and connection generation captured at direct-charging startup, and the minimum and maximum of the two cell temperatures feed
+low-temperature and high-temperature checks respectively. MCA's freezable workqueue and device dependencies ensure charging policy stops before suspend
+suspends the charge pump and I²C controller.
 
-持续保存 `journalctl -kf -o short-monotonic`，并使用现有
-`ucsi:ucsi_connector_change` tracepoint 对照连接变化。其 `change` 的 `0x4000`
-位表示 Connect Change，不能把全部 UCSI 通知都视为拔线。约每秒采样
-`/sys/class/power_supply/piano-mca-usb/` 下的 `authentic`、`online`、
-`voltage_now`、`current_now`、`input_current_limit`；开启认证后再采样 `xiaomi/` 下的
-`verify_process`、`pd_verifed` 和 `adapter_id`；属性确实拼作 `pd_verifed`。
-同时记录两块 `bq27z561` 电池的温度、电压和电流。避免全量动态调试或高频属性
-读取干扰认证时序。一次连接后先观察 30 秒，异常时保存该段完整日志。
+Continuously capture `journalctl -kf -o short-monotonic` and cross-reference connection changes with the existing
+`ucsi:ucsi_connector_change` tracepoint. Bit `0x4000` in `change` indicates Connect Change; not every UCSI notification is an unplug.
+Sample `authentic`, `online`, `voltage_now`, `current_now`, and `input_current_limit` under
+`/sys/class/power_supply/piano-mca-usb/` roughly once per second; once authentication is enabled, also sample
+`verify_process`, `pd_verifed`, and `adapter_id` under `xiaomi/` (the attribute is indeed spelled `pd_verifed`).
+Simultaneously record temperatures, voltages, and currents from both `bq27z561` gauges. Avoid blanket dynamic debug or high-frequency sysfs
+reads that could disturb authentication timing. Observe each attachment for 30 seconds first and archive the full log segment if any anomaly occurs.
 
-ACK 丢失、清理重试、PDR 代数竞争和解绑后回调使用隔离内核的故障注入验证，
-不在实机强制重启 ADSP、丢弃消息或解绑 MCA。出现内核错误、ADSP 反复重启、
-普通 PD 电源错误保留认证，或通信恢复后认证标志仍无法清除时，停止本轮并保存
-日志，回到旧启动项。
+Lost ACKs, cleanup retries, PDR generation races, and post-unbind callbacks are verified with fault injection in an isolated kernel
+rather than forcibly crashing ADSP, dropping messages, or unbinding MCA on real hardware. If a kernel error, repeated ADSP restarts,
+false authentication retention on a normal PD supply, or an unclearable authentication flag after communication recovery occurs, stop the run, save
+logs, and revert to the previous boot entry.
 
-## Wi-Fi 地址与恢复
+## Wi-Fi MAC Address and Resume
 
-ath12k 优先使用固件提供的有效地址，其次读取标准固件节点地址；两者都缺失时
-生成本次设备实例使用的本地地址。固件重启或睡眠恢复再次返回全零地址时，
-驱动保留已经选定的有效地址，不覆盖它并重新生成随机值。NetworkManager
-的扫描随机化仍按发行版策略工作，与网卡的永久地址分开。
+ath12k prefers a valid MAC address provided by firmware, falling back next to a standard firmware-node address; if both are missing,
+it generates a locally administered address for the current device instance. When firmware restart or resume from sleep returns an all-zero address again,
+the driver retains the already-selected valid address instead of overwriting it with a newly randomized one. NetworkManager's
+scan randomization still operates per distribution policy, separate from the interface's permanent MAC address.
 
-实机在普通启动和 `deep` 恢复前后保持同一永久地址，恢复没有再次记录生成
-随机地址。这个后备只在当前设备实例内保持，不等于已经交接原厂 Wi-Fi 地址。
+On real hardware, the same permanent MAC address is preserved across normal boot and `deep` resume without logging another
+random-address generation on resume. This fallback persists only for the current device instance and does not constitute handoff of the stock Wi-Fi MAC address.
 
-## UFS 多队列
+## UFS Multi-Circular Queue (MCQ)
 
-[`piano-ufs-mcq.dtso`](../../../linux/dts/piano-ufs-mcq.dtso) 补齐同机原厂使用的
-MCQ 寄存器窗口及 ITS 中断连接。普通控制器位于 `0x1d84000`，
-MCQ 配置、厂商状态和队列门铃分别从 `0x1da0000`、`0x1da4000`、
-`0x1da5000` 开始；主线驱动使用一个 28 KiB 的 `mcq` 窗口访问它们。
-ITS 的 UFS 设备编号沿用原厂的 `0x60`，DMA 仍使用既有 SMMU 路由。
+[`piano-ufs-mcq.dtso`](../../../linux/dts/piano-ufs-mcq.dtso) adds the MCQ register window and ITS interrupt wiring used by stock on this device.
+The standard controller sits at `0x1d84000`, while
+MCQ configuration, vendor status, and queue doorbells start at `0x1da0000`, `0x1da4000`, and
+`0x1da5000` respectively; the mainline driver accesses them through a single 28 KiB `mcq` window.
+The ITS UFS device ID keeps stock `0x60`, and DMA continues using existing SMMU routing.
 
-2026-10-22 正常重启后，驱动启用 8 个 I/O 队列、1 个轮询队列，
-队列深度为 64；8 路 ESI 中断均有完成记录，SteamOS 从内部存储启动。
-这解决了之前缺少 MCQ 资源而退回普通队列的问题。启动时写
-`wExceptionEventControl` 仍被设备拒绝，属于另一项待处理的属性兼容问题。
+After a clean reboot on 2026-10-22, the driver enabled 8 I/O queues and 1 poll queue
+with a queue depth of 64; all 8 ESI interrupts recorded completions, and SteamOS booted from internal storage.
+This resolves the earlier fallback to legacy single-queue mode caused by missing MCQ resources. The boot-time write to
+`wExceptionEventControl` is still rejected by the device and remains a separate attribute-compatibility issue.
 
 ## CDSP
 
-[`piano-dsp-resources.dtso`](../../../linux/dts/piano-dsp-resources.dtso) 使用主线
-NSP NoC 绑定、两单元 interconnect 参数和 AP 的 BCM voter，将 CDSP 到内存的
-带宽路径交给 `qcom_q6v5`。驱动在启动签名固件前申请带宽，启动交接完成后释放；
-不再依赖 Android 留下的总线状态。打包器保留这条已转换的路径。
+[`piano-dsp-resources.dtso`](../../../linux/dts/piano-dsp-resources.dtso) uses mainline
+NSP NoC bindings, two-cell interconnect arguments, and the AP BCM voter to hand the CDSP-to-memory
+bandwidth path over to `qcom_q6v5`. The driver requests bandwidth before starting signed firmware and releases it once boot handoff completes,
+eliminating reliance on bus state left behind by Android. The packager preserves this converted path.
 
-[`piano-cdsp-fastrpc.dtso`](../../../linux/dts/piano-cdsp-fastrpc.dtso) 将原厂的
-11 个非安全计算会话连接到 Linux 管理的 apps SMMU，保留每个会话的
-stream ID 和 mask。原厂安全会话 9 不作为普通 Linux 计算会话使用。
-正常 DMA 映射由内核完成，没有在用户空间写 SMMU 寄存器。
+[`piano-cdsp-fastrpc.dtso`](../../../linux/dts/piano-cdsp-fastrpc.dtso) connects the 11 stock
+non-secure compute sessions to the Linux-managed apps SMMU, preserving each session's
+stream ID and mask. Stock secure session 9 is not exposed as a normal Linux compute session.
+Normal DMA mapping is performed by the kernel without writing SMMU registers from userspace.
 
-2026-10-22 正常重启后，CDSP 收到 ready／handover 中断并进入 running，
-11 个计算会话均使用 DMA domain。`cdsprpcd` 已打开 DSP 端的
-`adsp_default_listener`，无需重启服务，之前连续出现的能力查询错误消失。
-这证明固件启动和 RPC 基础通信可用；具体神经网络、视觉及计算库仍需
-对应用户空间和 DSP 程序支持，不能仅凭服务启动宣称这些应用全部完成。
+After a clean reboot on 2026-10-22, CDSP received its ready/handover interrupts and entered the running state,
+with all 11 compute sessions using DMA domains. `cdsprpcd` opened the DSP-side
+`adsp_default_listener` without needing a service restart, and the previous continuous capability-query errors disappeared.
+This proves firmware boot and basic RPC transport work; specific neural-network, vision, and compute libraries still require
+corresponding userspace and DSP binary support, so service startup alone cannot be claimed as full application readiness.
 
-随后一次 deep 挂起由 RTC 在约 22 秒后唤醒，ADSP、CDSP 继续 running，
-`cdsprpcd` 的重启计数保持为零，Wi-Fi、蓝牙和 USB 恢复连接。
-CPU 离线期间仍有 GPIO 中断亲和性告警，未把这项告警隐藏或标为已修复。
+In a subsequent `deep` suspend woken by RTC after roughly 22 seconds, both ADSP and CDSP remained running,
+`cdsprpcd`'s restart count stayed at zero, and Wi-Fi, Bluetooth, and USB reconnected.
+GPIO interrupt-affinity warnings still appear during CPU offlining and have neither been suppressed nor marked as fixed.
