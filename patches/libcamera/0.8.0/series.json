@@ -23,7 +23,7 @@
     },
     {
       "file": "0003-camss-pipeline.patch",
-      "sha256": "83bed98797c0c452c9ba17febaa4580e90a2a643beb5214e6958bb6948da1c5e",
+      "sha256": "641f9e970f909d1a07b09856cfdf4c58b62c8e7299488dd05cd7a4106ef03dcc",
       "upstream": {
         "status": "submitted",
         "url": "https://lists.libcamera.org/pipermail/libcamera-devel/2026-November/063341.html",
@@ -59,7 +59,7 @@
     },
     {
       "file": "0007-camss-frame-interval.patch",
-      "sha256": "7b1ce2cf1afa07b9fbb35f7133dffeac77268ee2d0880980142edbb6a4cf70d3",
+      "sha256": "6f333e5c414ecc5c6769a3ad7936bd57bf4714bf110fe99c00953783df14ba7e",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/libcamera-org/libcamera/tree/v0.8.0/src/libcamera/pipeline",
@@ -73,6 +73,33 @@
         "status": "downstream",
         "url": "https://github.com/libcamera-org/libcamera/blob/df8e348d64b4932a0676256ed24f0da3ee9438bc/src/gstreamer/gstlibcamerasrc.cpp",
         "drop_when": "The GStreamer source negotiates a common frame interval from the configured camera's timing and every downstream stream."
+      }
+    },
+    {
+      "file": "0009-meson-avoid-gcc-16-1-speculative-bounds-errors.patch",
+      "sha256": "1df1576d161439e535972223da9bb55a55a1787ce392227b93d580d0e06e694a",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://gcc.gnu.org/g:b6274f4ec32dc4a8855459384ac899316e7a34f2",
+        "drop_when": "All package build roots use GCC and libstdc++ with the PR 122197 fix or a different compiler."
+      }
+    },
+    {
+      "file": "0010-cam-start-sessions-before-queueing.patch",
+      "sha256": "292016cb4eb548bcc48c7dcff6029b0929ae17ce046829866b61ae59acdb3274",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/libcamera-org/libcamera/blob/v0.8.0/src/apps/cam/main.cpp",
+        "drop_when": "The cam tool can start multiple sessions without running out of queued buffers while the application starts the other cameras."
+      }
+    },
+    {
+      "file": "0011-camss-split-pix-streamon.patch",
+      "sha256": "816057b5fe3766851cb357ca536fffe2af7b5915ace284604ee78ee50808309d",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/libcamera-org/libcamera/blob/v0.8.0/src/libcamera/camera.cpp",
+        "drop_when": "The CAMSS PIX handler can start another sensor without blocking buffer completion for cameras already running."
       }
     }
   ]

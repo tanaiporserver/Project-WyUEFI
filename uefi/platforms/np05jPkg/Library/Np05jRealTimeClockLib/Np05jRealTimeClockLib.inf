@@ -1,0 +1,28 @@
+## @file
+#  Hardware-assisted RealTimeClockLib for nubia NP05J (PMK8550 + ArchTimer).
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jRealTimeClockLib
+  FILE_GUID                      = A1E45104-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = RealTimeClockLib
+
+[Sources]
+  Np05jRealTimeClockLib.c
+
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+
+[LibraryClasses]
+  ArmGenericTimerCounterLib
+  DebugLib
+  TimeBaseLib
+  TimerLib

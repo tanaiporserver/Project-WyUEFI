@@ -1,0 +1,30 @@
+## @file
+#  Hardware reboot-mode (Recovery / Bootloader / EDL 9008) library for nubia NP05J.
+#  Adapted from Project SunUEFI (https://github.com/slwyts/Project-SunUEFI).
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jResetLib
+  FILE_GUID                      = A1E45103-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = Np05jResetLib|DXE_DRIVER UEFI_APPLICATION UEFI_DRIVER
+
+[Sources]
+  Np05jResetLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  ArmPkg/ArmPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  ArmSmcLib
+  BaseLib
+  DebugLib
+  IoLib
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "targets": [
+    "uefi"
+  ],
+  "patches": [
+    {
+      "repository": "upstream/Mu-Silicium",
+      "base_commit": "8471e47f5248ebbffc2e6196b683204163efe155",
+      "patch": "0001-mu-silicium-64bit-clockdxe-smbios-bootoptions.patch",
+      "sha256": "7c5ef33329417df09a0d9ce38de745afecaad57fc44d5f5b26c9988739ea2c1d",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once upstream Mu-Silicium supports EFI_CLOCK_PROTOCOL v0x1000B 64-bit CPU frequency APIs, Pakala GetMaxPerfLevel N-count indexing, SMBIOS Type 4 Enabled status (BIT6|BIT0), and %g GUID format specifiers in MsBootOptionsLib."
+      }
+    },
+    {
+      "repository": "upstream/Mu-Silicium",
+      "base_commit": "8471e47f5248ebbffc2e6196b683204163efe155",
+      "patch": "0002-mu-silicium-bootshim-inplace-and-ramdisk.patch",
+      "sha256": "5034f7b37cac2404784982ff19a3cb6f07ae8d203b1cf1a12afd88703aba1ff8",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop if NP05J transitions exclusively to Project-WyUEFI's relocating BootShim.S at 0xA7100000 or upstream Mu-Silicium merges IN_PLACE=1 and optional ramdisk packaging."
+      }
+    },
+    {
+      "repository": "upstream/Mu-Silicium/Silicium-ACPI",
+      "base_commit": "f50bc115dccdea12e44efb550fd783d1daafc739",
+      "patch": "0003-silicium-acpi-pakala-and-np05j.patch",
+      "sha256": "82e006395a2b198f308717f623d3a20610906da3b5d64b05453d8fa7ab0a6858",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once Project-Silicium/Silicium-ACPI merges Silicon/Qualcomm/Pakala and Platforms/ZTE/nubia_np05j ACPI tables."
+      }
+    }
+  ]
+}

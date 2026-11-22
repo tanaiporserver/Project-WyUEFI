@@ -1,0 +1,23 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME   = Np05jSpmiDebuggerDxe
+  FILE_GUID   = 0BC0B1A6-DF90-4EBB-A4BB-CA9C50B65937
+  MODULE_TYPE = DXE_DRIVER
+  ENTRY_POINT = ShowSpmiSnapshot
+
+[Sources]
+  Np05jSpmiDebuggerDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEfiLoadedImageProtocolGuid
+
+[Depex]
+  TRUE

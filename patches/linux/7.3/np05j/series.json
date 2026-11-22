@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "targets": [
+    "linux"
+  ],
+  "patches": [
+    {
+      "file": "0141-LOCAL-input-touchscreen-synaptics-tcm2-spi.patch",
+      "sha256": "674bd4719feb9f41e5be98d7d89939bdb412a6e8e39a79ee6b84e94dcb4de9b5",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Replace when mainline Linux provides a Synaptics TouchComm v2 (TCM2) SPI driver supporting S3930TB0A0 full-duplex GPI DMA transfers and dynamic CMD_GET_TOUCH_REPORT_CONFIG parsing."
+      }
+    },
+    {
+      "file": "0142-LOCAL-arm64-dts-qcom-sm8750-nubia-np05j.patch",
+      "sha256": "ea4ee80468185fbebe176dfc47aefac3f1f4e8e57748f6e060e8d39a7812fc23",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once upstream arch/arm64/boot/dts/qcom/ includes sm8750-nubia-np05j board support."
+      }
+    },
+    {
+      "file": "0143-LOCAL-wifi-ath12k-bdwlan-board-id-fallback.patch",
+      "sha256": "dcd8698ca47445a921e5089dd4200bf4007fd509eee67354b9d2ef3b9f7fd106",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop if NP05J packages its board calibration directly as ath12k/WCN7850/hw2.0/board.bin or upstream ath12k Peach board_api1 lookup supports bdwlan.eXX."
+      }
+    }
+  ]
+}

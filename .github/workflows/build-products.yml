@@ -37,10 +37,11 @@ on:
 permissions:
   contents: read
 
-# Keep the signed pacman index on this generation until its images are assembled.
+# Keep each signed index in place until its images are assembled. Pushes can
+# select different products, so do not let a new run replace a waiting one.
 concurrency:
   group: build-products-${{ github.ref }}
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   select:
@@ -97,7 +98,7 @@ jobs:
         with:
           path: build/ci-builder
           key: ${{ steps.cache-key.outputs.key }}
-      - name: Check signed publication and pacman configuration upgrades
+      - name: Check signed publication and native package selection
         run: |
           docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 \
             -v "$PWD:/workspace:ro" -w /workspace sunuefi-builder bash -euc '
@@ -106,7 +107,9 @@ jobs:
               ./build.sh check --group python-all --no-skips \
                 --pattern "test_repo*.py" --pattern test_kernel_package.py \
                 --pattern "test_overlay*.py" --pattern test_debian_overlay_cache.py \
-                --pattern test_build_nyarch_apps.py --pattern test_stage_arch_piano.py
+                --pattern test_build_nyarch_apps.py --pattern test_stage_arch_piano.py \
+                --pattern test_build_libcamera_packages.py --pattern test_build_pipewire_packages.py \
+                --pattern test_denial_packages.py --pattern test_denial_manifest.py
             '
       - name: Pass the verified builder image to this run
         uses: ./.github/actions/build-input
@@ -124,6 +127,9 @@ jobs:
     with:
       image_id: ${{ needs.environment.outputs.image_id }}
       shared_matrix: ${{ needs.select.outputs.shared_matrix }}
+      build_denial: >-
+        ${{ contains(fromJSON(needs.select.outputs.overlay_matrix).target, 'debian-denial') ||
+            contains(fromJSON(needs.select.outputs.overlay_matrix).target, 'arch-denial') }}
 
   overlays:
     needs: [select, environment, shared]
@@ -164,7 +170,18 @@ jobs:
     permissions:
       actions: write
     steps:
+      - id: build-logs
+        name: Check which build tasks produced logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          logs=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("build-logs-")) | .id')
+          if [[ -n "$logs" ]]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish one logs.zip and remove intermediate log artifacts
+        if: steps.build-logs.outputs.present == 'true'
         uses: actions/upload-artifact/merge@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: logs

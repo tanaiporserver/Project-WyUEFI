@@ -6,20 +6,48 @@ sun_mu="$sun_root/upstream/Mu-Silicium"
 sun_si="$sun_root/upstream/simple-init"
 sun_build="$sun_root/build/simpleinit-edk2"
 sun_output="$sun_root/artifacts/simpleinit"
+sun_output_override=""
+sun_product_pump=0
+sun_device="piano"
 sun_prepare_args=()
 while (($#)); do
   case "$1" in
     --product-gui-pump)
       sun_prepare_args+=(--product-gui-pump)
-      sun_build="$sun_root/build/simpleinit-product-edk2"
-      sun_output="$sun_root/artifacts/simpleinit/product"
+      sun_product_pump=1
       shift;;
+    --device)
+      [[ $# -ge 2 ]] || { echo '--device requires a value' >&2; exit 2; }
+      sun_device="$2"
+      case "$sun_device" in
+        piano|np05j) ;;
+        *) echo "Unsupported SimpleInit device: $sun_device" >&2; exit 2 ;;
+      esac
+      if [[ "$sun_device" == np05j ]]; then
+        sun_prepare_args+=(--device "$sun_device")
+      fi
+      shift 2;;
     --output-dir)
       [[ $# -ge 2 ]] || { echo '--output-dir requires a directory' >&2; exit 2; }
-      sun_output="$2"; shift 2;;
+      sun_output_override="$2"; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
+if (( sun_product_pump )); then
+  if [[ "$sun_device" == np05j ]]; then
+    sun_build="$sun_root/build/simpleinit-product-np05j-edk2"
+    sun_output="$sun_root/artifacts/simpleinit/product-np05j"
+  else
+    sun_build="$sun_root/build/simpleinit-product-edk2"
+    sun_output="$sun_root/artifacts/simpleinit/product"
+  fi
+elif [[ "$sun_device" == np05j ]]; then
+  sun_build="$sun_root/build/simpleinit-np05j-edk2"
+  sun_output="$sun_root/artifacts/simpleinit/np05j"
+fi
+if [[ -n "$sun_output_override" ]]; then
+  sun_output="$sun_output_override"
+fi
 mkdir -p "$sun_output"
 sun_output="$(cd -- "$sun_output" && pwd)"
 rm -f "$sun_output/build-ok.json"

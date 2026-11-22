@@ -1,0 +1,318 @@
+{
+  "source": {
+    "user_reported_fingerprint": "nubia/PQ84P01-EEA/PQ84P01:16/BQ2A.250705.001-BP2A.250605.031.A3/20260509.003614:user/release-keys",
+    "user_reported_slot": "_b",
+    "user_reported_ro.boot.hardware.sku": "",
+    "ota_for_comparison": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys"
+  },
+  "file_validation": {
+    "identical_binary_files": [
+      "fdt",
+      "nubia_np05j-live.dtb"
+    ],
+    "binary_sha256": "1d8a756de7b930d9df858eb07a380738a00e5fb44f08f7814f02e829682de5fb",
+    "dts_sha256": "0a26c6b7a78a00bb00bf888887478670b26a2215eec34f9bf0aa84a081cec293",
+    "dtc_version": "1.7.0",
+    "recompiled_dts_all_node_paths_property_bytes_and_memory_reservations_equal": true,
+    "node_count": 5389,
+    "property_count": 26097
+  },
+  "board": {
+    "model": "Qualcomm Technologies, Inc. SunP QRD HDK",
+    "compatible": [
+      "qcom,sunp-hdk",
+      "qcom,sunp",
+      "qcom,hdk"
+    ],
+    "board_id": [
+      "0x1001f",
+      "0x0"
+    ],
+    "ota_overlay_matches": [
+      35
+    ],
+    "exact_match_properties": [
+      "model",
+      "compatible",
+      "qcom,board-id",
+      "qcom,msm-id"
+    ],
+    "ota_base_matches_using_selected_features": [
+      1,
+      5
+    ],
+    "base_comparison_features": {
+      "/soc/qcom,kgsl-3d0@3d00000:qcom,gpu-model": "416472656e6f383330763200",
+      "/soc/thermal-zones/aoss-0/trips/reset-mon-cfg:temperature": "0001e848",
+      "/soc/clock-controller@aaf0000:compatible": "71636f6d2c73756e2d766964656f63632d763200737973636f6e00"
+    },
+    "limitations": "Android 15 indices only. Generic fdtoverlay did not reproduce a merged tree from overlay 35 and the ten OTA bases. Android 16 indices and SoC bin remain unverified."
+  },
+  "memory": {
+    "ddr_regions": [
+      {
+        "node_property": "region0",
+        "base": "0x80000000",
+        "size": "0x80000000"
+      },
+      {
+        "node_property": "region1",
+        "base": "0x880000000",
+        "size": "0x180000000"
+      },
+      {
+        "node_property": "region2",
+        "base": "0xa00000000",
+        "size": "0x400000000"
+      }
+    ],
+    "ddr_capacity_GiB": 24.0,
+    "linux_memory_reg": [
+      {
+        "base": "0x81960000",
+        "size": "0xa0000"
+      },
+      {
+        "base": "0x81a40000",
+        "size": "0x1c0000"
+      },
+      {
+        "base": "0x81cf4000",
+        "size": "0xc000"
+      },
+      {
+        "base": "0x82460000",
+        "size": "0x40000"
+      },
+      {
+        "base": "0xd8600000",
+        "size": "0x0"
+      },
+      {
+        "base": "0xe3720000",
+        "size": "0x1c0e0000"
+      },
+      {
+        "base": "0x880000000",
+        "size": "0x2f300000"
+      },
+      {
+        "base": "0x8b0000000",
+        "size": "0x12c0000"
+      },
+      {
+        "base": "0xa00000000",
+        "size": "0x400000000"
+      },
+      {
+        "base": "0x8c0000000",
+        "size": "0x140000000"
+      },
+      {
+        "base": "0x82800000",
+        "size": "0x2200000"
+      },
+      {
+        "base": "0x89d80000",
+        "size": "0x1c80000"
+      },
+      {
+        "base": "0xa2880000",
+        "size": "0x15780000"
+      },
+      {
+        "base": "0xb81c0000",
+        "size": "0x1cc63000"
+      },
+      {
+        "base": "0xd5100000",
+        "size": "0x2f00000"
+      }
+    ],
+    "stock_regions_vs_live_tree": [
+      {
+        "stock_label": "UEFI_FD",
+        "base": "0xa7000000",
+        "size": "0x400000",
+        "live_memory_reg_containing_region": [
+          [
+            "0xa2880000",
+            "0xb8000000"
+          ]
+        ],
+        "overlapping_fixed_reserved_nodes": []
+      },
+      {
+        "stock_label": "UEFI_Stack",
+        "base": "0xa760d000",
+        "size": "0x40000",
+        "live_memory_reg_containing_region": [
+          [
+            "0xa2880000",
+            "0xb8000000"
+          ]
+        ],
+        "overlapping_fixed_reserved_nodes": []
+      },
+      {
+        "stock_label": "Display_Reserved",
+        "base": "0xfc800000",
+        "size": "0x2b00000",
+        "live_memory_reg_containing_region": [
+          [
+            "0xe3720000",
+            "0xff800000"
+          ]
+        ],
+        "overlapping_fixed_reserved_nodes": [
+          "/reserved-memory/splash_region"
+        ]
+      }
+    ],
+    "limitations": "Linux RAM and fixed carve-outs describe the Android handoff. They do not establish bootloader allocation or safe EDK II placement."
+  },
+  "display": {
+    "chosen_panel_node": "/soc/qcom,mdss_mdp@ae00000/qcom,mdss_dsi_himax_hx8874_9p06_dsc_cmd",
+    "controller_indices": [
+      0,
+      1
+    ],
+    "phy_indices": [
+      0,
+      1
+    ],
+    "timings": [
+      {
+        "node": "timing@0",
+        "width": 1200,
+        "height": 1504,
+        "hz": 60
+      },
+      {
+        "node": "timing@1",
+        "width": 1200,
+        "height": 1504,
+        "hz": 90
+      },
+      {
+        "node": "timing@2",
+        "width": 1200,
+        "height": 1504,
+        "hz": 120
+      },
+      {
+        "node": "timing@3",
+        "width": 1200,
+        "height": 1504,
+        "hz": 144
+      },
+      {
+        "node": "timing@4",
+        "width": 1200,
+        "height": 1504,
+        "hz": 165
+      }
+    ],
+    "splash_region": [
+      {
+        "base": "0xfc800000",
+        "size": "0x2b00000"
+      }
+    ],
+    "limitations": "Panel timings and splash reservation do not establish active GOP dimensions, base, stride or pixel format."
+  },
+  "acpi_inputs": {
+    "cpu_mpidr": [
+      "0x0",
+      "0x100",
+      "0x200",
+      "0x300",
+      "0x400",
+      "0x500",
+      "0x10000",
+      "0x10100"
+    ],
+    "psci_conduit": "smc",
+    "gicd_and_gicr": [
+      {
+        "base": "0x16000000",
+        "size": "0x10000"
+      },
+      {
+        "base": "0x16080000",
+        "size": "0x200000"
+      }
+    ],
+    "timer_clock_hz": 19200000,
+    "timer_dt_interrupt_tuples": [
+      [
+        1,
+        13,
+        65288
+      ],
+      [
+        1,
+        14,
+        65288
+      ],
+      [
+        1,
+        11,
+        65288
+      ],
+      [
+        1,
+        10,
+        65288
+      ]
+    ],
+    "timer_ppi_intids_in_dt_order": [
+      29,
+      30,
+      27,
+      26
+    ],
+    "ufs": {
+      "node": "/soc/ufshc@1d84000",
+      "status": "ok",
+      "mmio": {
+        "ufs_mem": {
+          "base": "0x1d84000",
+          "size": "0x3000"
+        },
+        "ice": {
+          "base": "0x1d88000",
+          "size": "0x18000"
+        },
+        "mcq_sqd": {
+          "base": "0x1da5000",
+          "size": "0x2000"
+        },
+        "mcq_vs": {
+          "base": "0x1da4000",
+          "size": "0x10"
+        }
+      },
+      "dt_interrupt_cells": [
+        0,
+        265,
+        4
+      ],
+      "gic_intid": 297,
+      "iommu_provider": "/soc/apps-smmu@15000000",
+      "iommu_compatible": "qcom,qsmmu-v500",
+      "iommu_specifier": [
+        "0x60",
+        "0x0"
+      ],
+      "live_dma_coherent": true,
+      "android15_xbl_ufs_iort_output_base": "00000060",
+      "android15_xbl_ufs_cache_coherency": "00000000"
+    }
+  },
+  "verification_pending": [
+    "Matching Android 16 vendor_boot/dtbo/xbl_config/uefi/boot or measured current firmware configuration",
+    "Boot-time RAM ownership and GOP mode",
+    "DEBUG BDS on device, installed ACPI dump, OS driver binding and read-only UFS test"
+  ]
+}

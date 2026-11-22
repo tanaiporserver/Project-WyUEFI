@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "artifact": "Np05jUEFI-product.img",
+  "device": {
+    "codename": "nubia_np05j",
+    "model": "REDMAGIC Astra (NP05J)",
+    "manufacturer": "nubia",
+    "soc": "SM8750P",
+    "memory_gib": 24,
+    "display": {
+      "width": 2400,
+      "height": 1504,
+      "bpp": 32,
+      "fb_base": "0xFC800000",
+      "console_scale": {
+        "default": 3,
+        "supported": [
+          1,
+          2,
+          3
+        ],
+        "logical_default": "800x501"
+      }
+    },
+    "touch": {
+      "ic": "Synaptics S3930TB0A0",
+      "protocol": "TCM v2",
+      "bus": "SPI4",
+      "irq_gpio": 162,
+      "rst_gpio": 161,
+      "pins": {
+        "miso": 48,
+        "mosi": 49,
+        "clk": 50,
+        "cs": 51,
+        "rst": 161,
+        "irq": 162
+      },
+      "rails": [
+        "ldob4:1800mV",
+        "ldob14:3200mV"
+      ],
+      "driver": "Np05jTouchDxe",
+      "protocol_header": "Np05jSynapticsTcm2.h",
+      "default_transform": {
+        "swap_xy": 1,
+        "invert_x": 0,
+        "invert_y": 1,
+        "poll_rate_hz": 50
+      }
+    },
+    "fd_hybrid": {
+      "base": "0xA8010000",
+      "size": "0x200000",
+      "in_place": true
+    },
+    "fd_product_target": {
+      "base": "0xA7100000",
+      "size": "0x300000",
+      "in_place": false
+    }
+  },
+  "shared_core": true,
+  "entry_points": [
+    "fastboot_boot",
+    "boot",
+    "recovery"
+  ],
+  "entry_policy_only": true,
+  "boot_policy": {
+    "splash": "TianoCore",
+    "default_application": "SimpleInit",
+    "setup_key": "F12",
+    "setup_application": "TianoCoreUiApp",
+    "diagnostic_reboot_timer": false,
+    "unlocked_bios_setup": {
+      "enabled": true,
+      "categories": 9,
+      "var_name": "Np05jBiosConfig",
+      "var_guid": "A1E45002-9B1C-4F2A-8C3D-10054E503035",
+      "protocol_guid": "A1E45011-9B1C-4F2A-8C3D-10054E503035",
+      "fat_slots": [
+        "\\NP05J\\bios-a.bin",
+        "\\NP05J\\bios-b.bin"
+      ]
+    },
+    "tianocore_setup_uiapp": {
+      "enabled": true,
+      "file_guid": "462CAA21-7614-4503-836E-8AB6F4662331",
+      "display_engine": "MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf",
+      "ui_libraries": [
+        "DeviceManagerUiLib",
+        "BootManagerUiLib",
+        "BootMaintenanceManagerUiLib"
+      ]
+    }
+  },
+  "fastboot": {
+    "mode": "resident_background",
+    "available_in": [
+      "boot_selection",
+      "SimpleInit",
+      "Setup",
+      "Shell"
+    ],
+    "start_once": true,
+    "stop_before_os_handoff": true,
+    "download_limit_target_bytes": 1073741824
+  },
+  "features": {
+    "gop": true,
+    "physical_keys": true,
+    "pogo_keyboard_touchpad": false,
+    "touchscreen": true,
+    "dma_smmu": true,
+    "ufs_blockio_read_write": true,
+    "gpt": true,
+    "fat_simplefilesystem": true,
+    "persistent_variables": true,
+    "uefi_shell": true,
+    "setup_hii": true,
+    "simpleinit": true,
+    "usb_device_fastboot": true,
+    "usb_host": true,
+    "debug_logs_screenshot": true,
+    "efi_android_linux_boot": true,
+    "os_exit": true
+  }
+}

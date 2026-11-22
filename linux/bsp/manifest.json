@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "component": "piano-device-config",
+  "version": "0.1.3",
   "source": {
     "url": "https://github.com/blu-sharky/debian-piano.git",
     "commit": "25babfe3ff5d8ddee98b1e0ea88152d69a0c01b1"
@@ -37,6 +38,20 @@
     },
     {
       "group": "common",
+      "path": "usr/lib/systemd/logind.conf.d/50-piano.conf",
+      "type": "file",
+      "mode": "0644",
+      "uid": 0,
+      "gid": 0,
+      "sha256": "ddc36041435e92fb8a606ece9babff5d6bdc7731ee4ca1446e305a69dfe2b926",
+      "source": "linux/bsp/common/usr/lib/systemd/logind.conf.d/50-piano.conf",
+      "source_sha256": "ddc36041435e92fb8a606ece9babff5d6bdc7731ee4ca1446e305a69dfe2b926",
+      "source_git_mode": "100644",
+      "license": "MIT",
+      "source_component": "Project SunUEFI"
+    },
+    {
+      "group": "common",
       "path": "usr/lib/systemd/system/piano-touch.service",
       "type": "file",
       "mode": "0644",
@@ -70,16 +85,16 @@
       "mode": "0644",
       "uid": 0,
       "gid": 0,
-      "sha256": "531db7c6fa8446b5e2cec856183ab5c4813f1eb6325d5d5d57bd08842fba9776",
+      "sha256": "d944dcfaebf17e89632e1f9408dd7acb670036aa4dfb68a3a1f5acbee1bff448",
       "source": "rootfs/overlay/usr/share/alsa/ucm2/Qualcomm/sm8750/Xiaomi-Pad-8-Pro/HiFi.conf",
       "source_sha256": "ed1b91e6f7e4cef76f1f60cfe3dc01d249cfb0267bb983bfc362df8f4f97609c",
       "source_git_mode": "100644",
       "license": "MIT",
       "patch": "patches/0001-ucm-piano-microphone-and-speakers.patch",
-      "patch_sha256": "078e3f8a45de49dabb7d620c510f7ee2bba8a761efc8bcb0b99d686a03d55a6f",
+      "patch_sha256": "580059664918d3620a99f8696b98e94ae21ccff068c5dfc075a51e8d622d7be8",
       "derived_from": {
-        "path": "patches/linux/7.3/0005-audio.patch",
-        "patch_id": "1da2380da2ca6f1452f13470c45c49c3385e78e4",
+        "path": "patches/linux/7.3/0083-EXTERNAL-asoc-qcom-piano-voice-mono.patch",
+        "patch_id": "ba6a701bf6d5146f200e76a7513a97f266007bda",
         "scope": "CaptureChannels 1 requires the Piano-specific VA mono FE/BE kernel route"
       }
     },
@@ -122,6 +137,20 @@
       "source_git_mode": "100644",
       "license": "MIT",
       "transformation": "Install the system DMA heap rule with the device configuration"
+    },
+    {
+      "group": "common",
+      "path": "usr/lib/systemd/system/fprintd.service.d/10-piano-goodix.conf",
+      "type": "file",
+      "mode": "0644",
+      "uid": 0,
+      "gid": 0,
+      "sha256": "be5b439b5040f08ac2ed132dcf7179e2a2423b2357a11f8ffa3d04ad1190404b",
+      "source": "linux/bsp/common/usr/lib/systemd/system/fprintd.service.d/10-piano-goodix.conf",
+      "source_sha256": "be5b439b5040f08ac2ed132dcf7179e2a2423b2357a11f8ffa3d04ad1190404b",
+      "source_git_mode": "100644",
+      "license": "MIT",
+      "source_component": "Project SunUEFI"
     },
     {
       "group": "camera",

@@ -1,0 +1,55 @@
+## @file
+#  Synaptics S3930TB0A0 (TCM v2) UEFI Touchscreen Driver for nubia NP05J.
+#
+#  Uses TLMM GPIO bit-bang SPI on GPIOs 48..51 (SPI4), GPIO 161 (Reset),
+#  GPIO 162 (Active-LOW IRQ), and RPMh VRM rails ldob4/ldob14 with zero DMA
+#  allocations and full hardware state restoration on ExitBootServices.
+#
+#  GPIO-SPI & AbsolutePointer architecture adapted from Project SunUEFI
+#  (https://github.com/slwyts/Project-SunUEFI) Y700Touch.c & PianoPogoBoard.c.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jTouchDxe
+  FILE_GUID                      = A1E45201-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = Np05jTouchDxeEntry
+
+[Sources]
+  Np05jTouchDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  QcomPkg/QcomPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  IoLib
+  Np05jBiosConfigLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Guids]
+  gEfiConsoleInDeviceGuid
+  gEfiEventExitBootServicesGuid
+  gNp05jTouchDevicePathGuid
+
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gNp05jBiosConfigProtocolGuid
+  gNp05jTouchInfoProtocolGuid
+
+[Depex]
+  TRUE

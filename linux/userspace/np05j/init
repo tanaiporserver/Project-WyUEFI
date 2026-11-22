@@ -1,0 +1,43 @@
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts /run /tmp /sys/kernel/debug
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /run 2>/dev/null
+mount -t tmpfs tmpfs /tmp 2>/dev/null
+mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+
+echo "4 4 1 7" > /proc/sys/kernel/printk 2>/dev/null
+
+# Start USB-C CDC-ACM root shell loop FIRST so console stays available even while firmware loads
+(
+  while true; do
+    if [ -c /dev/ttyGS0 ]; then
+      (
+        stty -F /dev/ttyGS0 115200 cs8 -cstopb -parenb 2>/dev/null
+        /bin/np05j-status
+        echo "Commands: np05j-status | np05j-tool touch-watch | np05j-tool wifi-scan | np05j-tool gpu-info | cat /run/fw-load.log | reboot bootloader"
+        exec /bin/sh -i
+      ) </dev/ttyGS0 >/dev/ttyGS0 2>&1
+    fi
+    sleep 1
+  done
+) &
+
+# รอให้ UFS LUN (/sys/block/sda) พร้อมแบบ bounded polling สูงสุด 2 วินาที แทนการ sleep คงที่
+i=0
+while [ ! -e /sys/block/sda ] && [ "$i" -lt 20 ]; do
+  sleep 0.1 2>/dev/null || sleep 1
+  i=$((i + 1))
+done
+/bin/np05j-fw-load
+sleep 0.5 2>/dev/null || sleep 1
+
+/bin/np05j-status | tee /run/np05j-report.txt
+dmesg > /run/dmesg.txt
+echo "NP05J Mainline Linux 7.3.5 Phase3 ready! (USB-C shell on /dev/ttyGS0)"
+exec /bin/sh

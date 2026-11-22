@@ -1,0 +1,41 @@
+{
+  "device": "nubia_np05j",
+  "soc": "SM8750P",
+  "display": {
+    "width": 2400,
+    "height": 1504,
+    "fb": "0xFC800000"
+  },
+  "touch": {
+    "ic": "Synaptics S3930TB0A0",
+    "bus": "SPI4_GPIO",
+    "miso": 48,
+    "mosi": 49,
+    "clk": 50,
+    "cs": 51,
+    "rst": 161,
+    "irq": 162,
+    "max_x": 15039,
+    "max_y": 23999
+  },
+  "selector_bytes": 13494,
+  "reloc_shim_bytes": 180,
+  "embed_addr": "0xA7FFF100",
+  "cards": [
+    {
+      "id": 0,
+      "target": 0,
+      "label": "ANDROID"
+    },
+    {
+      "id": 1,
+      "target": 1,
+      "label": "UEFI BOOT MENU"
+    },
+    {
+      "id": 2,
+      "target": 3,
+      "label": "BIOS SETUP"
+    }
+  ]
+}

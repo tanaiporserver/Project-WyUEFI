@@ -8,7 +8,9 @@
 #include "PianoUsbStorageExperiment.h"
 #include "PianoRawLinuxBoot.h"
 #include "PianoNvFile.h"
+#ifndef SUNUEFI_NP05J
 #include "PianoPogoService.h"
+#endif
 #include <Protocol/SimpleTextInEx.h>
 #include <Protocol/HiiDatabase.h>
 #include <Protocol/HiiString.h>
@@ -49,7 +51,11 @@ STATIC CONST VOID *mStartupUsbFdt;
 #define POGO_STARTUP_WAIT_MS 3500U
 #define POGO_STARTUP_EXTRA_SLICES 256U
 BOOLEAN PianoSetStandardKeyNavigation(BOOLEAN Enable);
+#ifdef SUNUEFI_NP05J
+VOID Np05jTouchPump(VOID);
+#else
 VOID PianoTouchPump(VOID);
+#endif
 STATIC EFI_STATUS Exact(EFI_STATUS S){return S==EFI_SUCCESS?S:EFI_ERROR(S)?S:EFI_DEVICE_ERROR;}
 STATIC VOID RetainAndHalt(VOID){mReport.Retained=TRUE;
 #ifdef __aarch64__
@@ -288,7 +294,11 @@ STATIC EFI_STATUS EFIAPI Pump(PIANO_PRODUCT_RUNTIME_PROTOCOL *This,UINT32 Reason
   if(mStartupUsbProof){
     S=StartupUsbAbsent();
     if(S==EFI_SUCCESS){
+#ifdef SUNUEFI_NP05J
+      if(Reason&(PIANO_PRODUCT_PUMP_WAIT_EVENT|PIANO_PRODUCT_PUMP_GUI)){Np05jTouchPump();}
+#else
       if(Reason&(PIANO_PRODUCT_PUMP_WAIT_EVENT|PIANO_PRODUCT_PUMP_GUI)){PianoPogoPump();PianoTouchPump();}
+#endif
       if(mReport.IdleSample==MAX_UINT64)S=EFI_OUT_OF_RESOURCES;
       else {++mReport.IdleSample;mReport.IdleBulkActive=FALSE;mReport.IdleKnown=TRUE;}
       if(S==EFI_SUCCESS && mReport.ActiveAction!=PIANO_PRODUCT_ACTION_NONE &&
@@ -318,8 +328,12 @@ STATIC EFI_STATUS EFIAPI Pump(PIANO_PRODUCT_RUNTIME_PROTOCOL *This,UINT32 Reason
   if((S==EFI_SUCCESS || S==EFI_NOT_READY) && mReport.IdleKnown && !Actual.QueuedEvents &&
      (!Actual.WorkPending || (Actual.Configured && Actual.BulkActive)) &&
      (Reason&(PIANO_PRODUCT_PUMP_WAIT_EVENT|PIANO_PRODUCT_PUMP_GUI))){
+#ifdef SUNUEFI_NP05J
+    Np05jTouchPump();RequireAlive();
+#else
     PianoPogoPump();RequireAlive();
     PianoTouchPump();RequireAlive();
+#endif
   }
   if((S==EFI_SUCCESS || S==EFI_NOT_READY) && !UsbBulkInProgress() &&
      mReport.ActiveAction!=PIANO_PRODUCT_ACTION_NONE &&
@@ -401,7 +415,11 @@ EFI_STATUS PianoBootPolicyStartupWindow(UINTN Milliseconds) {
   UINT64 First,Last;UINT64 Frequency=GetPerformanceCounterProperties(&First,&Last);
   if(!Frequency || First==Last)return EFI_UNSUPPORTED;
   BOOLEAN Down=First>Last;UINT64 Start=GetPerformanceCounter(),Previous=Start;
+#ifdef SUNUEFI_NP05J
+  BOOLEAN WaitForKeyboard=FALSE;
+#else
   BOOLEAN WaitForKeyboard=PianoPogoKeyboardState()==PianoPogoKeyboardStarting;
+#endif
   UINT64 KeyDeadline=Milliseconds;
   UINTN SliceLimit=3100+(WaitForKeyboard?POGO_STARTUP_WAIT_MS+POGO_STARTUP_EXTRA_SLICES:0);
   BOOLEAN PreviousNavigation=PianoSetStandardKeyNavigation(TRUE);
@@ -417,6 +435,7 @@ EFI_STATUS PianoBootPolicyStartupWindow(UINTN Milliseconds) {
     if((Down&&Now>Previous)||(!Down&&Now<Previous)){S=EFI_COMPROMISED_DATA;goto Done;}
     Previous=Now;UINT64 Delta=Down?Start-Now:Now-Start;
     UINT64 Elapsed=GetTimeInNanoSecond(Delta)/1000000;
+#ifndef SUNUEFI_NP05J
     if(WaitForKeyboard){
       PIANO_POGO_KEYBOARD_STATE Keyboard=PianoPogoKeyboardState();
       if(Keyboard==PianoPogoKeyboardReady && Elapsed<=POGO_STARTUP_WAIT_MS)
@@ -424,8 +443,13 @@ EFI_STATUS PianoBootPolicyStartupWindow(UINTN Milliseconds) {
       if(Keyboard!=PianoPogoKeyboardStarting || Elapsed>=POGO_STARTUP_WAIT_MS)
         WaitForKeyboard=FALSE;
     }
+#endif
     if(!WaitForKeyboard && Elapsed>=KeyDeadline){S=EFI_SUCCESS;goto Done;}
+#ifdef SUNUEFI_NP05J
+    UINTN StallUs=1000;
+#else
     UINTN StallUs=WaitForKeyboard?PianoPogoStartupStallUs(1000):1000;
+#endif
     S=gBS->Stall(StallUs);RequireAlive();if(S!=EFI_SUCCESS){S=Exact(S);goto Done;}
   }
   S=EFI_TIMEOUT;

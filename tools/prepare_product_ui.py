@@ -263,6 +263,155 @@ hook(SI+'src/gui/drivers/uefi_gop.c', '\tuefigop_apply_mode();\n',
      '\t\t(unsigned long long)gop->Mode->FrameBufferBase,(unsigned long long)gop->Mode->FrameBufferSize,\n'
      '\t\tgop->Mode->Info->HorizontalResolution,gop->Mode->Info->VerticalResolution,\n'
      '\t\tgop->Mode->Info->PixelsPerScanLine,(unsigned)gop->Mode->Info->PixelFormat);\n')
+hook(SI+'src/gui/drivers/uefi_gop.c', '\tmemset(buf,0,s);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tmemset(buf,0,s*sizeof(lv_color_t));\n'
+     '#else\n'
+     '\tmemset(buf,0,s);\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_COLOR_SCREEN_TRANSP              1\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_COLOR_SCREEN_TRANSP              0\n'
+     '#else\n'
+     '#define LV_COLOR_SCREEN_TRANSP              1\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_CIRCLE_CACHE_SIZE                4\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_CIRCLE_CACHE_SIZE                16\n'
+     '#else\n'
+     '#define LV_CIRCLE_CACHE_SIZE                4\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_MEM_CUSTOM_FREE                  free\n',
+     '#define LV_MEM_CUSTOM_FREE                  free\n'
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_MEMCPY_MEMSET_STD                1\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_INDEV_DEF_READ_PERIOD            15\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_INDEV_DEF_READ_PERIOD            8\n'
+     '#else\n'
+     '#define LV_INDEV_DEF_READ_PERIOD            15\n'
+     '#endif\n')
+# คง LV_IMG_CACHE_DEF_SIZE=0 เพื่อกัน use-after-free กับแคชของ image.c แล้วขยายอายุแคชใน image.c แทน
+hook(SI+'src/gui/decoders/image.c',
+     'static time_t cache_time=5;\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     'static time_t cache_time=3600;\n'
+     '#else\n'
+     'static time_t cache_time=5;\n'
+     '#endif\n')
+hook(SI+'src/gui/decoders/image.c',
+     '\t\tif(t-c->last>5){\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\t\tif(t-c->last>cache_time){\n'
+     '#else\n'
+     '\t\tif(t-c->last>5){\n'
+     '#endif\n')
+hook(SI+'src/gui/decoders/image.c',
+     '\tcache_time=confd_get_integer("gui.image_cache_time",5);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tcache_time=confd_get_integer("gui.image_cache_time",3600);\n'
+     '#else\n'
+     '\tcache_time=confd_get_integer("gui.image_cache_time",5);\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_LOG_TRACE_MEM                    0\n'
+     '#define LV_LOG_TRACE_TIMER                  1\n'
+     '#define LV_LOG_TRACE_INDEV                  1\n'
+     '#define LV_LOG_TRACE_DISP_REFR              1\n'
+     '#define LV_LOG_TRACE_EVENT                  0\n'
+     '#define LV_LOG_TRACE_OBJ_CREATE             0\n'
+     '#define LV_LOG_TRACE_LAYOUT                 1\n'
+     '#define LV_LOG_TRACE_ANIM                   1\n',
+     '#define LV_LOG_TRACE_MEM                    0\n'
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_LOG_TRACE_TIMER                  0\n'
+     '#define LV_LOG_TRACE_INDEV                  0\n'
+     '#define LV_LOG_TRACE_DISP_REFR              0\n'
+     '#define LV_LOG_TRACE_EVENT                  0\n'
+     '#define LV_LOG_TRACE_OBJ_CREATE             0\n'
+     '#define LV_LOG_TRACE_LAYOUT                 0\n'
+     '#define LV_LOG_TRACE_ANIM                   0\n'
+     '#else\n'
+     '#define LV_LOG_TRACE_TIMER                  1\n'
+     '#define LV_LOG_TRACE_INDEV                  1\n'
+     '#define LV_LOG_TRACE_DISP_REFR              1\n'
+     '#define LV_LOG_TRACE_EVENT                  0\n'
+     '#define LV_LOG_TRACE_OBJ_CREATE             0\n'
+     '#define LV_LOG_TRACE_LAYOUT                 1\n'
+     '#define LV_LOG_TRACE_ANIM                   1\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_THEME_DEFAULT_TRANSITION_TIME    80\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_THEME_DEFAULT_TRANSITION_TIME    60\n'
+     '#else\n'
+     '#define LV_THEME_DEFAULT_TRANSITION_TIME    80\n'
+     '#endif\n')
+hook(SI+'include/lv_conf.h',
+     '#define LV_USE_ASSERT_NULL                  1\n'
+     '#define LV_USE_ASSERT_MALLOC                1\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '#define LV_USE_ASSERT_NULL                  0\n'
+     '#define LV_USE_ASSERT_MALLOC                0\n'
+     '#else\n'
+     '#define LV_USE_ASSERT_NULL                  1\n'
+     '#define LV_USE_ASSERT_MALLOC                1\n'
+     '#endif\n')
+hook(SI+'src/gui/gui_init.c', '\tlv_freetype_init(64,1,0);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tlv_freetype_init(64,16,4*1024*1024);\n'
+     '#else\n'
+     '\tlv_freetype_init(64,1,0);\n'
+     '#endif\n')
+hook(SI+'src/gui/interface/core/bootmenu.c', '\tlv_anim_set_time(&bm->anim_exec,500);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tlv_anim_set_time(&bm->anim_exec,180);\n'
+     '\tlv_anim_set_path_cb(&bm->anim_exec,lv_anim_path_ease_out);\n'
+     '#else\n'
+     '\tlv_anim_set_time(&bm->anim_exec,500);\n'
+     '#endif\n')
+# เร่งแอนิเมชันปิดหน้า splash ของ NP05J จาก 500+500ms เหลือ 100+80ms ลดเวลาค้างก่อนเข้าเมนู ~820ms
+hook(SI+'src/gui/interface/core/splash.c', '\tlv_anim_set_time(&color_change,500);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tlv_anim_set_time(&color_change,80);\n'
+     '#else\n'
+     '\tlv_anim_set_time(&color_change,500);\n'
+     '#endif\n')
+hook(SI+'src/gui/interface/core/splash.c',
+     '\tlv_anim_set_time(&move_out_img,500);\n'
+     '\tlv_anim_set_time(&move_out_text,500);\n',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tlv_anim_set_time(&move_out_img,100);\n'
+     '\tlv_anim_set_time(&move_out_text,100);\n'
+     '\tlv_anim_set_path_cb(&move_out_img,lv_anim_path_ease_out);\n'
+     '\tlv_anim_set_path_cb(&move_out_text,lv_anim_path_ease_out);\n'
+     '#else\n'
+     '\tlv_anim_set_time(&move_out_img,500);\n'
+     '\tlv_anim_set_time(&move_out_text,500);\n'
+     '#endif\n')
+hook(SI+'src/gui/gui_init.c',
+     '\tlv_theme_t*th=lv_theme_default_init(\n'
+     '\t\tlv_disp_get_default(),\n'
+     '\t\tlv_palette_main(LV_PALETTE_BLUE),\n'
+     '\t\tlv_palette_main(LV_PALETTE_RED),\n'
+     '\t\tgui_dark,gui_font\n'
+     '\t);\n',
+     '\tlv_theme_t*th=lv_theme_default_init(\n'
+     '\t\tlv_disp_get_default(),\n'
+     '#ifdef SUNUEFI_NP05J\n'
+     '\t\tlv_color_hex(0xE63946),\n'
+     '\t\tlv_color_hex(0xFF4D4F),\n'
+     '#else\n'
+     '\t\tlv_palette_main(LV_PALETTE_BLUE),\n'
+     '\t\tlv_palette_main(LV_PALETTE_RED),\n'
+     '#endif\n'
+     '\t\tgui_dark,gui_font\n'
+     '\t);\n')
 BOOTMENU_INCLUDE = '#include"gui/tools.h"\n'
 BOOTMENU_INCLUDES = (BOOTMENU_INCLUDE + '#include"gui/msgbox.h"\n#include"piano_bootmenu.h"\n'
                      '#ifdef ENABLE_UEFI\n#include<Library/PianoProductPumpLib.h>\n'
@@ -322,6 +471,33 @@ hook(SI+'src/gui/interface/core/bootmenu.c', '''static void bootmenu_auto_boot(s
 		bm->timeout-(int)(elapsed/1000));
 	lv_disp_trig_activity(NULL);
 }''')
+hook(SI+'src/gui/interface/core/bootmenu.c',
+     '\tif(bootmenu_chdir(bi))return;\n\tlist*o=list_first(bi->bm->items);',
+     '\tif(bootmenu_chdir(bi))return;\n'
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tif(bi==bi->bm->selected){\n'
+     '\t\tlv_async_call(bootmenu_boot,bi->bm);\n'
+     '\t\treturn;\n'
+     '\t}\n'
+     '#endif\n'
+     '\tlist*o=list_first(bi->bm->items);')
+hook(SI+'src/gui/interface/core/bootmenu.c',
+     '\tlv_obj_set_grid_cell(\n'
+     '\t\tbi->chk,\n'
+     '\t\tLV_GRID_ALIGN_END,2,1,\n'
+     '\t\tLV_GRID_ALIGN_CENTER,0,1\n'
+     '\t);\n',
+     '\tlv_obj_set_grid_cell(\n'
+     '\t\tbi->chk,\n'
+     '\t\tLV_GRID_ALIGN_END,2,1,\n'
+     '\t\tLV_GRID_ALIGN_CENTER,0,1\n'
+     '\t);\n'
+     '\tpiano_bootmenu_style_item(bi->btn,bi->title,bi->chk);\n')
+hook(SI+'src/gui/interface/core/bootmenu.c',
+     '\tlv_obj_set_width(bm->btn,lv_pct(100));\n\n\tlv_obj_update_layout(bm->page);',
+     '\tlv_obj_set_width(bm->btn,lv_pct(100));\n'
+     '\tpiano_bootmenu_style_screen(bm->scr,bm->title,bm->page,bm->time,bm->btn);\n\n'
+     '\tlv_obj_update_layout(bm->page);')
 hook(SI+'src/gui/interface/core/bootmenu.c', '\tlv_obj_add_event_cb(bi->btn,bootmenu_item_click,LV_EVENT_CLICKED,bi);',
      '\tlv_obj_add_event_cb(bi->btn,bootmenu_remove_auto_boot_cb,LV_EVENT_PRESSED,bm);\n'
      '\tlv_obj_add_event_cb(bi->btn,bootmenu_remove_auto_boot_cb,LV_EVENT_KEY,bm);\n'
@@ -345,7 +521,11 @@ hook(SI+'src/gui/interface/core/bootmenu.c', '\t#ifdef ENABLE_UEFI\n\tif(bi->cfg
      '\t\tif(strcmp(bi->cfg.ident,"continue")==0){\n'
      '\t\t\tEFI_STATUS status=PianoProductRequestContinue();\n'
      '\t\t\tif(status==EFI_SUCCESS)gui_run_and_exit(NULL);\n'
+     '#ifdef SUNUEFI_NP05J\n'
+     '\t\t\telse msgbox_alert("Unable to restart. Please try again.");\n'
+     '#else\n'
      '\t\t\telse msgbox_alert("未能重启，请稍后重试。");\n'
+     '#endif\n'
      '\t\t\treturn;\n\t\t}\n'
      '\t\tUINT32 action=strcmp(bi->cfg.ident,"setup")==0?PIANO_PRODUCT_ACTION_SETUP:\n'
      '\t\t\tstrcmp(bi->cfg.ident,"linux")==0?PIANO_PRODUCT_ACTION_REQUEST_BOOT_STABLE:\n'
@@ -369,11 +549,16 @@ hook(SI+'src/boot/prober.c',
      '\tsnprintf(use->desc,sizeof(use->desc),"%s",ep->title);')
 hook(SI+'src/boot/prober.c', '\tboot_create_config(use,NULL);\n\tconfd_set_string_base(use->key,"efi_file",url);',
      '\tboot_create_config(use,NULL);\n'
-     '\tconfd_set_integer_base(use->base,"order",strcmp(ep->title,"启动 Windows")==0?20:30);\n'
+     '\tconfd_set_integer_base(use->base,"order",(strcmp(ep->title,"启动 Windows")==0||strcmp(ep->title,"Boot Windows")==0)?20:30);\n'
      '\tconfd_set_string_base(use->key,"efi_file",url);')
 hook(SI+'src/boot/prober.c', '\tif(!(use=malloc(sizeof(struct boot_config))))return false;',
      '\tif(!(use=malloc(sizeof(struct boot_config)))){free(url);return false;}')
-hook(SI+'src/boot/efi_path.c', '"Windows Boot Manager",  ms_dir,  ms_boot', '"启动 Windows",         ms_dir,  ms_boot')
+hook(SI+'src/boot/efi_path.c', '\tOPT_ANY(LOGO("windows"), "Windows Boot Manager",  ms_dir,  ms_boot),',
+     '#ifdef SUNUEFI_NP05J\n'
+     '\tOPT_ANY(LOGO("windows"), "Boot Windows",          ms_dir,  ms_boot),\n'
+     '#else\n'
+     '\tOPT_ANY(LOGO("windows"), "启动 Windows",         ms_dir,  ms_boot),\n'
+     '#endif')
 hook(SI+'src/gui/interface/apps/uefi_shell.c', '#include<Library/UefiLib.h>\n',
      '#include<Library/UefiLib.h>\n#include<Library/PianoProductPumpLib.h>\n')
 hook(SI+'src/gui/interface/apps/uefi_shell.c', '\tif(id==0){\n\t\tMEDIA_FW_VOL_FILEPATH_DEVICE_PATH fn;',
@@ -548,6 +733,15 @@ MENU_MIGRATIONS=[]
 for menu_path,menu_old,menu_new in HOOKS:
     prior=menu_new.replace('.desc="重启"', '.desc="返回 Android（重启）"').replace(
         '未能重启，请稍后重试。', '未能返回 Android，请稍后重试。')
+    if prior!=menu_new:MENU_MIGRATIONS.append((menu_path,prior,menu_new))
+for menu_path,menu_old,menu_new in HOOKS:
+    prior=menu_new.replace(
+        '#ifdef SUNUEFI_NP05J\n'
+        '\t\t\telse msgbox_alert("Unable to restart. Please try again.");\n'
+        '#else\n'
+        '\t\t\telse msgbox_alert("未能重启，请稍后重试。");\n'
+        '#endif\n',
+        '\t\t\telse msgbox_alert("未能重启，请稍后重试。");\n')
     if prior!=menu_new:MENU_MIGRATIONS.append((menu_path,prior,menu_new))
 for menu_path,menu_old,menu_new in HOOKS:
     prior=menu_new.replace('\t\t\t{.mode=BOOT_EXIT,.ident="piano-stable",.desc="启动 Piano Linux（Stable）",.save=false,.replace=true,.show=true,.enabled=true},\n','').replace('\t\t\tstrcmp(bi->cfg.ident,"piano-stable")==0?PIANO_PRODUCT_ACTION_REQUEST_BOOT_STABLE:\n','')

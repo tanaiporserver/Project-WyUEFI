@@ -1,0 +1,79 @@
+{
+  "android_capture_sha256": "6787d03deda9f8959449b2b09c16d726312e51f07319dfa531f25c7f9ba3a926",
+  "android_build": "nubia/PQ84P01-EEA/PQ84P01:16/BQ2A.250705.001-BP2A.250605.031.A3/20260509.003614:user/release-keys",
+  "slot": "_b",
+  "soc_id": "639",
+  "revision": "2.0",
+  "cpu_policies": [
+    {
+      "cpus": "0 1 2 3 4 5",
+      "max_khz": 3532800
+    },
+    {
+      "cpus": "6 7",
+      "max_khz": 4320000
+    }
+  ],
+  "pakala_soc_type": 0,
+  "verified_build_report_part": "SM8750-AB",
+  "linux_iomem_half_open": [
+    [
+      "0xa2880000",
+      "0xb8000000",
+      "System RAM"
+    ],
+    [
+      "0xa8010000",
+      "0xa9cd0000",
+      "Kernel code"
+    ],
+    [
+      "0xa9cd0000",
+      "0xaa0e0000",
+      "reserved"
+    ],
+    [
+      "0xaa0e0000",
+      "0xaa380000",
+      "Kernel data"
+    ],
+    [
+      "0xafffd000",
+      "0xb0000000",
+      "reserved"
+    ],
+    [
+      "0xb739a000",
+      "0xb7478000",
+      "reserved"
+    ],
+    [
+      "0xb759b000",
+      "0xb8000000",
+      "reserved"
+    ]
+  ],
+  "dtb_address_hypothesis": {
+    "region": "[0xb739a000, 0xb7478000)",
+    "bytes": 909312,
+    "reason": "Length matches page-rounded live FDT; iomem labels it reserved. Physical DTB pointer at entry has not been observed."
+  },
+  "stock_logfs": "np05j-logfs-evidence.json",
+  "logfs_24gb_slot_b_entries": 17,
+  "ufs_probe": {
+    "efi": "Build/nubia_np05jPkg/DEBUG_CLANGPDB/AARCH64/Np05jProbe.efi",
+    "sha256": "2d39a789a9040e869aefb832c1d82272c1f4e115a9f9548ac91619857ff897a4",
+    "target": "AArch64 PE32+ EFI application, outside FD",
+    "ufs_lu0_vendor_guid_in_stock_pe": true,
+    "read_method": "Two read-only LBA 1 Block I/O calls on fixed physical UFS LU0, compare CRC32. No matching LU0 returns EFI_NOT_FOUND.",
+    "host_mock_cases": 12,
+    "tested_on_np05j": false
+  },
+  "unresolved": [
+    "Actual custom image placement and entry ABI at first device boot (shim checks placement)",
+    "DTB and initrd lifetime at custom ABL handoff",
+    "Tested temporary boot and recovery on the current slot",
+    "Hardware BDS/GOP/UFS, installed ACPI, Linux ARM64 and Windows PE"
+  ],
+  "current_layout_evidence": "inplace-porting-evidence.json"
+}

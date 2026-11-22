@@ -1,0 +1,6 @@
+id=np05j_sunuefi_helper
+name=NP05J SunUEFI Boot Helper
+version=v1.0.0-np05j
+versionCode=100
+author=Mu-Silicium NP05J Port (adapted from Project SunUEFI)
+description=Combined Android/SunUEFI dual-boot selector manager, Windows 11 ARM & Linux switcher, stock boot backup/restore, and touch BIOS helper for nubia NP05J (REDMAGIC Astra / SM8750P).

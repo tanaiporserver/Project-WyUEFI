@@ -17,6 +17,7 @@ import tempfile
 from build_piano_ram_bootstrap import guest_resolve
 from build import overlay_release
 from desktop import power_migration
+from package import fingerprint_migration
 
 ROOT = Path(__file__).resolve().parents[1]
 BSP = ROOT / 'linux/bsp'
@@ -25,16 +26,31 @@ TOUCH_PACKAGE = 'piano-firmware-touch'
 TOUCH_MANIFEST = ROOT / 'vendor/firmware/piano-touch/manifest.json'
 DISPLAY_PACKAGE = 'piano-firmware-display'
 DISPLAY_MANIFEST = ROOT / 'vendor/firmware/piano-display/manifest.json'
-LOCAL_FIRMWARE = {
+KEYBOARD_PACKAGE = 'piano-firmware-keyboard'
+KEYBOARD_MANIFEST = ROOT / 'vendor/firmware/piano-keyboard/manifest.json'
+FINGERPRINT_PACKAGE = 'piano-firmware-fingerprint'
+FINGERPRINT_MANIFEST = ROOT / 'vendor/firmware/hyperos4-fingerprint/manifest.json'
+FINGERPRINT_TOOLS = 'piano-fingerprint-tools'
+STOCK_FIRMWARE = {
     TOUCH_PACKAGE: ('touch-firmware', TOUCH_MANIFEST),
     DISPLAY_PACKAGE: ('display-firmware', DISPLAY_MANIFEST),
+    KEYBOARD_PACKAGE: ('keyboard-firmware', KEYBOARD_MANIFEST),
+    FINGERPRINT_PACKAGE: ('fingerprint-firmware', FINGERPRINT_MANIFEST),
 }
+IMAGE_FIRMWARE = {component: (package, manifest)
+                  for package, (component, manifest) in STOCK_FIRMWARE.items()}
+# These packages can take ownership of stock files previously copied by the
+# image builder. On pacman, ship compression aliases to detect collisions.
+PUBLISHED_STOCK_FIRMWARE = {KEYBOARD_PACKAGE, TOUCH_PACKAGE}
 TOPOLOGY_PACKAGE = 'piano-audio-topology'
 POWER_PROFILES_PACKAGE = 'piano-power-profiles'
 POWER_PROFILES = BSP / 'power-profiles'
 TOPOLOGY_SOURCES = ('debian-piano-current', 'audioreach-topology')
-FIRMWARE_PACKAGES = (*LOCAL_FIRMWARE, TOPOLOGY_PACKAGE)
+FIRMWARE_PACKAGES = (*STOCK_FIRMWARE, TOPOLOGY_PACKAGE)
 FIRMWARE_ROOT = 'usr/lib/firmware/'
+FIRMWARE_COMPRESSION_SUFFIXES = ('.xz', '.zst')
+OLD_FPRINTD_DROP_IN = 'usr/lib/systemd/system/fprintd.service.d/20-piano.conf'
+OLD_FPRINTD_SHA256 = 'be5b439b5040f08ac2ed132dcf7179e2a2423b2357a11f8ffa3d04ad1190404b'
 
 
 def package_description(package):
@@ -42,6 +58,12 @@ def package_description(package):
         return 'Xiaomi Pad 8 Pro Novatek touchscreen firmware'
     if package == DISPLAY_PACKAGE:
         return 'Xiaomi Pad 8 Pro display calibration firmware'
+    if package == KEYBOARD_PACKAGE:
+        return 'Xiaomi Pad 8 Pro Nanosic keyboard cover firmware'
+    if package == FINGERPRINT_PACKAGE:
+        return 'Xiaomi Pad 8 Pro Goodix fingerprint firmware'
+    if package == FINGERPRINT_TOOLS:
+        return 'Optional Goodix fingerprint diagnostics for the Xiaomi Pad 8 Pro'
     if package == TOPOLOGY_PACKAGE:
         return 'Xiaomi Pad 8 Pro AudioReach topology'
     if package == POWER_PROFILES_PACKAGE:
@@ -90,10 +112,10 @@ def payload(features):
 
 def local_firmware_payload(source, manifest_path, description):
     manifest = read_json(manifest_path)
-    directory = PurePosixPath(manifest['directory'])
-    require(directory.parts and not directory.is_absolute() and '..' not in directory.parts,
+    directory = PurePosixPath(manifest.get('directory', '.'))
+    require(not directory.is_absolute() and '..' not in directory.parts,
             'Invalid firmware directory: ' + str(directory))
-    require(len(manifest['files']) == 2, 'Expected both panel files for ' + description)
+    require(manifest['files'], 'No files in the manifest for ' + description)
     rows = []
     for filename, record in manifest['files'].items():
         require(Path(filename).name == filename and filename not in ('', '.', '..'),
@@ -116,7 +138,7 @@ def local_firmware_payload(source, manifest_path, description):
     return manifest, rows
 
 
-def topology_payload():
+def topology_payload(speaker_acdb=None):
     from build_piano_runtime_helpers import build_topology, repository
 
     policy = read_json(ROOT / 'config/release.json')['audio_topology']
@@ -131,23 +153,36 @@ def topology_payload():
     env.pop('M4PATH', None)
     with tempfile.TemporaryDirectory(prefix='sunuefi-topology-') as directory:
         work = Path(directory)
-        topology = build_topology(*checkouts, work, env=env)
+        topology = build_topology(*checkouts, work, env=env, speaker_acdb=speaker_acdb)
         data = topology.read_bytes()
         name = FIRMWARE_ROOT + topology.relative_to(work).as_posix()
-    require(sha(data) == policy['sha256'], 'Audio topology checksum mismatch')
-    return {
+    expected = policy['sha256'] if speaker_acdb is None else policy['speaker_dap']['sha256']
+    require(sha(data) == expected, 'Audio topology checksum mismatch')
+    source = {
         'source': policy['source'],
         'repositories': sources,
-    }, [({'path': name, 'type': 'file', 'mode': '0644', 'sha256': policy['sha256']}, data)]
+    }
+    if speaker_acdb is not None:
+        source['speaker_calibration'] = {
+            'source': policy['speaker_dap']['source'],
+            'acdb_sha256': sha(speaker_acdb.read_bytes()),
+        }
+    return source, [({'path': name, 'type': 'file', 'mode': '0644', 'sha256': expected}, data)]
 
 
 def topology_copyright(source):
     macros = ROOT / 'upstream' / TOPOLOGY_SOURCES[1]
     sources = '\n'.join(f" {record['url']} ({record['commit']})"
                         for record in source['repositories'].values())
+    calibration = ''
+    if 'speaker_calibration' in source:
+        calibration = ('The DAP parameters use the original Xiaomi ACDB supplied at build time and the\n'
+                       "stereo speaker matrix from the original Android dax-default.xml.\n"
+                       'The BSD-3-Clause license below applies to the topology source.\n\n')
     return ('AudioReach topology for Xiaomi Pad 8 Pro, licensed BSD-3-Clause.\n'
             f'SunUEFI source: {source["source"]}\n'
             f'Upstream layout and macros:\n{sources}\n\n'
+            + calibration
             + (macros / 'LICENSE.BSD-3-Clause').read_text())
 
 
@@ -172,7 +207,8 @@ def owners(root):
     return result
 
 
-def conflict_check(root, rows, package=NAME, *, adopt_identical=False):
+def conflict_check(root, rows, package=NAME, *, adopt_identical=False,
+                   packaged_compressed_aliases=False):
     root = root.resolve()
     require(root.is_dir(), 'Conflict-check root does not exist')
     ownership, conflicts, adopted = owners(root), [], []
@@ -181,7 +217,7 @@ def conflict_check(root, rows, package=NAME, *, adopt_identical=False):
         names = [name]
         if package in FIRMWARE_PACKAGES and name.startswith(FIRMWARE_ROOT):
             names = [base + suffix for base in (name, name.removeprefix('usr/'))
-                     for suffix in ('', '.xz', '.zst')]
+                     for suffix in ('', *FIRMWARE_COMPRESSION_SUFFIXES)]
         resolved = {}
         for candidate in names:
             relative = PurePosixPath(candidate)
@@ -189,15 +225,19 @@ def conflict_check(root, rows, package=NAME, *, adopt_identical=False):
             if candidate == name:
                 destination = path
             resolved.setdefault(path, set()).update(ownership.get(candidate, ()))
+        own_paths = {destination}
+        if packaged_compressed_aliases:
+            own_paths.update(destination.with_name(destination.name + suffix)
+                             for suffix in FIRMWARE_COMPRESSION_SUFFIXES)
         for path, assigned in resolved.items():
-            own_destination = path == destination and assigned == {package}
+            own_path = path in own_paths and assigned == {package}
             existing = path.exists() or path.is_symlink()
             if (adopt_identical and path == destination and not assigned
                     and not path.is_symlink() and path.is_file() and path.stat().st_size == len(data)
                     and (path.stat().st_mode & 0o7777) == int(row['mode'], 8)
                     and path.read_bytes() == data):
                 adopted.append(path.relative_to(root).as_posix())
-            elif assigned - {package} or (existing and not own_destination):
+            elif assigned - {package} or (existing and not own_path):
                 conflicts.append({'path': path.relative_to(root).as_posix(),
                                   'owners': sorted(assigned) or ['unowned-existing-file']})
     require(not conflicts, 'Existing target files must not be overwritten: ' + json.dumps(conflicts))
@@ -207,31 +247,34 @@ def conflict_check(root, rows, package=NAME, *, adopt_identical=False):
     return report
 
 
-def inspect_local_firmware(args, suite, package, source):
-    component, manifest_path = LOCAL_FIRMWARE[package]
+def inspect_stock_firmware(args, suite, package, source):
+    component, manifest_path = STOCK_FIRMWARE[package]
     description = component.replace('-', ' ')
+    published = package in PUBLISHED_STOCK_FIRMWARE
     require(args.target in ('debian', 'arch'), 'Use --target debian or arch for ' + description)
-    require(overlay_release.ENVIRONMENT not in os.environ,
+    require(published or overlay_release.ENVIRONMENT not in os.environ,
             f'Local {description} cannot be built as a publication generation')
-    require(args.command != 'package' or args.against or package == DISPLAY_PACKAGE,
-            f'Specify --against with the target root to check {description} ownership')
     manifest, rows = local_firmware_payload(source, manifest_path, description)
     provenance = {'rom': manifest['rom']}
     if 'source' in manifest:
         provenance['origin'] = manifest['source']
+    version = overlay_release.debian_version(args.version) if published and args.format == 'deb' else args.version
+    conflicts = (conflict_check(args.against, rows, package,
+                                adopt_identical=published,
+                                packaged_compressed_aliases=args.target == 'arch' and published)
+                 if args.against else {'performed': False, 'required_before_install': True})
     report = {
         'schema_version': 1,
         'component': component,
         'package': package,
-        'version': args.version,
+        'version': version,
         'target': {'distro': args.target, 'suite': suite, 'arch': args.arch},
         'package_architecture': 'any' if args.target == 'arch' else 'all',
         'source': provenance,
-        'public_distribution': False,
+        'public_distribution': published,
         'depends': [],
         'package_ready': False,
-        'conflict_check': (conflict_check(args.against, rows, package) if args.against
-                           else {'performed': False, 'required_before_install': True}),
+        'conflict_check': conflicts,
         'payload_files': {row['path']: {**row, 'bytes': len(data)} for row, data in rows},
         'files': {},
     }
@@ -239,7 +282,7 @@ def inspect_local_firmware(args, suite, package, source):
 
 
 def inspect_audio_topology(args, suite):
-    source, rows = topology_payload()
+    source, rows = topology_payload(args.speaker_acdb)
     report = {
         'schema_version': 1,
         'component': 'audio-topology',
@@ -248,7 +291,7 @@ def inspect_audio_topology(args, suite):
         'target': {'distro': args.target, 'suite': suite, 'arch': args.arch},
         'package_architecture': 'any' if args.target == 'arch' else 'all',
         'source': source,
-        'public_distribution': True,
+        'public_distribution': args.speaker_acdb is None,
         'depends': [],
         'package_ready': False,
         'conflict_check': (conflict_check(args.against, rows, TOPOLOGY_PACKAGE) if args.against
@@ -260,14 +303,24 @@ def inspect_audio_topology(args, suite):
 
 
 def inspect(args):
+    require(args.speaker_acdb is None or args.audio_topology,
+            '--speaker-acdb requires --audio-topology')
+    firmware = next(((package, source)
+                  for package, (component, _) in STOCK_FIRMWARE.items()
+                  if (source := getattr(args, component.replace('-', '_'))) is not None), None)
+    if args.version is None:
+        if firmware and (firmware[0] in PUBLISHED_STOCK_FIRMWARE or firmware[0] == FINGERPRINT_PACKAGE):
+            _, manifest = STOCK_FIRMWARE[firmware[0]]
+            args.version = read_json(manifest)['rom'].removeprefix('OS')
+        else:
+            separate = firmware is not None or args.audio_topology or args.power_profiles
+            args.version = '0.1.0' if separate else read_json(BSP / 'manifest.json')['version']
     require(re.fullmatch('[0-9][A-Za-z0-9.+]*', args.version), 'Invalid package version')
     profile = read_json(BSP / 'profiles.json')['profiles'][args.target]
     suite = args.suite or profile['default_suite']
     require(suite and re.fullmatch('[A-Za-z0-9_.-]+', suite), 'Specify an explicit Deepin/target suite')
-    if args.touch_firmware is not None:
-        return inspect_local_firmware(args, suite, TOUCH_PACKAGE, args.touch_firmware)
-    if args.display_firmware is not None:
-        return inspect_local_firmware(args, suite, DISPLAY_PACKAGE, args.display_firmware)
+    if firmware is not None:
+        return inspect_stock_firmware(args, suite, *firmware)
     if args.audio_topology:
         return inspect_audio_topology(args, suite)
     if args.power_profiles:
@@ -325,8 +378,8 @@ def inspect_power_profiles(args, suite):
     }, rows
 
 
-def stage(args):
-    report, rows = inspect(args)
+def stage(args, inspected=None):
+    report, rows = inspect(args) if inspected is None else inspected
     require(args.output is not None and not args.output.exists() and not args.output.is_symlink(), 'Use a fresh output directory')
     output = args.output.absolute()
     output.mkdir(parents=True)
@@ -347,11 +400,15 @@ def stage(args):
         docs.mkdir(parents=True)
         if report['package'] == TOUCH_PACKAGE:
             copyright = ('Novatek / Xiaomi proprietary firmware from the stock device ROM.\n'
-                         'The SunUEFI source license does not cover these binaries.\n'
-                         'No permission for public redistribution is documented.\n')
+                         'The SunUEFI source license does not cover these binaries.\n')
         elif report['package'] == DISPLAY_PACKAGE:
             copyright = ('Panel calibration derived from Qualcomm / Xiaomi stock QDCM data.\n'
                          'The SunUEFI source license does not cover the calibration data.\n')
+        elif report['package'] == KEYBOARD_PACKAGE:
+            copyright = ('Nanosic / Xiaomi keyboard cover firmware from the stock device ROM.\n'
+                         'The SunUEFI source license does not cover this binary.\n')
+        elif report['package'] == FINGERPRINT_PACKAGE:
+            copyright = (FINGERPRINT_MANIFEST.parent / 'README.md').read_text()
         else:
             copyright = topology_copyright(report['source'])
         (docs / 'copyright').write_text(copyright)
@@ -359,8 +416,9 @@ def stage(args):
         docs.mkdir(parents=True)
         shutil.copyfile(POWER_PROFILES / 'copyright', docs / 'copyright')
     provenance = docs / 'bsp-manifest.json'
-    omitted = ({'files', 'conflict_check'} if report['package'] in (TOPOLOGY_PACKAGE, DISPLAY_PACKAGE)
-               else {'files'})
+    omitted = {'files'}
+    if report['component'] in IMAGE_FIRMWARE or report['package'] == TOPOLOGY_PACKAGE:
+        omitted.add('conflict_check')
     provenance.write_text(json.dumps({k: v for k, v in report.items() if k not in omitted}, indent=2) + '\n')
     for path in [tree, *tree.rglob('*')]:
         if path.is_dir() and not path.is_symlink():
@@ -368,23 +426,40 @@ def stage(args):
     return output, tree, report, rows
 
 
-def preinst(paths, package=NAME, *, adopt=None):
-    guard = '#!/bin/sh\nset -eu\n'
+def preinst(paths, package=NAME, *, architecture='all', adopt=None):
+    guard = '#!/bin/sh\nset -eu\nroot=${DPKG_ROOT:-}\n'
+    check_alias_owner = ''
     if package in FIRMWARE_PACKAGES:
         firmware = ' '.join(shlex.quote('/' + name) for name in paths if name.startswith(FIRMWARE_ROOT))
         guard += (f'for path in {firmware}; do\n'
                   '  alternate=${path#/usr}\n'
-                  '  if ! [ "${path%/*}" -ef "${alternate%/*}" ]; then\n'
-                  '    if [ -e "$alternate" ] || [ -L "$alternate" ]; then\n'
+                  '  if ! [ "$root${path%/*}" -ef "$root${alternate%/*}" ]; then\n'
+                  '    if [ -e "$root$alternate" ] || [ -L "$root$alternate" ]; then\n'
                   '      printf "%s\\n" "BSP file conflict: $alternate" >&2; exit 1\n'
                   '    fi\n'
                   '  fi\n'
                   '  for alias in "$path.xz" "$path.zst" "$alternate.xz" "$alternate.zst"; do\n'
-                  '    if [ -e "$alias" ] || [ -L "$alias" ]; then\n'
+                  '    if [ -e "$root$alias" ] || [ -L "$root$alias" ]; then\n'
                   '      printf "%s\\n" "BSP file conflict: $alias" >&2; exit 1\n'
                   '    fi\n'
                   '  done\n'
                   'done\n')
+        # dpkg-query matches the path recorded in the package database.
+        # A merged /lib may refer to the same file with a different owner entry.
+        check_alias_owner = (
+            '    case "$path" in\n'
+            f'      /{FIRMWARE_ROOT}*)\n'
+            '        alternate=${path#/usr}\n'
+            '        if [ "$root${path%/*}" -ef "$root${alternate%/*}" ]; then\n'
+            '          alias_owner=$(dpkg-query --search "$alternate" 2>/dev/null || true)\n'
+            '          case "$alias_owner" in\n'
+            '            "") ;;\n'
+            f'            "{package}: $alternate"|"{package}:{architecture}: $alternate")\n'
+            f'              [ -n "$owned" ] || owned="{package}: $path" ;;\n'
+            '            *) printf "%s\\n" "BSP file conflict: $alternate ($alias_owner)" >&2; exit 1 ;;\n'
+            '          esac\n'
+            '        fi ;;\n'
+            '    esac\n')
     quoted = ' '.join(shlex.quote('/' + name) for name in paths)
     adoption = ''
     if adopt:
@@ -396,36 +471,72 @@ def preinst(paths, package=NAME, *, adopt=None):
             '        checksum=\n'
             '        case "$path" in\n' + cases +
             '        esac\n'
-            '        if [ -n "$checksum" ] && [ ! -L "$path" ] && [ -f "$path" ] &&\n'
-            '           [ "$(stat -c %a -- "$path")" = 644 ] &&\n'
-            '           printf "%s  %s\\n" "$checksum" "$path" | sha256sum --quiet -c -; then\n'
+            '        if [ -n "$checksum" ] && [ ! -L "$root$path" ] && [ -f "$root$path" ] &&\n'
+            '           [ "$(stat -c %a -- "$root$path")" = 644 ] &&\n'
+            '           printf "%s  %s\\n" "$checksum" "$root$path" | sha256sum --quiet -c -; then\n'
             '          continue\n'
             '        fi\n'
             '        printf "%s\\n" "BSP file conflict: $path" >&2; exit 1 ;;\n')
     return (guard +
             '# Refuse other packages and modified files from a generated image.\n'
             f'for path in {quoted}; do\n'
-            '  if [ -e "$path" ] || [ -L "$path" ]; then\n'
-            '    owned=$(dpkg-query --search "$path" 2>/dev/null || true)\n'
-            f'    case "$owned" in "{package}: $path"|"{package}:all: $path") ;;\n' +
+            '  if [ -e "$root$path" ] || [ -L "$root$path" ]; then\n'
+            '    owned=$(dpkg-query --search "$path" 2>/dev/null || true)\n' +
+            check_alias_owner +
+            f'    case "$owned" in "{package}: $path"|"{package}:{architecture}: $path") ;;\n' +
             adoption +
             '      *) printf "%s\\n" "BSP file conflict: $path ($owned)" >&2; exit 1 ;;\n'
             '    esac\n'
-            '  fi\ndone\n')
+            '  fi\n'
+            'done\n')
+
+
+def reload_systemd():
+    return ('if [ -d /run/systemd/system ]; then\n'
+            '    systemctl --system daemon-reload >/dev/null || true\n'
+            'fi\n')
+
+
+def config_install_script(package_format):
+    owner = 'dpkg-query --search' if package_format == 'deb' else 'pacman -Qoq'
+    body = power_migration.commands(package_format) + f'''\
+legacy=/{OLD_FPRINTD_DROP_IN}
+if [ ! -L "$legacy" ] && [ -f "$legacy" ] &&
+   ! {owner} -- "$legacy" >/dev/null 2>&1 &&
+   [ "$(stat -c '%a:%u:%g' -- "$legacy")" = 644:0:0 ] &&
+   printf '%s  %s\\n' {OLD_FPRINTD_SHA256} "$legacy" | sha256sum --status -c -; then
+    rm -- "$legacy"
+fi
+'''
+    body += ("python3 -I -S - <<'SUNUEFI_FINGERPRINT_CLEANUP'\n"
+             + Path(fingerprint_migration.__file__).read_text()
+             + f"\nremove_on_upgrade({package_format!r})\n"
+             + 'SUNUEFI_FINGERPRINT_CLEANUP\n')
+    if package_format == 'deb':
+        return ('#!/bin/sh\nset -eu\n[ "$1" = configure ] || exit 0\n' + body +
+                reload_systemd())
+    return ('post_install() (\n    set -eu\n' + body +
+            ')\n\npost_upgrade() { post_install; }\n')
 
 
 def debian_package(output, tree, report, configuration):
     package = report['package']
+    architecture = report['package_architecture']
     section, detail = {
-        TOUCH_PACKAGE: ('non-free-firmware/kernel', ' Built from locally supplied stock ROM files.\n'),
+        TOUCH_PACKAGE: ('non-free-firmware/kernel',
+                        ' Installs stock Novatek touchscreen firmware for BOE and CSOT panels.\n'),
         DISPLAY_PACKAGE: ('non-free-firmware/kernel', ' Installs locally supplied panel calibration data.\n'),
+        KEYBOARD_PACKAGE: ('non-free-firmware/kernel',
+                           ' Installs the stock Nanosic keyboard and touchpad controller firmware.\n'),
+        FINGERPRINT_PACKAGE: ('non-free-firmware/kernel',
+                              ' Installs the stock signed Goodix application and models.\n'),
+        FINGERPRINT_TOOLS: ('utils', ' Provides piano-fingerprint-ctl for explicit command-line diagnostics.\n'),
         TOPOLOGY_PACKAGE: ('kernel', ' Provides the topology loaded by the Qualcomm ASoC driver.\n'),
         POWER_PROFILES_PACKAGE: ('admin', ' Connects the three desktop power modes to TuneD.\n'),
     }.get(package, ('misc', ' Native runtime, Mesa, firmware and modules are distributed separately.\n'))
     depends = 'Depends: ' + ', '.join(report['depends']) + '\n' if report['depends'] else ''
     installed_size = ''
-    if package in FIRMWARE_PACKAGES or package == POWER_PROFILES_PACKAGE:
-        # The firmware payload contains only directories and regular files.
+    if package in (*FIRMWARE_PACKAGES, POWER_PROFILES_PACKAGE, FINGERPRINT_TOOLS):
         # Match dpkg-gencontrol: 1 KiB per directory, round up each file.
         kib = 1 + sum(1 if path.is_dir() else (path.stat().st_size + 1023) // 1024
                       for path in tree.rglob('*'))
@@ -434,29 +545,41 @@ def debian_package(output, tree, report, configuration):
     control.mkdir()
     control.chmod(0o755)
     (control / 'control').write_text(
-        f"Package: {package}\nVersion: {report['version']}\nArchitecture: all\n"
+        f"Package: {package}\nVersion: {report['version']}\nArchitecture: {architecture}\n"
         f'Maintainer: Project SunUEFI <slwyts@tuta.io>\nSection: {section}\nPriority: optional\n'
         f'{depends}{installed_size}Description: {package_description(package)}\n{detail}')
     if configuration:
         (control / 'conffiles').write_text(''.join('/' + name + '\n' for name in configuration))
+    if package == KEYBOARD_PACKAGE:
+        (control / 'triggers').write_text('activate-noawait update-initramfs\n')
     docs = 'usr/share/doc/' + package + '/'
     paths = [*report['payload_files'], docs + 'bsp-manifest.json']
     if package in FIRMWARE_PACKAGES or package == POWER_PROFILES_PACKAGE:
         paths.append(docs + 'copyright')
-    adopt = report['payload_files'] if package == POWER_PROFILES_PACKAGE else None
-    (control / 'preinst').write_text(preinst(paths, package, adopt=adopt))
+    adopt = (report['payload_files']
+             if package in PUBLISHED_STOCK_FIRMWARE or package == POWER_PROFILES_PACKAGE else None)
+    (control / 'preinst').write_text(preinst(paths, package, architecture=architecture, adopt=adopt))
     (control / 'preinst').chmod(0o755)
     subprocess.run(['/bin/sh', '-n', control / 'preinst'], check=True)
     if package == NAME:
         migration = control / 'postinst'
-        migration.write_text(power_migration.script('deb'))
+        migration.write_text(config_install_script('deb'))
         migration.chmod(0o755)
         subprocess.run(['/bin/sh', '-n', migration], check=True)
-    artifact = output / f"{package}_{report['version']}_all.deb"
+        remove = control / 'postrm'
+        remove.write_text('#!/bin/sh\nset -eu\n[ "$1" = remove ] || exit 0\n' +
+                          reload_systemd())
+        remove.chmod(0o755)
+        subprocess.run(['/bin/sh', '-n', remove], check=True)
+    artifact = output / f"{package}_{report['version']}_{architecture}.deb"
     subprocess.run(['dpkg-deb', '--root-owner-group', '--build', tree, artifact],
                    check=True, stdout=sys.stderr, env={**os.environ, 'SOURCE_DATE_EPOCH': '0'})
     shutil.rmtree(control)
     return artifact
+
+
+def pacman_bsp_release(package):
+    return overlay_release.pacman_release('2' if package == KEYBOARD_PACKAGE else '1')
 
 
 def pacman_sources(directory, tree, report, configuration):
@@ -467,26 +590,41 @@ def pacman_sources(directory, tree, report, configuration):
                     '-C', tree, '-cf', archive, '.'], check=True)
     depends = ' '.join(map(shlex.quote, report['depends']))
     backup = ' '.join(map(shlex.quote, configuration))
-    license_ids = {name: 'LicenseRef-Proprietary' for name in LOCAL_FIRMWARE}
+    license_ids = {name: 'LicenseRef-Proprietary' for name in STOCK_FIRMWARE}
     license_ids[TOPOLOGY_PACKAGE] = 'BSD-3-Clause'
     license_ids[POWER_PROFILES_PACKAGE] = 'MIT'
+    license_ids[FINGERPRINT_TOOLS] = "BSD-3-Clause BSD-3-Clause-Clear 'GPL-2.0-only WITH Linux-syscall-note'"
     install = ''
     if package == NAME:
         migration = directory / (NAME + '.install')
-        migration.write_text(power_migration.script('pacman'))
+        migration.write_text(config_install_script('pacman'))
         subprocess.run(['/bin/sh', '-n', migration], check=True)
         install = f'install={migration.name}\n'
+    compress = ''
+    if package in PUBLISHED_STOCK_FIRMWARE:
+        firmware = ' '.join(map(shlex.quote, report['payload_files']))
+        # The raw file takes precedence over either compression format.
+        # Including both variants lets ALPM detect those conflicts before extraction.
+        compress = (
+            '  local firmware raw\n'
+            f'  for firmware in {firmware}; do\n'
+            '    raw="$pkgdir/$firmware"\n'
+            '    xz --check=crc32 -c -- "$raw" > "$raw.xz" || return\n'
+            '    zstd -q -c -- "$raw" > "$raw.zst" || return\n'
+            '  done\n')
     (directory / 'PKGBUILD').write_text(
-        f"pkgname={package}\npkgver={report['version']}\npkgrel={overlay_release.pacman_release('1')}\n"
+        f"pkgname={package}\npkgver={report['version']}\npkgrel={pacman_bsp_release(package)}\n"
         f'pkgdesc={shlex.quote(package_description(package))}\n'
         "url='https://github.com/slwyts/Project-SunUEFI'\n"
-        f'arch=(any)\nlicense=({license_ids.get(package, "MIT BSD-2-Clause-Patent")})\noptions=(!strip !debug)\n'
+        f'arch=({report["package_architecture"]})\n'
+        f'license=({license_ids.get(package, "MIT BSD-2-Clause-Patent")})\noptions=(!strip !debug)\n'
         f'{install}'
         f'depends=({depends})\nbackup=({backup})\n'
         'source=(payload.tar)\nnoextract=(payload.tar)\n'
         f"sha256sums=('{sha(archive.read_bytes())}')\n"
         'package() {\n'
         '  bsdtar --no-same-owner -xf "$srcdir/payload.tar" -C "$pkgdir"\n'
+        f'{compress}'
         '  install -d "$pkgdir/usr/share/licenses/$pkgname"\n'
         '  ln -s "../../doc/$pkgname/copyright" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"\n'
         '}\n')
@@ -507,13 +645,17 @@ def pacman_builder_account():
         raise ValueError('Run makepkg as a regular user or in the project builder')
 
 
-def makepkg(work):
+def makepkg(work, architecture='any'):
     """Build a package of checked files without installing runtime dependencies."""
     env = {**os.environ, 'SOURCE_DATE_EPOCH': '0', 'LC_ALL': 'C',
            'BUILDDIR': str(work), 'SRCDEST': str(work), 'PKGDEST': str(work),
            'LOGDEST': str(work), 'PKGEXT': '.pkg.tar.zst',
            'PACKAGER': 'Project SunUEFI <slwyts@tuta.io>'}
     command = ['makepkg', '--noconfirm', '--nodeps']
+    if architecture != 'any':
+        config = work / 'makepkg.conf'
+        config.write_text(f'. /etc/makepkg.conf\nCARCH={architecture}\n')
+        command += ['--config', config]
     account = pacman_builder_account()
     if account is not None:
         for path in (work, *work.iterdir()):
@@ -527,9 +669,10 @@ def pacman_package(output, tree, report, configuration):
     with tempfile.TemporaryDirectory(prefix='sunuefi-bsp-', dir='/tmp') as folder:
         work = Path(folder)
         pacman_sources(work, tree, report, configuration)
-        makepkg(work)
-        version = report['version'] + '-' + overlay_release.pacman_release('1')
-        artifact = work / f"{report['package']}-{version}-any.pkg.tar.zst"
+        architecture = report['package_architecture']
+        makepkg(work, architecture)
+        version = report['version'] + '-' + pacman_bsp_release(report['package'])
+        artifact = work / f"{report['package']}-{version}-{architecture}.pkg.tar.zst"
         require(artifact.is_file() and not artifact.is_symlink(),
                 'makepkg did not produce the Piano package')
         target = output / artifact.name
@@ -538,6 +681,9 @@ def pacman_package(output, tree, report, configuration):
 
 
 def build(args):
+    fingerprint_tools = args.fingerprint_tools
+    if fingerprint_tools is not None:
+        require(args.command == 'package', '--fingerprint-tools requires bsp package')
     if args.command == 'inspect':
         return inspect(args)[0]
     if args.command == 'package':
@@ -548,10 +694,18 @@ def build(args):
         require(shutil.which(backend), 'Missing package backend: ' + backend)
         if args.format == 'pacman':
             require(shutil.which('tar'), 'Missing tar')
-    output, tree, report, rows = stage(args)
+    inspected = None
+    if fingerprint_tools is not None:
+        from package import fingerprint_tools as tools
+
+        inspected = tools.prepare(args)
+    output, tree, report, rows = stage(args, inspected)
     if args.command == 'package':
         configuration = [row['path'] for row, _ in rows if row['path'].startswith('etc/')]
         if args.format == 'pacman':
+            if report['package'] in PUBLISHED_STOCK_FIRMWARE:
+                # Let ALPM adopt the previously unpackaged file and keep local replacements.
+                configuration.extend(row['path'] for row, _ in rows)
             artifact, version = pacman_package(output, tree, report, configuration)
         else:
             artifact = debian_package(output, tree, report, configuration)
@@ -581,12 +735,20 @@ def parser():
                            help='Package the two local stock touch firmware files')
     component.add_argument('--display-firmware', type=Path, metavar='DIRECTORY',
                            help='Package the two local display calibration files')
+    component.add_argument('--keyboard-firmware', type=Path, metavar='DIRECTORY',
+                           help='Package the Nanosic keyboard cover firmware')
+    component.add_argument('--fingerprint-firmware', type=Path, metavar='DIRECTORY',
+                           help='Package the local Goodix fingerprint application and models')
+    component.add_argument('--fingerprint-tools', type=Path, metavar='UAPI',
+                           help='Build the optional Goodix CLI from exported release kernel headers')
     component.add_argument('--audio-topology', action='store_true',
                            help='Build the AudioReach topology package from the fixed sources')
+    ap.add_argument('--speaker-acdb', type=Path, metavar='MI_ACDB',
+                    help='Include original Piano speaker DAP tuning in the audio topology')
     component.add_argument('--power-profiles', action='store_true',
                            help='Package the board-specific TuneD profiles and desktop mapping')
     ap.add_argument('--output', type=Path)
-    ap.add_argument('--version', default='0.1.0')
+    ap.add_argument('--version', help='Override the package version')
     return ap
 
 

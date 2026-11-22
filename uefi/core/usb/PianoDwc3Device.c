@@ -70,7 +70,8 @@ STATIC BOOLEAN mExperimentHasStorage,mExperimentContractFailed;
 STATIC PIANO_USB_STORAGE_CHECK mExperimentCheck;
 STATIC VOID *mExperimentCheckContext;
 STATIC BOOLEAN mExperimentRunning;
-STATIC BOOLEAN mBulkLive,mBulkPrepared,mConfigWaiting,mStatusWaiting;
+STATIC BOOLEAN mBulkLive,mBulkPrepared,mConfigWaiting,mStatusWaiting,mClearHaltWaiting;
+STATIC UINT8 mClearHaltEp;
 #if PIANO_USB_SERVICE
 STATIC BOOLEAN ServiceWaitingToDispatch(VOID);
 STATIC VOID ServiceReplyPosted(VOID);
@@ -136,7 +137,11 @@ EFI_STATUS PianoDwc3CheckStorageForExperiment(CONST CHAR8 *Phase,BOOLEAN FullCap
 #define USB_DIAG_PAGE_BYTES 512U
 #define USB_DIAG_PAGE_HEADER 24U
 #ifndef PIANO_USB_CONSOLE_BASE
+#ifdef SUNUEFI_NP05J
+#define PIANO_USB_CONSOLE_BASE 0xE4A00000U
+#else
 #define PIANO_USB_CONSOLE_BASE 0xA3500000U
+#endif
 #endif
 STATIC UINT8 *mLogSnapshot;
 STATIC UINT32 mLogBytes,mLogCrc,mLogGeneration;
@@ -153,9 +158,28 @@ STATIC VOID DiagPut32(UINT8 *P,UINT32 V){for(UINTN I=0;I<4;++I)P[I]=(UINT8)(V>>(
 STATIC VOID DiagPut16(UINT8 *P,UINT16 V){P[0]=(UINT8)V;P[1]=(UINT8)(V>>8);}
 STATIC UINT32 DiagCrc(CONST UINT8 *P,UINTN Bytes) {
   UINT32 Crc=MAX_UINT32;
+#if defined(SUNUEFI_NP05J) && defined(__aarch64__)
+  // ใช้คำสั่ง ARMv8 hardware CRC32 เพื่อเร่งการคำนวณ checksum ของ RAM log 256 KiB
+  UINTN I=0;
+  while(I<Bytes && (((UINTN)(P+I))&7U)!=0U){
+    UINT8 B=P[I++];
+    __asm__ ("crc32b %w0, %w0, %w1" : "+r"(Crc) : "r"((UINT32)B));
+  }
+  while(I+8U<=Bytes){
+    UINT64 W;
+    CopyMem(&W,P+I,sizeof(W));
+    __asm__ ("crc32x %w0, %w0, %x1" : "+r"(Crc) : "r"(W));
+    I+=8U;
+  }
+  while(I<Bytes){
+    UINT8 B=P[I++];
+    __asm__ ("crc32b %w0, %w0, %w1" : "+r"(Crc) : "r"((UINT32)B));
+  }
+#else
   for(UINTN I=0;I<Bytes;++I) {
     Crc^=P[I];for(UINTN N=0;N<8;++N)Crc=(Crc>>1)^((Crc&1)?0xEDB88320U:0);
   }
+#endif
   return ~Crc;
 }
 STATIC EFI_STATUS SnapshotConsole(CONST volatile UINT32 *Header) {
@@ -172,7 +196,10 @@ STATIC EFI_STATUS SnapshotConsole(CONST volatile UINT32 *Header) {
     if(Signature!=0x43474244 || Start>=Capacity || Size>Capacity || Start>Size)return mLogSnapshotStatus;
     UINTN Bytes=MIN((UINTN)Size,(UINTN)USB_DIAG_LOG_BYTES),Offset=(Start+Capacity-Bytes)%Capacity;
     CONST volatile UINT8 *Ring=(CONST volatile UINT8 *)Header+12;
-    for(UINTN I=0;I<Bytes;++I)mLogSnapshot[I]=Ring[(Offset+I)%Capacity];
+    // แยกคัดลอก 2 ช่วงต่อเนื่องแทนการทำ modulo ต่อไบต์ตลอด 256 KiB
+    UINTN First=MIN(Bytes,Capacity-Offset);
+    for(UINTN I=0;I<First;++I)mLogSnapshot[I]=Ring[Offset+I];
+    for(UINTN I=First;I<Bytes;++I)mLogSnapshot[I]=Ring[I-First];
     MemoryFence();
     if(Header[0]!=Signature || Header[1]!=Start || Header[2]!=Size)continue;
     // Prefer the current session marker when retained inside the bounded tail.
@@ -469,7 +496,7 @@ STATIC EFI_STATUS FastbootDiagnostic(VOID *Context,PIANO_FASTBOOT *State,CONST C
   return EFI_UNSUPPORTED;
 }
 STATIC EFI_STATUS BulkPump(VOID) {
-  if(!mBulkLive || mEnding[2] || mEnding[3])return EFI_SUCCESS;
+  if(!mBulkLive || mEnding[2] || mEnding[3] || mConfigWaiting || mClearHaltWaiting)return EFI_SUCCESS;
   if(mFrames!=NULL) {
     if(mPending[3])return EFI_SUCCESS;
     mInFlightBytes=MIN(mFrames->Bytes-mFrames->Offset,mBulkTx.Bytes);
@@ -492,8 +519,8 @@ STATIC EFI_STATUS BulkPump(VOID) {
 }
 STATIC BOOLEAN BulkFlashReady(VOID){
   // Queued events take priority over storage; an INFO must drain before more writes.
-  return mBulkLive && !mEnding[2] && !mEnding[3] && !mPending[2] && !mPending[3] &&
-    !mFrames && PianoFastbootFlashPending(&mFastboot) && !(Dr(0xC40C)&0xffff);
+  return mBulkLive && !mEnding[2] && !mEnding[3] && !mConfigWaiting && !mClearHaltWaiting &&
+    !mPending[2] && !mPending[3] && !mFrames && PianoFastbootFlashPending(&mFastboot) && !(Dr(0xC40C)&0xffff);
 }
 STATIC EFI_STATUS EndBulkTransfer(UINT8 Ep,BOOLEAN Force){
   if(!mPending[Ep] || mEnding[Ep])return EFI_SUCCESS;
@@ -522,15 +549,32 @@ STATIC EFI_STATUS BulkPrepare(VOID) {
   DEBUG((DEBUG_WARN,"SUNUEFI_FASTBOOT_BULK_READY speed=%u mps=%u ep_out=01 ep_in=81\n",mControl.Speed,BulkMps()));
   return EFI_SUCCESS;
 }
+// รีเซ็ต stall และ SeqNum ของ bulk endpoint; สำหรับ SuperSpeed IN ตั้ง BIT11 (ClearPendIN) ตาม STAR 9000614252
+STATIC EFI_STATUS ClearBulkHalt(UINT8 Ep) {
+  if(Ep!=2 && Ep!=3)return EFI_INVALID_PARAMETER;
+  if(mEnding[Ep] || mPending[Ep])return EFI_NOT_READY;
+  UINT32 Cmd=5U|((Ep==3 && mControl.SuperSpeed)?BIT11:0U);
+  return Command(Ep,Cmd,0,0,0);
+}
 STATIC EFI_STATUS StartStatus(VOID) {
   mStatusWaiting=FALSE;mPhase=3;
   return Transfer(mStatusEp,mThreeStage?4:3,mStatusEp?&mTx:&mSetup,0,"USB_EP0_STATUS");
 }
 STATIC EFI_STATUS FinishConfiguration(VOID) {
-  if(!mConfigWaiting || mEnding[2] || mEnding[3])return EFI_SUCCESS;
-  if(mControl.PendingConfiguration) {EFI_STATUS S=BulkPrepare();if(EFI_ERROR(S))return S;}
-  mConfigWaiting=FALSE;
-  return mStatusWaiting?StartStatus():EFI_SUCCESS;
+  if(mConfigWaiting) {
+    if(mEnding[2] || mEnding[3])return EFI_SUCCESS;
+    if(mControl.PendingConfiguration) {EFI_STATUS S=BulkPrepare();if(EFI_ERROR(S))return S;}
+    mConfigWaiting=FALSE;
+    return mStatusWaiting?StartStatus():EFI_SUCCESS;
+  }
+  if(mClearHaltWaiting) {
+    if(mClearHaltEp!=2 && mClearHaltEp!=3)return EFI_COMPROMISED_DATA;
+    if(mEnding[mClearHaltEp] || mPending[mClearHaltEp])return EFI_SUCCESS;
+    EFI_STATUS S=ClearBulkHalt(mClearHaltEp);if(EFI_ERROR(S))return S;
+    mClearHaltWaiting=FALSE;mClearHaltEp=0;
+    return mStatusWaiting?StartStatus():EFI_SUCCESS;
+  }
+  return EFI_SUCCESS;
 }
 STATIC EFI_STATUS BulkComplete(UINT8 Ep,UINT8 EventStatus) {
   if(!mPending[Ep])return mEnding[Ep] || !mBulkLive?EFI_SUCCESS:EFI_COMPROMISED_DATA;
@@ -631,8 +675,23 @@ STATIC EFI_STATUS Complete(UINT8 Ep) {
     }
 #if PIANO_USB_FASTBOOT
     if(mControl.SetConfiguration) {
+      mClearHaltWaiting=FALSE;mClearHaltEp=0;
       S=BulkStop();if(EFI_ERROR(S))return S;
       mConfigWaiting=TRUE;mStatusWaiting=FALSE;
+      S=FinishConfiguration();if(EFI_ERROR(S))return S;
+    } else if(mControl.ClearHalt && mBulkPrepared) {
+      UINT8 TargetEp=(mControl.ClearHaltEndpoint==0x81)?3:2;
+      // รักษา mFastboot.Upload ที่ stage ไว้ (เช่น oem ramlog/screenshot) ให้ get_staged อ่านต่อได้
+      if(TargetEp==2 && mFastboot.Receiving) {
+        PianoFastbootReset(&mFastboot);
+      } else if(TargetEp==3 && !mFastboot.BootPending && !mFastboot.BootTransferFrozen &&
+                !mFastboot.RebootRequested && !mFastboot.ExitRequested) {
+        ClearFrames();
+      }
+      if(mPending[TargetEp] && !mEnding[TargetEp]) {
+        S=EndBulkTransfer(TargetEp,TRUE);if(EFI_ERROR(S))return S;
+      }
+      mClearHaltWaiting=TRUE;mClearHaltEp=TargetEp;mStatusWaiting=FALSE;
       S=FinishConfiguration();if(EFI_ERROR(S))return S;
     }
 #endif
@@ -641,12 +700,15 @@ STATIC EFI_STATUS Complete(UINT8 Ep) {
   }
   if(mPhase==1){mPhase=2;return EFI_SUCCESS;}
   if(mPhase==3) {
-    BOOLEAN Address=mControl.SetAddress,Config=mControl.SetConfiguration;
+    BOOLEAN Address=mControl.SetAddress,Config=mControl.SetConfiguration,ClearHalt=mControl.ClearHalt;
     PianoUsbControlStatusComplete(&mControl);
     if(Address || Config)DEBUG((DEBUG_WARN,"SUNUEFI_USB_ENUM_STATE address=%u configuration=%u dcfg=%08x\n",mControl.Address,mControl.Configuration,Dr(0xC700)));
     mConfigured=mControl.Configuration==1;
 #if PIANO_USB_FASTBOOT
     if(Config){mBulkLive=mConfigured && mBulkPrepared;EFI_STATUS S=BulkPump();if(EFI_ERROR(S))return S;}
+    else if(ClearHalt && mBulkLive){EFI_STATUS S=BulkPump();if(EFI_ERROR(S))return S;}
+#else
+    (VOID)ClearHalt;
 #endif
     return ArmSetup();
   }
@@ -660,7 +722,7 @@ STATIC EFI_STATUS Event(UINT32 E) {
     if(Type==0 || Type==1) {
 #if PIANO_USB_FASTBOOT
       EFI_STATUS Bulk=BulkStop();if(EFI_ERROR(Bulk))return Bulk;
-      mConfigWaiting=mStatusWaiting=FALSE;
+      mConfigWaiting=mStatusWaiting=mClearHaltWaiting=FALSE;mClearHaltEp=0;
 #endif
       // Like dwc3_ep0_reset_state, leave an outstanding SETUP receive armed.
       // END/restart of that transfer during a bus reset can wedge EP0.
@@ -703,7 +765,7 @@ STATIC EFI_STATUS Event(UINT32 E) {
   if(Type==3 && mPhase==2 && (Status&3)==2) {
     if(Ep!=mStatusEp)return EFI_COMPROMISED_DATA;
 #if PIANO_USB_FASTBOOT
-    if(mConfigWaiting){mStatusWaiting=TRUE;return EFI_SUCCESS;}
+    if(mConfigWaiting || mClearHaltWaiting){mStatusWaiting=TRUE;return EFI_SUCCESS;}
     return StartStatus();
 #else
     mPhase=3;return Transfer(Ep,mThreeStage?4:3,Ep?&mTx:&mSetup,0,"USB_EP0_STATUS");
@@ -749,7 +811,7 @@ EFI_STATUS PianoDwc3Ep0Experiment(PIANO_OWNED_SMMU *Context,PIANO_DMA_DEVICE *De
   ZeroMem(&mControl,sizeof(mControl));ZeroMem(mPending,sizeof(mPending));ZeroMem(mPayload,sizeof(mPayload));
   ZeroMem(mEnding,sizeof(mEnding));mControl.SuperSpeed=TRUE;mControl.Speed=4;
 #if PIANO_USB_FASTBOOT
-  mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=FALSE;
+  mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=mClearHaltWaiting=FALSE;mClearHaltEp=0;
   ClearFastboot();PianoFastbootInit(&mFastboot,NULL,FastbootSend,NULL);
 #if PIANO_USB_RAM_BOOT
   mBootAckObserved=FALSE;
@@ -1255,7 +1317,7 @@ EFI_STATUS PianoDwc3ServiceStart(PIANO_OWNED_SMMU *Context,PIANO_DMA_DEVICE *Dev
   mService.OldEventCount=Dr(0xC40C)&0xffff;mService.OldEventsEnabled=Dr(0xC708);mService.OldEndpointsEnabled=Dr(0xC720);
   mRingPosition=mPhase=mStatusEp=0;mConfigured=mThreeStage=FALSE;ZeroMem(&mControl,sizeof(mControl));
   ZeroMem(mPending,sizeof(mPending));ZeroMem(mEnding,sizeof(mEnding));ZeroMem(mPayload,sizeof(mPayload));ZeroMem(mPosted,sizeof(mPosted));
-  mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=FALSE;mBulkOutBytes=mBulkInBytes=0;
+  mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=mClearHaltWaiting=FALSE;mClearHaltEp=0;mBulkOutBytes=mBulkInBytes=0;
   ClearFastboot();EFI_STATUS S=PianoFastbootInit(&mFastboot,Config->Context,FastbootSend,NULL);
   if(S!=EFI_SUCCESS)return ServiceError(S);
   mFastboot.Query=FastbootQuery;mFastboot.Diagnostic=FastbootDiagnostic;

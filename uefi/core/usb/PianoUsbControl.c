@@ -15,7 +15,7 @@ STATIC CONST UINT8 Config[]={9,2,18,0,1,1,0,0x80,50,9,4,0,0,0,0xFF,0,0,0};
 STATIC UINT16 Le16(CONST UINT8 *P){return P[0]|((UINT16)P[1]<<8);}
 EFI_STATUS PianoUsbControlSetup(PIANO_USB_CONTROL *S,CONST UINT8 U[8],UINT8 *Data,UINTN Capacity,UINTN *Bytes,PIANO_USB_CONTROL_ACTION *A) {
   if(S==NULL || U==NULL || Data==NULL || Bytes==NULL || A==NULL || Capacity<64)return EFI_INVALID_PARAMETER;
-  *Bytes=0;*A=PianoUsbStall;S->SetAddress=S->SetConfiguration=FALSE;
+  *Bytes=0;*A=PianoUsbStall;S->SetAddress=S->SetConfiguration=S->ClearHalt=FALSE;S->ClearHaltEndpoint=0;
   UINT16 Value=Le16(U+2),Index=Le16(U+4),Length=Le16(U+6);UINTN Size=0;
   if(U[0]==0x80 && U[1]==6 && Length) {
     UINT8 Type=(UINT8)(Value>>8),Id=(UINT8)Value;
@@ -39,7 +39,11 @@ EFI_STATUS PianoUsbControlSetup(PIANO_USB_CONTROL *S,CONST UINT8 U[8],UINT8 *Dat
     else if(Type==15 && Id==0 && Index==0 && S->SuperSpeed){UINT8 Bos[]={5,15,22,0,2,7,16,2,0,0,0,0,10,16,3,0,8,0,3,10,0,2};CopyMem(Data,Bos,sizeof(Bos));Size=sizeof(Bos);}
     else if(Type==3 && Id==0){UINT8 L[]={4,3,9,4};CopyMem(Data,L,sizeof(L));Size=sizeof(L);}
     else if(Type==3 && Id<=3 && Index==0x0409) {
+#ifdef SUNUEFI_NP05J
+      CONST CHAR8 *Text=Id==1?"SunUEFI":Id==2?(PIANO_USB_FASTBOOT?"np05j fastboot debug":"np05j EP0 debug"):"SunUEFI-np05j";
+#else
       CONST CHAR8 *Text=Id==1?"SunUEFI":Id==2?(PIANO_USB_FASTBOOT?"piano fastboot debug":"piano EP0 debug"):"SunUEFI-piano";
+#endif
       Size=2;while(*Text && Size+2<=Capacity){Data[Size++]=(UINT8)*Text++;Data[Size++]=0;}
       Data[0]=(UINT8)Size;Data[1]=3;
     } else return EFI_UNSUPPORTED;
@@ -56,6 +60,10 @@ EFI_STATUS PianoUsbControlSetup(PIANO_USB_CONTROL *S,CONST UINT8 U[8],UINT8 *Dat
     Data[0]=0;Size=1;
   } else if(U[0]==1 && U[1]==11 && Value==0 && Index==0 && Length==0 && S->Configuration) {
     *A=PianoUsbStatusIn;return EFI_SUCCESS;
+  } else if(U[0]==2 && U[1]==1 && Value==0 && Length==0 &&
+            (Index==0 || Index==0x80 || (PIANO_USB_FASTBOOT && S->Configuration && (Index==1 || Index==0x81)))) {
+    if(Index==1 || Index==0x81){S->ClearHalt=TRUE;S->ClearHaltEndpoint=(UINT8)Index;}
+    *A=PianoUsbStatusIn;return EFI_SUCCESS;
   } else if(U[0]==0xC0 && U[1]==0x5A && Value==0 && Index==0 && Length && S->Configuration==1) {
     CopyMem(Data,"SUNUEFI1",8);Data[8]=S->Address;Data[9]=S->Configuration;Data[10]=1;Data[11]=0x40;Size=12;
   } else return EFI_UNSUPPORTED;
@@ -65,5 +73,5 @@ EFI_STATUS PianoUsbControlSetup(PIANO_USB_CONTROL *S,CONST UINT8 U[8],UINT8 *Dat
 VOID PianoUsbControlStatusComplete(PIANO_USB_CONTROL *S) {
   if(S->SetAddress){S->Address=S->PendingAddress;S->Configuration=0;}
   if(S->SetConfiguration)S->Configuration=S->PendingConfiguration;
-  S->SetAddress=S->SetConfiguration=FALSE;
+  S->SetAddress=S->SetConfiguration=S->ClearHalt=FALSE;S->ClearHaltEndpoint=0;
 }

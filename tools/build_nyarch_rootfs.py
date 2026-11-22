@@ -18,6 +18,8 @@ import build_nyarch_apps
 import build_release_rootfs as release
 from build_piano_runtime_helpers import source_patches
 from build import arch_mesa, overlay_cache, overlay_packages, overlay_release, sensors
+from build.denial import image_manifest
+from build_chroot import arch_mirror_url
 import stage_arch_piano
 from build_steamos_rootfs import kde_package_is_current, sensor_recipes
 from prepare_steamos_rootfs import download
@@ -25,7 +27,8 @@ from prepare_steamos_rootfs import download
 ROOT = Path(__file__).resolve().parents[1]
 OVERLAY_TARGET = 'nyarch-gnome'
 SHARED_OVERLAYS = frozenset(('mesa', 'fastrpc', 'libssc', 'iio-sensor-proxy', 'ffmpeg',
-                             'pipewire', 'libwacom', 'libfprint', 'fprintd', 'bluez'))
+                             *overlay_packages.PACMAN_CAMERA, 'libwacom', 'libfprint',
+                             'bluez'))
 
 
 def run(*args, **kwargs):
@@ -40,25 +43,31 @@ def shared_overlays(published):
 
 
 def build(args):
-    denial = getattr(args, 'desktop', 'nyarch') == 'denial'
+    desktop_name = getattr(args, 'desktop', 'nyarch')
+    denial = desktop_name == 'denial'
     target = 'arch-denial' if denial else OVERLAY_TARGET
     if denial and getattr(args, 'packages_only', None):
         raise ValueError('Build the shared Arch packages with nyarch-gnome-rootfs --packages-only')
     if args.output is None:
         args.output = ROOT / 'build/distros' / (target + '-piano')
+    denial_packages = image_manifest(
+        getattr(args, 'denial_packages', None), 'arch-denial', desktop=desktop_name,
+        published=getattr(args, 'published_packages', None) is not None)
     output, package_output, published = overlay_packages.pacman_build_mode(args, OVERLAY_TARGET, ROOT)
     if denial and published:
         published = shared_overlays(published)
     if os.geteuid() or not output.is_relative_to(ROOT / 'build/distros'):
         raise ValueError('Use root and an output below build/distros')
     cfg = json.loads((ROOT / 'config/nyarch.json').read_text())
+    mirror = arch_mirror_url(cfg['pacman_build_mirror'])
+    base_url = mirror + '/os/ArchLinuxARM-aarch64-latest.tar.gz'
     policy = json.loads((ROOT / 'config/release.json').read_text())
     inputs = ROOT / 'build/nyarch-inputs'
     inputs.mkdir(parents=True, exist_ok=True)
     archive = inputs / 'ArchLinuxARM-aarch64.tar.gz'
     if not archive.exists():
         partial = archive.with_suffix('.partial')
-        with urllib.request.urlopen(cfg['base_url'], timeout=90) as source, \
+        with urllib.request.urlopen(base_url, timeout=90) as source, \
                 partial.open('wb') as output_stream:
             shutil.copyfileobj(source, output_stream)
         partial.replace(archive)
@@ -72,18 +81,20 @@ def build(args):
         options = assemble_rootfs.parser().parse_args([
             '--distro', 'arch', '--desktop', 'denial' if denial else 'gnome', '--execute',
             '--output', str(output), '--base-file', str(archive),
-            '--base-url', cfg['base_url'], '--base-sha256', base_hash])
+            '--base-url', base_url, '--base-sha256', base_hash])
         plan = assemble_rootfs.plan(options)
-        if denial:
-            assemble_rootfs.execute(plan, defer_denial=True)
-        else:
-            assemble_rootfs.execute(plan)
+        # The saved plan also selects the mirror for subsequent package builds.
+        plan['pacman_build_mirror'] = mirror
+        assemble_rootfs.execute(plan, defer_denial=denial)
     else:
         manifest = output / 'manifest.json'
         if not manifest.is_file():
             raise ValueError('The base desktop assembly did not complete')
-        if json.loads(manifest.read_text()).get('desktop') != ('denial' if denial else 'gnome'):
+        record = json.loads(manifest.read_text())
+        if record.get('desktop') != ('denial' if denial else 'gnome'):
             raise ValueError('Resume must use the same desktop as the existing build')
+        if record.get('pacman_build_mirror') != mirror:
+            raise ValueError('The Arch build mirror has changed; choose a new output directory')
 
     kernel = ROOT / 'artifacts/kernels/release'
     source = Path(json.loads((ROOT / 'build/release/source-manifest.json').read_text())['worktree'])
@@ -102,24 +113,26 @@ def build(args):
             json.loads((applications / 'SOURCE.json').read_text()))
         if reused := overlay_cache.restore_pacman(ROOT, package_output, target, cache_inputs):
             return reused
+    installed_overlays = None
     if published:
         # These are also product runtime dependencies, including user-facing
         # packages normally installed while building the four Nyarch apps.
         if not denial:
             with release.build_resolver(root), build_nyarch_apps.guest_environment(root) as guest:
                 guest(['pacman', '-Syu', '--needed', '--noconfirm', *build_nyarch_apps.PACKAGES])
-        records = overlay_packages.install_arch_overlays(root, kernel, target, published)
+        records, installed_overlays = overlay_packages.install_arch_overlays(root, kernel, target, published)
     else:
         sensor_source, _ = sensors.source_workspace(inputs / 'sensors', policy['sensors'])
         records, packages = build_overlays(root, output, inputs, sensor_source, applications,
-                                           refresh=not package_output, nyarch_desktop=not denial)
+                                           refresh=not package_output, nyarch_desktop=not denial,
+                                           plasma=package_output is not None)
         if package_output:
             commit = json.loads((kernel / 'manifest.json').read_text())['source_commit']
             packages.update(overlay_packages.fingerprint_pacman_packages(
-                root, output / 'fingerprint-packages', source, kernel_build, commit))
+                root, output / 'fingerprint-packages', source, kernel_build, commit, steamos=False))
             overlay_cache.check_pacman_inputs(ROOT, root, cache_inputs)
             return overlay_packages.export(package_output, target, overlay_packages.ARCH_REPOSITORIES[target],
-                                           overlay_packages.pacman_packages(root, packages), records,
+                                           overlay_packages.pacman_packages(root, target, packages), records,
                                            build_inputs=cache_inputs)
         records['device_configuration'], records['audio_topology_package'], \
             records['power_profiles_package'] = overlay_packages.install_local_arch_bsp(root)
@@ -139,7 +152,8 @@ def build(args):
         rootfs=root, kernel=kernel, runtime=runtime,
         bootstrap_sysroot=args.bootstrap_sysroot, desktop='denial' if denial else 'nyarch',
         desktop_source=desktop, extensions=extensions,
-        published_packages=published[1] if published else None,
+        published_packages=installed_overlays,
+        denial_packages=denial_packages,
         device_configuration=records['device_configuration'],
         audio_topology_package=records['audio_topology_package'],
         power_profiles_package=records['power_profiles_package']))
@@ -235,7 +249,7 @@ def build_bluez(root, recipe, output):
     return overlay_packages.pacman_outputs(output)
 
 
-def build_overlays(root, output, inputs, sensor_source, apps, *, refresh, nyarch_desktop=True):
+def build_overlays(root, output, inputs, sensor_source, apps, *, refresh, nyarch_desktop, plasma):
     records, packages = {}, {}
     recipes = inputs / 'recipes'
     if nyarch_desktop:
@@ -271,23 +285,23 @@ def build_overlays(root, output, inputs, sensor_source, apps, *, refresh, nyarch
         packages['gnome_power'] = overlay_packages.pacman_outputs(gsd_packages)
         records['gnome_power'] = json.loads((gsd_packages / 'manifest.json').read_text())
     ffmpeg = output / 'packages/ffmpeg'
-    if not build_arch_ffmpeg.is_current(ffmpeg):
+    if not build_arch_ffmpeg.is_current(ffmpeg, root):
         if ffmpeg.exists():
             shutil.rmtree(ffmpeg)
         build_arch_ffmpeg.build(root, ffmpeg)
     else:
         build_arch_package.install_cached(root, ffmpeg)
     packages['ffmpeg'] = overlay_packages.pacman_outputs(ffmpeg)
-    pipewire = output / 'packages/pipewire'
-    run(ROOT / 'build.sh', 'pipewire', '--rootfs', root, '--output', pipewire)
+    camera_records, camera_packages = overlay_packages.build_pacman_camera(
+        root, output / 'packages', plasma=plasma)
+    records.update(camera_records)
+    packages.update(camera_packages)
     libwacom = output / 'packages/libwacom'
     run(ROOT / 'build.sh', 'libwacom', '--rootfs', root, '--output', libwacom)
-    for name, directory in (('pipewire', pipewire), ('libwacom', libwacom)):
-        packages[name] = overlay_packages.pacman_outputs(directory / 'runtime')
+    packages['libwacom'] = overlay_packages.pacman_outputs(libwacom / 'runtime')
     packages['bluez'] = build_bluez(root, recipes / 'bluez', output / 'packages/bluez')
     records.update({name: json.loads((directory / 'SOURCE.json').read_text())
-                    for name, directory in (('ffmpeg', ffmpeg), ('pipewire', pipewire),
-                                            ('libwacom', libwacom))})
+                    for name, directory in (('ffmpeg', ffmpeg), ('libwacom', libwacom))})
     if nyarch_desktop:
         gdm = output / 'packages/gdm'
         run(ROOT / 'build.sh', 'gdm', '--rootfs', root, '--output', gdm)
@@ -303,9 +317,14 @@ if __name__ == '__main__':
     parser.add_argument('--bootstrap-sysroot', type=Path, default=Path('/'))
     parser.add_argument('--resume', action='store_true')
     overlay_packages.pacman_arguments(parser)
+    parser.add_argument('--denial-packages', type=Path, metavar='MANIFEST',
+                        help='Install the published Denial package set for the Arch Denial image')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.worker:
-        raise SystemExit(run('unshare', '--mount', '--propagation', 'private',
-                             sys.executable, __file__, *sys.argv[1:], '--worker').returncode)
-    build(args)
+        raise SystemExit(subprocess.run(['unshare', '--mount', '--propagation', 'private',
+                                        sys.executable, __file__, *sys.argv[1:], '--worker']).returncode)
+    try:
+        build(args)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        parser.exit(2, str(error) + '\n')

@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 #include "ProductSplash.h"
 #include "ProductSplashAssets.h"
+#ifdef SUNUEFI_NP05J
+#include <Library/BaseMemoryLib.h>
+#include <Library/MemoryAllocationLib.h>
+#endif
 
 typedef struct {
   EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
   PIANO_SPLASH_ALIVE Alive;
   PIANO_SPLASH_REPORT *Report;
+#ifdef SUNUEFI_NP05J
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Surface;
+#endif
 } CANVAS;
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL Color(UINT8 R,UINT8 G,UINT8 B) {
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL P={B,G,R,0};return P;
@@ -15,6 +22,24 @@ STATIC EFI_STATUS Rect(CANVAS *C,EFI_GRAPHICS_OUTPUT_BLT_PIXEL P,UINT32 X,UINT32
   if(X>=C->Report->Width||Y>=C->Report->Height||W>C->Report->Width-X||H>C->Report->Height-Y)return EFI_BAD_BUFFER_SIZE;
   if(!C->Alive())return EFI_ABORTED;
   ++C->Report->DrawCalls;
+#ifdef SUNUEFI_NP05J
+  if(C->Surface!=NULL){
+    // วาดลงบัฟเฟอร์ใน RAM ก่อนแล้วค่อย Blt ขึ้นจอครั้งเดียว เพื่อลดจำนวน GOP call และ dsb sy
+    UINT32 Pixel=0;
+    CopyMem(&Pixel,&P,sizeof(Pixel));
+    UINTN Stride=C->Report->Width;
+    if(X==0 && W==Stride){
+      SetMem32(C->Surface+(UINTN)Y*Stride,(UINTN)H*Stride*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL),Pixel);
+    }else{
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Row=C->Surface+(UINTN)Y*Stride+X;
+      UINTN RowBytes=(UINTN)W*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+      for(UINT32 I=0;I<H;++I,Row+=Stride){
+        SetMem32(Row,RowBytes,Pixel);
+      }
+    }
+    return EFI_SUCCESS;
+  }
+#endif
   EFI_STATUS S=C->Gop->Blt(C->Gop,&P,EfiBltVideoFill,0,0,X,Y,W,H,0);
   if(!C->Alive())return EFI_ABORTED;
   return S==EFI_SUCCESS?S:EFI_ERROR(S)?S:EFI_DEVICE_ERROR;
@@ -129,7 +154,12 @@ EFI_STATUS PianoProductDrawSplash(EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,PIANO_SPLASH
   R->LogoX=(R->Width-GroupWidth)/2;R->LogoY=CenterY-R->LogoSize/2;
   R->WordmarkX=R->LogoX+R->LogoSize+Short/20;R->WordmarkY=CenterY-TitleHeight/2;
   R->HintX=R->Width*6/100;R->HintY=R->Height*89/100;R->KeysY=R->Height*94/100;
+#ifdef SUNUEFI_NP05J
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Surface=AllocatePool((UINTN)R->Width*(UINTN)R->Height*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
+  CANVAS C={Gop,Alive,R,Surface};EFI_STATUS S;
+#else
   CANVAS C={Gop,Alive,R};EFI_STATUS S;
+#endif
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL Bg=Color(255,255,255),Gold=Color(255,102,0),Shade=Color(214,82,0),White=Color(64,68,74),Muted=Color(112,116,122),Cyan=Color(67,73,82);
   S=Rect(&C,Bg,0,0,R->Width,R->Height);if(S!=EFI_SUCCESS)goto Done;
   for(UINTN I=0;I<6;++I){SPLASH_POINT D=mSpokes[I],N={-D.Y,D.X};
@@ -148,5 +178,19 @@ EFI_STATUS PianoProductDrawSplash(EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,PIANO_SPLASH
   S=Text(&C,mSubtitle,R->WordmarkX,R->WordmarkY+R->WordmarkScale*7+Short/65,SubScale,Muted);if(S!=EFI_SUCCESS)goto Done;
   S=Text(&C,mSetupHint,R->HintX,R->HintY,R->HintScale,Cyan);if(S!=EFI_SUCCESS)goto Done;
   S=Text(&C,mKeysHint,R->HintX,R->KeysY,R->KeysScale,Muted);
-Done:R->Status=S;return S;
+#ifdef SUNUEFI_NP05J
+  if(S==EFI_SUCCESS && C.Surface!=NULL){
+    if(!C.Alive()){S=EFI_ABORTED;}
+    else{
+      S=Gop->Blt(Gop,C.Surface,EfiBltBufferToVideo,0,0,0,0,R->Width,R->Height,(UINTN)R->Width*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
+      if(!C.Alive())S=EFI_ABORTED;
+      else if(S!=EFI_SUCCESS && !EFI_ERROR(S))S=EFI_DEVICE_ERROR;
+    }
+  }
+#endif
+Done:
+#ifdef SUNUEFI_NP05J
+  if(C.Surface!=NULL)FreePool(C.Surface);
+#endif
+  R->Status=S;return S;
 }

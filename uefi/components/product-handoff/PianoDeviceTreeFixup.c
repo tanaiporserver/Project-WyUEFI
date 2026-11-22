@@ -46,9 +46,14 @@ STATIC EFI_STATUS EFIAPI Fixup(EFI_DT_FIXUP_PROTOCOL *This,VOID *Tree,UINTN *Buf
   EFI_TPL Tpl=gBS->RaiseTPL(TPL_HIGH_LEVEL);gBS->RestoreTPL(Tpl);
   if(!mAlive())return FixupResult("alive-after-tpl",EFI_ABORTED);
   if(Tpl!=TPL_APPLICATION)return FixupResult("tpl",EFI_UNSUPPORTED);
+#ifdef SUNUEFI_NP05J
+   if(FdtCheckHeader(Tree)||FdtTotalSize(Tree)>*BufferSize||FdtTotalSize(Tree)>DTB_MAX||
+      FdtNodeOffsetByCompatible(Tree,-1,"nubia,np05j")!=0)
+#else
    if(FdtCheckHeader(Tree)||FdtTotalSize(Tree)>*BufferSize||FdtTotalSize(Tree)>DTB_MAX||
       (FdtNodeOffsetByCompatible(Tree,-1,"xiaomi,piano")!=0&&
        FdtNodeOffsetByCompatible(Tree,-1,"qcom,sun")!=0))
+#endif
     return FixupResult("header",EFI_COMPROMISED_DATA);
 
   UINTN Capacity=MIN(*BufferSize,(UINTN)DTB_MAX+DTB_PADDING);

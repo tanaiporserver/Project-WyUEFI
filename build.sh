@@ -7,7 +7,20 @@ if (($#)); then shift; fi
 case "$command" in
   sources) python3 tools/prepare_sources.py "$@" ;;
   check) python3 tools/check_host.py --group portable "$@" ;;
-  uefi) make uefi ;;
+  uefi)
+    sunuefi_device="piano"
+    for arg in "$@"; do
+      case "$arg" in
+        piano|np05j) sunuefi_device="$arg" ;;
+        --device=*) sunuefi_device="${arg#--device=}" ;;
+      esac
+    done
+    if [[ "$sunuefi_device" == np05j ]]; then
+      python3 tools/firmware_workspace.py build --device np05j
+    else
+      make uefi
+    fi ;;
+  uefi-hybrid) bash tools/build_np05j_hybrid.sh "$@" ;;
   trampoline) python3 tools/package_product_trampoline.py "$@" ;;
   module) python3 tools/build_android_product_module.py "$@" ;;
   module-package) python3 tools/build_android_module.py "$@" ;;
@@ -21,7 +34,10 @@ case "$command" in
   gdm) python3 tools/desktop/build_gdm_packages.py "$@" ;;
   bluez) python3 tools/desktop/build_bluez_package.py "$@" ;;
   libcamera) python3 tools/desktop/build_libcamera_packages.py "$@" ;;
+  denial) python3 tools/desktop/build_denial.py "$@" ;;
+  droidloom-package) python3 tools/package/droidloom.py "$@" ;;
   pipewire) python3 tools/desktop/build_pipewire_packages.py "$@" ;;
+  kwin) python3 tools/desktop/build_kwin_package.py "$@" ;;
   qt-multimedia) python3 tools/desktop/build_qt_multimedia_packages.py "$@" ;;
   plasma-camera) python3 tools/desktop/build_plasma_camera_package.py "$@" ;;
   libwacom) python3 tools/desktop/build_libwacom_packages.py "$@" ;;
@@ -33,7 +49,19 @@ case "$command" in
     fi ;;
   linux)
     python3 tools/prepare_release_kernel.py --refresh
-    python3 tools/build/kernel.py "$@"
+    if [[ " $* " == *" --device np05j "* || " $* " == *" --device=np05j "* ]]; then
+      sunuefi_kernel_args=()
+      while (($#)); do
+        case "$1" in
+          --device) shift 2 ;;
+          --device=*) shift ;;
+          *) sunuefi_kernel_args+=("$1"); shift ;;
+        esac
+      done
+      python3 tools/build/np05j_kernel.py "${sunuefi_kernel_args[@]}"
+    else
+      python3 tools/build/kernel.py "$@"
+    fi
     ;;
   linux-package) python3 tools/package/kernel.py "$@" ;;
   camera-package) python3 tools/package/camera.py "$@" ;;
@@ -71,7 +99,7 @@ case "$command" in
   install) python3 tools/install_piano.py "$@" ;;
   installer) python3 tools/export_installer.py "$@" ;;
   help|-h|--help)
-    printf '%s\n' 'Usage: ./build.sh sources|check|uefi|trampoline|module|module-package|boot-request|boot-repack|linux|linux-package|camera-package|mesa|sensors|display-calibration|ffmpeg|gsd|gdm|bluez|libcamera|pipewire|qt-multimedia|plasma-camera|libwacom|mutter|bsp|repo|rootfs|release-rootfs|nyarch-gnome-rootfs|arch-denial-rootfs|steamos-rootfs|package|all|installer|install' \
+    printf '%s\n' 'Usage: ./build.sh sources|check|uefi|uefi-hybrid|trampoline|module|module-package|boot-request|boot-repack|linux|linux-package|camera-package|mesa|sensors|display-calibration|ffmpeg|gsd|gdm|bluez|libcamera|denial|droidloom-package|pipewire|kwin|qt-multimedia|plasma-camera|libwacom|mutter|bsp|repo|rootfs|release-rootfs|nyarch-gnome-rootfs|arch-denial-rootfs|steamos-rootfs|package|all|installer|install' \
       'Full builds need the documented builder environment; rootfs/Mesa/sensors run in a root ARM64 build container.' \
       'release-rootfs reads its kernel source worktree from build/release/source-manifest.json.' \
       'Building never partitions or flashes a tablet. install is a separate explicit command.' ;;

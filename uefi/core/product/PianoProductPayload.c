@@ -114,17 +114,30 @@ STATIC EFI_STATUS Resolve(PIANO_PRODUCT_PAYLOAD_VIEW *View,CONST VOID **Dtb,UINT
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_PAYLOAD_HANDOFF dtb=%lx initrd=%lx..%lx bytes=%lu expected_app=%lu\n",
     Address,*Start,*End,Span,(UINT64)PIANO_PRODUCT_SIMPLEINIT_BYTES));
   CONST UINT8 *Input=(CONST UINT8 *)(UINTN)*Start;
-  for(UINT64 Offset=0;Offset<=Span-sizeof(Header);++Offset) {
-    if(Input[Offset]!=mMagic[0] || CompareMem(Input+(UINTN)Offset,mMagic,sizeof(mMagic)))continue;
+  UINT64 Limit=Span-sizeof(Header);
+  CONST UINT64 MagicBroadcast=(UINT64)mMagic[0]*0x0101010101010101ULL;
+  for(UINT64 Offset=0;Offset<=Limit;) {
+    // ข้ามทีละ 8 ไบต์แบบ SWAR เมื่อไม่มีไบต์นำหน้าของ magic อยู่ใน word นี้
+    if((((UINTN)(Input+(UINTN)Offset)&7U)==0) && (Limit-Offset)>=8) {
+      UINT64 Word;
+      CopyMem(&Word,Input+(UINTN)Offset,sizeof(Word));
+      UINT64 X=Word^MagicBroadcast;
+      if(((X-0x0101010101010101ULL)&~X&0x8080808080808080ULL)==0) {
+        Offset+=8;
+        continue;
+      }
+    }
+    if(Input[Offset]!=mMagic[0] || CompareMem(Input+(UINTN)Offset,mMagic,sizeof(mMagic))){++Offset;continue;}
     CopyMem(&Header,Input+(UINTN)Offset,sizeof(Header));
-    if(!HeaderMatches(&Header,Span-Offset))continue;
+    if(!HeaderMatches(&Header,Span-Offset)){++Offset;continue;}
     UINT8 Hash[32];CONST VOID *Image=Input+(UINTN)Offset+sizeof(Header);
-    if(!Sha256HashAll(Image,(UINTN)Header.AppBytes,Hash) || CompareMem(Hash,mPianoProductSimpleInitSha256,32))continue;
+    if(!Sha256HashAll(Image,(UINTN)Header.AppBytes,Hash) || CompareMem(Hash,mPianoProductSimpleInitSha256,32)){++Offset;continue;}
     if(++Matches!=1) {
       DEBUG((DEBUG_ERROR,"PIANO_PRODUCT_PAYLOAD_REJECT duplicate_pinned_app=1\n"));
       return EFI_SECURITY_VIOLATION;
     }
     Found=Offset;CopyMem(View->Sha256,Hash,sizeof(Hash));
+    ++Offset;
   }
   if(Matches!=1) {
     APP_HEADER First;CopyMem(&First,Input,sizeof(First));

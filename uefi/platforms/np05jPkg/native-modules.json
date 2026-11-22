@@ -1,0 +1,52 @@
+{
+  "EnvDxeEnhanced": {
+    "guid": "90a49afd-422f-08ae-9611-e788d3804845",
+    "pe_sha256": "3d8d1b37cf45c3b003bc76928937551f6d23289ca8ad4ea7706dad05d1bbfa04",
+    "depex_sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+  },
+  "ShmBridgeDxeLA": {
+    "guid": "41ebb6a6-2c19-4c02-841d-848ce004a282",
+    "pe_sha256": "4214da34e4fac06edf17af9c0c2261098909ca58c252eafa77c6cf77b07f0264",
+    "depex_sha256": null
+  },
+  "ScmDxeCompat": {
+    "guid": "4b4973ee-401b-4f36-a6a9-533dfccdfc33",
+    "pe_sha256": "868a6de1ad21f9487fb7836d999f50f77c933397c145c664823dea00c232ae19",
+    "depex_sha256": null
+  },
+  "TzDxeLA": {
+    "guid": "cf6dfc66-14ab-4e13-84db-9c02912d1404",
+    "pe_sha256": "caaa25157d9d25d758b0461cc1edbb0dd673933e2503895177069904089c838c",
+    "depex_sha256": null
+  },
+  "ChipInfo": {
+    "guid": "10e193df-9966-44e7-b17c-59dd831e20fc",
+    "pe_sha256": "7da505160090dfd9277d3fa1701ef284c6a37069c6ee4942ab68584224113eb3",
+    "depex_sha256": "5a2204901e9095761d883230974b7d3265bb85eb6eecfd02550ce4d17ec61802"
+  },
+  "PlatformInfoDxeDriver": {
+    "guid": "b105211b-bbbd-4add-a3b0-d1cf4a52154c",
+    "pe_sha256": "38a6f6910b91e2ffb649f422e7c38b8fc2abc529d7593d02c231582e16bc1cbd",
+    "depex_sha256": "51e48aff95a5c61299f0c6b7550d1e2348078025c313f63c206f4d6f5cf36477"
+  },
+  "DALSys": {
+    "guid": "8e9bd160-b184-11df-94e2-0800200c9a66",
+    "pe_sha256": "95f2e936dd34d780da062ca3b0a6b0b79d23f2c859fb27c21673b985a65589ee",
+    "depex_sha256": "445084b65f55991565be20b692e489f28006a91c3d0a050eae2a8eebdf12f563"
+  },
+  "HWIODxeDriver": {
+    "guid": "af9763a2-033b-4109-8e17-56a98d380c92",
+    "pe_sha256": "7ce825696bb890ad14a0bcee486974407d1a351c9ae72e08bb08e6d42e4246f7",
+    "depex_sha256": "51e48aff95a5c61299f0c6b7550d1e2348078025c313f63c206f4d6f5cf36477"
+  },
+  "HALIOMMU": {
+    "guid": "9a00771f-36d4-4dd5-8916-c48ed9b16b86",
+    "pe_sha256": "38534a658cf11aea31f6fcae7be6b19225f299233b898bcd59ac11859057b37b",
+    "depex_sha256": "8d212b55931b8b7178a06d7d5ff305306299accdbd845743b3c58bdf2e62a45f"
+  },
+  "SmemDxe": {
+    "guid": "f541d663-4a48-40aa-aabf-ff158ccae34c",
+    "pe_sha256": "c256babbfc1ccc46f5228e97d5b523954f45c4f3e68eb49f0ae3811dcf12d7c4",
+    "depex_sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+  }
+}

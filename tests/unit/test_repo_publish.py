@@ -92,13 +92,16 @@ class RepoPublishTests(unittest.TestCase):
                        check=True, capture_output=True)
         return package
 
-    def pacman(self, version, name='fixture'):
+    def pacman(self, version, name='fixture', *, replaces=(), conflicts=()):
         path = self.root / (name + '-' + version + '-1-any.pkg.tar.gz')
         with tarfile.open(path, 'w:gz') as archive:
+            relations = ''.join(f'{field} = {target}\n'
+                                for field, targets in (('replaces', replaces), ('conflict', conflicts))
+                                for target in targets)
             data = (f'pkgname = {name}\npkgbase = {name}\npkgver = {version}-1\n'
                     'pkgdesc = Fixture\nurl = https://example.invalid\n'
                     'builddate = 1\npackager = Fixture\nsize = 8\n'
-                    'arch = any\nlicense = MIT\n').encode()
+                    'arch = any\nlicense = MIT\n' + relations).encode()
             info = tarfile.TarInfo('.PKGINFO')
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
@@ -122,6 +125,154 @@ class RepoPublishTests(unittest.TestCase):
                          self.store.objects[prefix + 'sunuefi.db.tar.zst'])
         immutable = [index for index, (_, fixed) in enumerate(self.store.writes) if fixed]
         self.assertLess(immutable[-1], len(self.store.writes) - 1)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('repo-add', 'repo-remove', 'bsdtar')),
+                         'pacman tools required')
+    def test_pacman_retires_replaced_index_entries_without_removing_archives(self):
+        base, overlay = 'sunuefi', 'sunuefi-steamos'
+        prefix = f'pacman/{base}/os/aarch64/'
+        overlay_prefix = f'pacman/{overlay}/os/aarch64/'
+        plugin = self.pacman('2', 'pipewire-v4l2-source')
+        lib = self.pacman('2', 'libpipewire', replaces=('pipewire-v4l2-source',),
+                          conflicts=('pipewire-v4l2-source',))
+        profiles = self.pacman('1', 'power-profiles-daemon')
+        tuned_ppd = self.pacman('2', 'tuned-ppd', replaces=('power-profiles-daemon',),
+                                conflicts=('power-profiles-daemon',))
+        repo.publish(self.args(base, [plugin, profiles, tuned_ppd], 'before'), self.store)
+        repo.publish(self.args(overlay, [plugin], 'overlay'), self.store)
+        old_index = self.store.objects[prefix + base + '.db']
+        old_signature = self.store.objects[prefix + plugin.name + '.sig']
+        overlay_index = self.store.objects[overlay_prefix + overlay + '.db']
+
+        with patch.object(products, 'verify_public'):
+            products.publish_products({base: {lib: repo.sha(lib)}}, self.key,
+                                      self.root / 'after', self.store)
+            for suffix in ('.db', '.files'):
+                path = self.root / 'after' / base / (base + suffix)
+                entries, _ = repo.pacman_metadata(path)
+                self.assertEqual(set(entries), {'libpipewire', 'power-profiles-daemon', 'tuned-ppd'})
+            before_replay = list(self.store.writes)
+            with self.assertRaisesRegex(ValueError, 'pipewire-v4l2-source .* missing from the index'):
+                products.publish_products({base: {plugin: repo.sha(plugin)}}, self.key,
+                                          self.root / 'replay', self.store)
+            self.assertEqual(self.store.writes, before_replay)
+
+        self.assertEqual(self.store.objects[prefix + plugin.name], plugin.read_bytes())
+        self.assertEqual(self.store.objects[prefix + plugin.name + '.sig'], old_signature)
+        self.assertEqual(self.store.objects[prefix + 'by-hash/SHA256/' +
+                                           hashlib.sha256(old_index).hexdigest()], old_index)
+        self.assertEqual(self.store.objects[overlay_prefix + overlay + '.db'], overlay_index)
+        server = self.pacman('3', 'pipewire', replaces=('pipewire-v4l2-source',),
+                             conflicts=('pipewire-v4l2-source',))
+        scoped_base = self.store.objects[prefix + base + '.db']
+        valve = self.args(overlay, [server], 'valve-native')
+        repo.publish(valve, self.store)
+        for suffix in ('.db', '.files'):
+            entries, _ = repo.pacman_metadata(valve.output / (overlay + suffix))
+            self.assertEqual(set(entries), {'pipewire'})
+        self.assertEqual(self.store.objects[overlay_prefix + plugin.name], plugin.read_bytes())
+        self.assertEqual(self.store.objects[prefix + base + '.db'], scoped_base)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('repo-add', 'repo-remove', 'bsdtar', 'vercmp')),
+                         'pacman tools required')
+    def test_arch_libfprint_returns_fprintd_to_extra_without_touching_steamos(self):
+        shared, valve = 'sunuefi', 'sunuefi-steamos'
+        prefix = f'pacman/{shared}/os/aarch64/'
+        valve_prefix = f'pacman/{valve}/os/aarch64/'
+        daemon = self.pacman('1.94.5', 'fprintd')
+        lib = self.pacman('1.94.100', 'libfprint')
+        kernel = self.pacman('1', 'linux-piano')
+        repo.publish(self.args(shared, [daemon], 'before'), self.store)
+        repo.publish(self.args(valve, [daemon], 'valve'), self.store)
+        original_db = self.store.objects[prefix + shared + '.db']
+        valve_db = self.store.objects[valve_prefix + valve + '.db']
+        signature = self.store.objects[prefix + daemon.name + '.sig']
+        with patch.object(products, 'verify_public'):
+            products.publish_products({shared: {kernel: repo.sha(kernel)}}, self.key,
+                                      self.root / 'kernel', self.store)
+            selected, _ = repo.pacman_metadata(self.root / 'kernel' / shared / (shared + '.db'))
+            self.assertEqual(set(selected), {'fprintd', 'linux-piano'})
+            products.publish_products({shared: {lib: repo.sha(lib)}}, self.key,
+                                      self.root / 'lib', self.store)
+        for suffix in ('.db', '.files'):
+            selected, _ = repo.pacman_metadata(self.root / 'lib' / shared / (shared + suffix))
+            self.assertEqual(set(selected), {'libfprint', 'linux-piano'})
+        self.assertEqual(self.store.objects[prefix + daemon.name], daemon.read_bytes())
+        self.assertEqual(self.store.objects[prefix + daemon.name + '.sig'], signature)
+        self.assertEqual(self.store.objects[valve_prefix + valve + '.db'], valve_db)
+        self.assertEqual(self.store.objects[prefix + 'by-hash/SHA256/' +
+                                           hashlib.sha256(original_db).hexdigest()], original_db)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('repo-add', 'repo-remove', 'bsdtar', 'vercmp')),
+                         'pacman tools required')
+    def test_pacman_only_retires_an_entry_matched_by_the_versioned_replacement(self):
+        name = 'pipewire-v4l2-source'
+        valve = self.pacman('1:1.6.8', name)
+        arch = self.pacman('1:1.6.11', name)
+        native = self.pacman('1:1.6.11', 'libpipewire', replaces=(name + '>=1:1.6.11-1',),
+                             conflicts=(name,))
+        repo.publish(self.args('sunuefi', [valve, native], 'before'), self.store)
+        selected, retired = repo.pacman_metadata(self.root / 'before/sunuefi.db')
+        self.assertEqual(selected[name][0], '1:1.6.8-1')
+        self.assertFalse(retired)
+        repo.publish(self.args('sunuefi', [arch], 'after'), self.store)
+        selected, retired = repo.pacman_metadata(self.root / 'after/sunuefi.db')
+        self.assertNotIn(name, selected)
+        self.assertFalse(retired)
+        self.assertIn('pacman/sunuefi/os/aarch64/' + arch.name, self.store.objects)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('repo-add', 'repo-remove', 'bsdtar', 'vercmp')),
+                         'pacman tools required')
+    def test_shared_v4l2_withdrawal_is_verified_before_the_native_steamos_index(self):
+        base, valve = 'sunuefi', 'sunuefi-steamos'
+        legacy = 'pipewire-v4l2-source'
+        common_prefix = f'pacman/{base}/os/aarch64/'
+        valve_prefix = f'pacman/{valve}/os/aarch64/'
+        old_arch = self.pacman('1:1.6.11', legacy)
+        old_valve = self.pacman('1:1.6.8', legacy)
+        kernel = self.pacman('1', 'linux-piano')
+        repo.publish(self.args(base, [kernel, old_arch], 'old-arch'), self.store)
+        repo.publish(self.args(valve, [old_valve], 'old-valve'), self.store)
+        old_db = self.store.objects[common_prefix + base + '.db']
+        old_steam_db = self.store.objects[valve_prefix + valve + '.db']
+        libpipewire = self.pacman('1:1.6.11', 'libpipewire',
+                                  replaces=(legacy + '>=1:1.6.11-1',), conflicts=(legacy,))
+        pipewire = self.pacman('1:1.6.8', 'pipewire', replaces=(legacy,), conflicts=(legacy,))
+        inputs = {base: {libpipewire: repo.sha(libpipewire)}, valve: {pipewire: repo.sha(pipewire)}}
+        keyring = self.root / 'config/keys/sunuefi-archive-keyring.gpg'
+        checked = []
+        withdrawal_folder = self.root / 'resumed' / 'sunuefi-v4l2-withdrawal'
+
+        def verify_indexes(_, repository, directory):
+            prefix = f'pacman/{repository}/os/aarch64/'
+            database = directory / (repository + '.db')
+            repo.verify(database, directory / (repository + '.db.sig'), keyring)
+            self.assertEqual(self.store.objects[prefix + database.name], database.read_bytes())
+            indexed, _ = repo.pacman_metadata(database)
+            self.assertNotIn(legacy, indexed)
+            checked.append((repository, sorted(indexed)))
+            if list(indexed) == ['linux-piano']:
+                self.assertEqual(self.store.objects[valve_prefix + valve + '.db'], old_steam_db)
+            if repository == valve:
+                self.assertEqual(self.store.objects[common_prefix + base + '.db'],
+                                 (withdrawal_folder / (base + '.db')).read_bytes())
+
+        # The upload has finished but the public domain has not caught up.
+        with patch.object(products, 'verify_public', side_effect=ValueError('withdrawal not visible')):
+            with self.assertRaisesRegex(ValueError, 'withdrawal not visible'):
+                products.publish_products(inputs, self.key, self.root / 'interrupted', self.store)
+        self.assertEqual(self.store.objects[valve_prefix + valve + '.db'], old_steam_db)
+        self.assertNotIn(common_prefix + libpipewire.name, self.store.objects)
+        intermediate = self.store.objects[common_prefix + base + '.db']
+        self.assertEqual(intermediate, (self.root / 'interrupted' / 'sunuefi-v4l2-withdrawal'
+                                        / (base + '.db')).read_bytes())
+        with patch.object(products, 'verify_public', side_effect=verify_indexes):
+            products.publish_products(inputs, self.key, self.root / 'resumed', self.store)
+        self.assertEqual(checked, [(base, ['linux-piano']), (valve, ['pipewire']),
+                                   (base, ['libpipewire', 'linux-piano'])])
+        self.assertEqual(self.store.objects[common_prefix + old_arch.name], old_arch.read_bytes())
+        self.assertEqual(self.store.objects[common_prefix + 'by-hash/SHA256/' +
+                                            hashlib.sha256(old_db).hexdigest()], old_db)
 
     @unittest.skipUnless(shutil.which('repo-add') and shutil.which('bsdtar'), 'pacman tools required')
     def test_product_rejects_older_pacman_version_before_updating_any_index(self):

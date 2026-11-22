@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build signed APT/pacman indexes and publish packages to R2 without pruning."""
+"""Build signed APT/pacman indexes and publish packages to R2 without deleting archives."""
 import argparse
 import gzip
 import hashlib
@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 REPOSITORIES = ('apt', 'sunuefi', 'sunuefi-steamos')
 APT_INDEXES = ('main/binary-arm64/Packages', 'main/binary-arm64/Packages.gz')
 APT_INDEX_HASHES = ('SHA512', 'SHA256')
+PACMAN_V4L2_OWNERS = {'sunuefi': 'libpipewire', 'sunuefi-steamos': 'pipewire'}
+PACMAN_V4L2_LEGACY = 'pipewire-v4l2-source'
+KERNEL_META_PACKAGES = {'apt': 'linux-image-piano', 'sunuefi': 'linux-piano'}
 KERNEL_META_VERSION = re.compile(
     r'([0-9]+\.[0-9]+\.[0-9]+(?:~?rc[0-9]+)?)'
     r'\+([0-9]+)\.[0-9]+\.([0-9a-f]{12}(?:\.[0-9a-f]{12})?)-[1-9][0-9]*')
@@ -177,7 +180,7 @@ def apt_index(work, packages, key, store=None, *, digests=None):
                capture_output=True, text=True).stdout
     new = stanzas(data)
     if digests is not None:
-        name = 'linux-image-piano'
+        name = KERNEL_META_PACKAGES['apt']
         previous = [field(row, 'Version') for row in old if field(row, 'Package') == name]
         for row in new:
             if field(row, 'Package') == name:
@@ -224,10 +227,26 @@ def apt_index(work, packages, key, store=None, *, digests=None):
     return prefix, immutable, mutable
 
 
-def pacman_entries(database):
+def pacman_has_relation(record, field, name, version):
+    section = re.search(rf'^%{field}%\n(.+?)(?:\n\n|\Z)', record, re.M | re.S)
+    if section is None:
+        return False
+    for entry in section[1].splitlines():
+        if entry == name:
+            return True
+        if match := re.fullmatch(re.escape(name) + r'(>=|<=|=|<|>)(\S+)', entry):
+            result, = run('vercmp', version, match[2], capture_output=True, text=True).stdout.split()
+            if int(result) in {'>=': (0, 1), '<=': (-1, 0), '=': (0,), '<': (-1,), '>': (1,)}[match[1]]:
+                return True
+    return False
+
+
+def pacman_metadata(database):
     # The builder's Python tarfile cannot read this zstd archive directly.
     data = run('bsdtar', '-cf', '-', '@' + str(database), capture_output=True).stdout
-    selected = {}
+    owner = PACMAN_V4L2_OWNERS.get(database.name.split('.', 1)[0])
+    legacy = PACMAN_V4L2_LEGACY
+    selected, replacement = {}, None
     with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
         for member in archive:
             if not member.name.endswith('/desc'):
@@ -245,12 +264,20 @@ def pacman_entries(database):
             if name in selected:
                 raise ValueError(f'{database.name}: multiple entries for {name}')
             selected[name] = (version, filename, digest)
-    return selected
+            if name == owner:
+                replacement = record
+    retired = set()
+    if replacement is not None and legacy in selected:
+        version = selected[legacy][0]
+        if all(pacman_has_relation(replacement, field, legacy, version)
+               for field in ('REPLACES', 'CONFLICTS')):
+            retired.add(legacy)
+    return selected, retired
 
 
 def check_pacman_selection(database, expected):
     """Check the archives pacman will select from the generated database."""
-    selected = pacman_entries(database)
+    selected, _ = pacman_metadata(database)
     for name, (version, filename, digest) in expected.items():
         if name not in selected:
             raise ValueError(f'{database.name}: {name} {version} is missing from the index')
@@ -264,26 +291,67 @@ def check_pacman_selection(database, expected):
                              f'filename and SHA-256 for {filename}')
 
 
-def pacman_index(work, packages, name, key, store=None, *, digests=None):
+def pacman_index_paths(work, name):
+    return tuple((path, path.with_name(path.name + '.sig'))
+                 for path in (work / (name + '.db.tar.zst'), work / (name + '.files.tar.zst')))
+
+
+def load_pacman_index(work, name, store):
+    """Restore the last complete signed indexes, not the independently served aliases."""
     prefix = 'pacman/' + name + '/os/aarch64'
-    db = work / (name + '.db.tar.zst')
-    files = work / (name + '.files.tar.zst')
-    archives = [(path, path.with_name(path.name + '.sig')) for path in (db, files)]
-    sources = [path for pair in archives for path in pair]
     committed = work / 'index.json'
+    if not store or not store.get(prefix + '/' + committed.name, committed):
+        return False
+    archives = pacman_index_paths(work, name)
+    sources = [path for pair in archives for path in pair]
     keyring = ROOT / 'config/keys/sunuefi-archive-keyring.gpg'
-    if store and store.get(prefix + '/' + committed.name, committed):
-        index = json.loads(committed.read_text())
-        if not isinstance(index, dict) or set(index) != {path.name for path in sources}:
-            raise ValueError('Published pacman index has unexpected files')
-        for path in sources:
-            digest = index[path.name]
-            if not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest):
-                raise ValueError('Published pacman index has an invalid digest: ' + path.name)
-            if not store.get(prefix + '/by-hash/SHA256/' + digest, path) or sha(path) != digest:
-                raise ValueError('Published pacman index is missing or damaged: ' + path.name)
+    index = json.loads(committed.read_text())
+    if not isinstance(index, dict) or set(index) != {path.name for path in sources}:
+        raise ValueError('Published pacman index has unexpected files')
+    for path in sources:
+        digest = index[path.name]
+        if not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest):
+            raise ValueError('Published pacman index has an invalid digest: ' + path.name)
+        if not store.get(prefix + '/by-hash/SHA256/' + digest, path) or sha(path) != digest:
+            raise ValueError('Published pacman index is missing or damaged: ' + path.name)
+    for archive, signature in archives:
+        verify(archive, signature, keyring)
+    return True
+
+
+def seal_pacman_index(work, name, immutable, store):
+    archives = pacman_index_paths(work, name)
+    if store:
+        keyring = ROOT / 'config/keys/sunuefi-archive-keyring.gpg'
         for archive, signature in archives:
             verify(archive, signature, keyring)
+    mutable = []
+    index = {}
+    for source in (path for pair in archives for path in pair):
+        alias = work / source.name.replace('.tar.zst', '')
+        if alias.is_symlink():
+            alias.unlink()
+        shutil.copyfile(source, alias)
+        mutable.extend((source, alias))
+        digest = sha(source)
+        hashed = work / 'by-hash/SHA256' / digest
+        hashed.parent.mkdir(parents=True, exist_ok=True)
+        if not hashed.exists():
+            shutil.copyfile(source, hashed)
+            immutable.append(hashed)
+        index[source.name] = digest
+    # libalpm reads the standard aliases. The next publisher reads only a
+    # complete generation, even if an upload stopped between the aliases.
+    committed = work / 'index.json'
+    committed.write_text(json.dumps(index, sort_keys=True) + '\n')
+    return 'pacman/' + name + '/os/aarch64', immutable, [*mutable, committed]
+
+
+def pacman_index(work, packages, name, key, store=None, *, digests=None):
+    db = work / (name + '.db.tar.zst')
+    keyring = ROOT / 'config/keys/sunuefi-archive-keyring.gpg'
+    load_pacman_index(work, name, store)
+    prefix = 'pacman/' + name + '/os/aarch64'
     immutable, expected = [], {}
     for package in packages:
         target = work / package.name
@@ -305,36 +373,45 @@ def pacman_index(work, packages, name, key, store=None, *, digests=None):
             sign(target, key)
         verify(target, signature, keyring)
         immutable.extend((target, signature))
-    if digests is not None and db.is_file() and 'linux-piano' in expected:
-        indexed = pacman_entries(db).get('linux-piano')
+    kernel_meta = KERNEL_META_PACKAGES['sunuefi']
+    if digests is not None and db.is_file() and kernel_meta in expected:
+        previous, _ = pacman_metadata(db)
+        indexed = previous.get(kernel_meta)
         if indexed:
-            check_kernel_epoch('linux-piano', expected['linux-piano'][0], [indexed[0]])
+            check_kernel_epoch(kernel_meta, expected[kernel_meta][0], [indexed[0]])
     run('repo-add', '--prevent-downgrade', '--include-sigs', '--sign', '--key', key, db,
         *[work / package.name for package in packages])
-    if store:
-        for archive, signature in archives:
-            verify(archive, signature, keyring)
+    selected, retired = pacman_metadata(db)
+    # Arch users upgrade to the distribution's fprintd. Leaving the older
+    # package here would shadow [extra]. SteamOS still ships its own daemon.
+    if (name == 'sunuefi' and 'libfprint' in expected and
+            'fprintd' in selected and 'fprintd' not in expected):
+        retired.add('fprintd')
+    if retired:
+        # Keep its archive and prior signed indexes available for rollback.
+        run('repo-remove', '--sign', '--key', key, db, *sorted(retired))
     if digests is not None:
         check_pacman_selection(db, expected)
-    mutable = []
-    index = {}
-    for source in sources:
-        alias = work / source.name.replace('.tar.zst', '')
-        if alias.is_symlink():
-            alias.unlink()
-        shutil.copyfile(source, alias)
-        mutable.extend((source, alias))
-        digest = sha(source)
-        hashed = work / 'by-hash/SHA256' / digest
-        hashed.parent.mkdir(parents=True, exist_ok=True)
-        if not hashed.exists():
-            shutil.copyfile(source, hashed)
-            immutable.append(hashed)
-        index[source.name] = digest
-    # libalpm reads the standard aliases. The next publisher reads only a
-    # complete generation, even if an upload stopped between the aliases.
-    committed.write_text(json.dumps(index, sort_keys=True) + '\n')
-    return prefix, immutable, [*mutable, committed]
+    return (*seal_pacman_index(work, name, immutable, store), retired)
+
+
+def prepare_pacman_v4l2_withdrawal(work, key, store, *, check_existing):
+    """Withdraw the old common plugin without publishing any new Arch packages."""
+    name = 'sunuefi'
+    work.mkdir()
+    if not load_pacman_index(work, name, store):
+        return None
+    db = work / (name + '.db.tar.zst')
+    selected, _ = pacman_metadata(db)
+    changed = PACMAN_V4L2_LEGACY in selected
+    if not changed and not check_existing:
+        return None
+    if changed:
+        run('repo-remove', '--sign', '--key', key, db, PACMAN_V4L2_LEGACY)
+    prefix, immutable, mutable = seal_pacman_index(work, name, [], store)
+    return SimpleNamespace(repo=name, output=work, prefix=prefix,
+                           immutable=immutable if changed else (),
+                           mutable=mutable if changed else (), packages={})
 
 
 def prepare_publication(args, store=None, *, digests=None):
@@ -356,15 +433,16 @@ def prepare_publication(args, store=None, *, digests=None):
         raise ValueError('Use a fresh output directory')
     args.output.mkdir(parents=True)
     work = args.output.resolve()
+    retired = set()
     if args.repo == 'apt':
         prefix, immutable, mutable = apt_index(work, packages, args.key, store, digests=digests)
     else:
-        prefix, immutable, mutable = pacman_index(
+        prefix, immutable, mutable, retired = pacman_index(
             work, packages, args.repo, args.key, store, digests=digests)
     if digests is None:
         digests = {path.name: sha(path) for path in packages}
     return SimpleNamespace(repo=args.repo, output=work, prefix=prefix, immutable=immutable,
-                           mutable=mutable, packages=digests)
+                           mutable=mutable, packages=digests, retired=retired)
 
 
 def upload_publication(publication, store=None):

@@ -15,14 +15,28 @@ typedef struct {
 
 VOID RamLogWrite (IN CONST UINT8 *Buffer, IN UINTN Length)
 {
+#ifdef SUNUEFI_NP05J
+  RAM_CONSOLE *Ring = (RAM_CONSOLE *)(UINTN)0xE4A00000;
+#else
   RAM_CONSOLE *Ring = (RAM_CONSOLE *)(UINTN)0xA3500000;
+#endif
   CONST UINT32 Capacity = 0x200000 - 12;
   UINT32 Start, Size;
   UINTN First;
   BOOLEAN Interrupts;
   if (Buffer == NULL || Length == 0) { return; }
   // Refuse a mismatched layout instead of initializing or erasing existing RAM.
+#ifdef SUNUEFI_NP05J
+  // เฟิร์มแวร์ stock บน NP05J ไม่ได้สร้าง header DBGC ไว้ล่วงหน้า จึงตั้งค่าเริ่มต้นให้พร้อมบันทึก log
+  if (Ring->Signature != 0x43474244 || Ring->Start >= Capacity || Ring->Size > Capacity || Ring->Start > Ring->Size) {
+    Ring->Signature = 0x43474244;
+    Ring->Start     = 0;
+    Ring->Size      = 0;
+    WriteBackInvalidateDataCacheRange (Ring, 12);
+  }
+#else
   if (Ring->Signature != 0x43474244 || Ring->Start >= Capacity || Ring->Size > Capacity) { return; }
+#endif
   if (Length > Capacity) { Buffer += Length - Capacity; Length = Capacity; }
   Interrupts = ArmGetInterruptState ();
   if (Interrupts) { ArmDisableInterrupts (); }

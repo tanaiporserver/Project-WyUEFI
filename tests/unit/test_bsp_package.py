@@ -1,8 +1,9 @@
 import hashlib
 import io
 import json
+import lzma
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
@@ -14,11 +15,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 from build.check_patch_series import patch_id
+from build import overlay_packages
+from package.archive import pacman_info
 import package_bsp as bsp
+from stage_piano_firmware import packaged_components
 
 TOPOLOGY_TOOLS = all(shutil.which(tool) for tool in ('m4', 'alsatplg'))
 TOPOLOGY_SOURCES = all((ROOT / 'upstream' / name / '.git').exists() for name in bsp.TOPOLOGY_SOURCES)
 DMA_HEAP_RULE = 'usr/lib/udev/rules.d/70-piano-camera.rules'
+FPRINTD_DROP_IN = 'usr/lib/systemd/system/fprintd.service.d/10-piano-goodix.conf'
 
 
 class BspPackageTests(unittest.TestCase):
@@ -44,6 +49,8 @@ class BspPackageTests(unittest.TestCase):
         self.assertIn('etc/wireplumber/wireplumber.conf.d/50-piano-audio.conf', report['payload_files'])
         self.assertNotIn('etc/wireplumber/wireplumber.conf.d/50-piano-camera.conf', report['payload_files'])
         self.assertIn(DMA_HEAP_RULE, report['payload_files'])
+        self.assertIn(FPRINTD_DROP_IN, report['payload_files'])
+        self.assertNotIn(bsp.OLD_FPRINTD_DROP_IN, report['payload_files'])
         self.assertNotIn('etc/udev/rules.d/70-piano-camera.rules', report['payload_files'])
         row=report['payload_files']['etc/modules-load.d/piano-bluetooth.conf']
         self.assertEqual(row['source_component'],'Project SunUEFI')
@@ -161,10 +168,12 @@ class BspPackageTests(unittest.TestCase):
         self.assertEqual(metadata, ['any', *configuration, *report['depends']])
         self.assertTrue({'python', 'python-gobject', 'bluez'} <= set(metadata))
         self.assertNotIn(DMA_HEAP_RULE, metadata)
+        self.assertNotIn(FPRINTD_DROP_IN, metadata)
         with tarfile.open(work / 'payload.tar') as archive:
             for member in archive:
                 self.assertEqual((member.uid, member.gid, member.mtime), (0, 0, 0))
             self.assertEqual(archive.getmember('./' + DMA_HEAP_RULE).mode, 0o644)
+            self.assertEqual(archive.getmember('./' + FPRINTD_DROP_IN).mode, 0o644)
             member = archive.getmember('./usr/share/alsa/ucm2/conf.d/sm8750/Xiaomi Pad 8 Pro.conf')
             self.assertTrue(member.issym())
             self.assertEqual(member.linkname, '../../Qualcomm/sm8750/Xiaomi-Pad-8-Pro/Xiaomi-Pad-8-Pro.conf')
@@ -204,6 +213,12 @@ class BspPackageTests(unittest.TestCase):
             self.assertIn('./etc/modprobe.d/piano.conf', archive.getnames())
             self.assertIn('./usr/lib/piano/pen-control.py', archive.getnames())
             self.assertEqual(archive.getmember('./' + DMA_HEAP_RULE).mode, 0o644)
+            drop_in = archive.extractfile('./' + FPRINTD_DROP_IN).read()
+            self.assertEqual(set(drop_in.splitlines()), {
+                b'[Service]', b'StateDirectory=piano-goodix', b'StateDirectoryMode=0700',
+                b'DeviceAllow=char-uio rw', b'DeviceAllow=char-tee rw', b'DeviceAllow=char-bsg rw',
+            })
+            self.assertNotIn('./' + bsp.OLD_FPRINTD_DROP_IN, archive.getnames())
         control = self.base / 'control'
         subprocess.run(['dpkg-deb', '--control', artifact, control], check=True)
         guard = (control / 'preinst').read_text()
@@ -211,6 +226,7 @@ class BspPackageTests(unittest.TestCase):
         self.assertNotIn('systemctl', guard)
         fields = (control / 'control').read_text()
         self.assertNotIn('/' + DMA_HEAP_RULE, (control / 'conffiles').read_text().splitlines())
+        self.assertNotIn('/' + FPRINTD_DROP_IN, (control / 'conffiles').read_text().splitlines())
         depends = next(line.removeprefix('Depends: ').split(', ')
                        for line in fields.splitlines() if line.startswith('Depends: '))
         self.assertTrue({'python3', 'python3-gi', 'gir1.2-glib-2.0', 'bluez'} <= set(depends))
@@ -219,20 +235,19 @@ class BspPackageTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb unavailable; no fake deb test')
     def test_real_touch_deb_contains_verified_firmware_only(self):
         out = self.base / 'deb'
-        target = self.base / 'target'
-        target.mkdir()
-        source = bsp.TOUCH_MANIFEST.parent
-        args = self.args('package', '--format', 'deb', '--touch-firmware', str(source),
-                         '--output', str(out))
-        with self.assertRaisesRegex(ValueError, 'Specify --against'):
-            bsp.build(args)
-        args.against = target
-        self.assertFalse(out.exists())
-        report = bsp.build(args)
-        self.assertFalse(report['public_distribution'])
-        artifact = out / next(iter(report['files']))
-        self.assertEqual(artifact.name, 'piano-firmware-touch_0.1.0_all.deb')
+        manifest = bsp.TOUCH_MANIFEST
+        source = json.loads(manifest.read_text())
+        with patch.dict(os.environ, {bsp.overlay_release.ENVIRONMENT: '10.1'}):
+            report = bsp.build(self.args('package', '--format', 'deb', '--touch-firmware',
+                                         str(manifest.parent), '--output', str(out)))
+        self.assertTrue(report['public_distribution'])
+        artifact, metadata = overlay_packages.bsp_package(out, 'debian', component='touch-firmware')
+        version = source['rom'].removeprefix('OS')
+        self.assertEqual(artifact.name, f'piano-firmware-touch_{version}+sunuefi.10.1_all.deb')
+        self.assertEqual(metadata['firmware'], report['payload_files'])
         self.assertEqual(report['depends'], [])
+        self.assertEqual(packaged_components([(PurePosixPath('novatek'), manifest, source)]),
+                         {'piano-touch': 'touch-firmware'})
         kib = subprocess.check_output(['dpkg-deb', '--field', artifact, 'Installed-Size'], text=True)
         with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(
                 ['dpkg-deb', '--fsys-tarfile', artifact]))) as archive:
@@ -251,7 +266,7 @@ class BspPackageTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(installed).hexdigest(), record['sha256'])
             installed_report = archive.extractfile(
                 './usr/share/doc/piano-firmware-touch/bsp-manifest.json').read().decode()
-            self.assertNotIn(str(source), installed_report)
+            self.assertNotIn('conflict_check', json.loads(installed_report))
 
     @unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb unavailable; no fake deb test')
     def test_real_display_deb_contains_both_panel_calibrations(self):
@@ -315,6 +330,230 @@ class BspPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unowned-existing-file'):
             bsp.conflict_check(root, rows, bsp.DISPLAY_PACKAGE, adopt_identical=True)
 
+    @unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb unavailable; no fake deb test')
+    def test_keyboard_deb_contains_pinned_firmware_and_uses_native_initramfs_trigger(self):
+        manifest = bsp.KEYBOARD_MANIFEST
+        source = json.loads(manifest.read_text())
+        out = self.base / 'deb'
+        with patch.dict(os.environ, {bsp.overlay_release.ENVIRONMENT: '10.1'}):
+            report = bsp.build(self.args('package', '--format', 'deb', '--keyboard-firmware',
+                                         str(manifest.parent), '--output', str(out)))
+        relative = 'usr/lib/firmware/nanosic/MCU_Upgrade.bin'
+        artifact, metadata = overlay_packages.bsp_package(out, 'debian', component='keyboard-firmware')
+        self.assertEqual(artifact.name, f"{bsp.KEYBOARD_PACKAGE}_{source['rom'][2:]}+sunuefi.10.1_all.deb")
+        self.assertTrue(report['public_distribution'])
+        self.assertEqual(report['depends'], [])
+        self.assertEqual(set(metadata['firmware']), {relative})
+        with tarfile.open(fileobj=io.BytesIO(subprocess.check_output(
+                ['dpkg-deb', '--fsys-tarfile', artifact]))) as archive:
+            files = [member for member in archive if member.isfile()
+                     and member.name.startswith('./usr/lib/firmware/')]
+            self.assertEqual([member.name for member in files], ['./' + relative])
+            entry = files[0]
+            self.assertEqual((entry.mode, entry.uid, entry.gid), (0o644, 0, 0))
+            expected = source['files']['MCU_Upgrade.bin']
+            data = archive.extractfile(entry).read()
+            self.assertEqual((len(data), hashlib.sha256(data).hexdigest()),
+                             (expected['bytes'], expected['sha256']))
+        control = self.base / 'control'
+        subprocess.run(['dpkg-deb', '--control', artifact, control], check=True)
+        self.assertEqual((control / 'triggers').read_text(), 'activate-noawait update-initramfs\n')
+        self.assertFalse((control / 'conffiles').exists())
+        self.assertEqual(packaged_components([(PurePosixPath('nanosic'), manifest, source)]),
+                         {'piano-keyboard': 'keyboard-firmware'})
+
+    @unittest.skipUnless(shutil.which('dpkg-query'), 'dpkg-query unavailable')
+    def test_firmware_preinst_checks_merged_usr_ownership(self):
+        for package in (bsp.KEYBOARD_PACKAGE, bsp.TOUCH_PACKAGE):
+            with self.subTest(package=package):
+                self.check_firmware_preinst(package)
+
+    def check_firmware_preinst(self, package):
+        component, manifest = bsp.STOCK_FIRMWARE[package]
+        _, rows = bsp.local_firmware_payload(manifest.parent, manifest, component)
+        row, data = rows[-1]
+        relative = row['path']
+        root = self.base / package
+        firmware = root / relative
+        firmware.parent.mkdir(parents=True)
+        firmware.write_bytes(data)
+        firmware.chmod(0o644)
+        (root / 'lib').symlink_to('usr/lib')
+        database = root / 'var/lib/dpkg'
+        info = database / 'info'
+        info.mkdir(parents=True)
+        status = database / 'status'
+        status.touch()
+        script = bsp.preinst([relative], package, adopt={relative: row})
+        environment = {**os.environ, 'DPKG_ROOT': str(root), 'DPKG_ADMINDIR': str(database)}
+
+        def preinst():
+            return subprocess.run(['/bin/sh', '-c', script], env=environment,
+                                  capture_output=True, text=True)
+
+        def record_alias_owner(package):
+            status.write_text(
+                f'Package: {package}\nStatus: install ok installed\n'
+                'Priority: optional\nSection: kernel\nArchitecture: all\nVersion: 1\n'
+                'Maintainer: Test <test@example.invalid>\nDescription: Alias owner\n')
+            ownership = info / (package + '.list')
+            ownership.write_text('/' + relative.removeprefix('usr/') + '\n')
+            return ownership
+
+        result = preinst()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        foreign = record_alias_owner('other-firmware')
+        result = preinst()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('other-firmware', result.stderr)
+        foreign.unlink()
+        record_alias_owner(package)
+        firmware.write_bytes(b'updated bytes from the installed package')
+        result = preinst()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('makepkg', 'bsdtar', 'xz', 'zstd')),
+                         'pacman packaging and firmware compression tools required')
+    def test_published_firmware_pacman_preserves_legacy_files(self):
+        for package in (bsp.KEYBOARD_PACKAGE, bsp.TOUCH_PACKAGE):
+            with self.subTest(package=package), patch.dict(
+                    os.environ, {bsp.overlay_release.ENVIRONMENT: '10.1'}):
+                component, manifest = bsp.STOCK_FIRMWARE[package]
+                out = self.base / component
+                bsp.build(self.args('package', '--target', 'arch', '--format', 'pacman',
+                                    '--' + component, str(manifest.parent), '--output', str(out)))
+                archive, metadata = overlay_packages.bsp_package(out, 'pacman', component=component)
+                source = json.loads(manifest.read_text())
+                expected = {f"usr/lib/firmware/{source['directory']}/{name}" for name in source['files']}
+                self.assertTrue(bsp.overlay_release.uses_pacman_generation(metadata['version']))
+                self.assertEqual(set(pacman_info(archive)['backup']), expected)
+                self.assertEqual(set(metadata['firmware']), expected)
+                self.assertEqual(set(metadata['compressed_firmware']),
+                                 {path + suffix for path in expected
+                                  for suffix in bsp.FIRMWARE_COMPRESSION_SUFFIXES})
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ('makepkg', 'bsdtar', 'pacman', 'fakeroot',
+                                                            'xz', 'zstd')),
+                         'native pacman packaging tools required')
+    def test_keyboard_pacman_detects_compressed_file_conflicts_before_install(self):
+        out = self.base / 'pacman'
+        bsp.build(self.args('package', '--target', 'arch', '--format', 'pacman', '--keyboard-firmware',
+                            str(bsp.KEYBOARD_MANIFEST.parent), '--output', str(out)))
+        archive, metadata = overlay_packages.bsp_package(out, 'pacman', component='keyboard-firmware')
+        relative, = metadata['firmware']
+        original = (bsp.KEYBOARD_MANIFEST.parent / 'MCU_Upgrade.bin').read_bytes()
+        compressed = {
+            '.xz': lzma.compress(b'local replacement', check=lzma.CHECK_CRC32),
+            '.zst': subprocess.check_output(['zstd', '-q', '-c'], input=b'local replacement'),
+        }
+        self.assertEqual(set(metadata['compressed_firmware']), {relative + suffix for suffix in compressed})
+        foreign = self.base / 'foreign-package'
+        foreign.mkdir()
+        foreign_name = 'local-keyboard-firmware'
+        for suffix, data in compressed.items():
+            (foreign / (Path(relative).name + suffix)).write_bytes(data)
+        (foreign / 'PKGBUILD').write_text(
+            f'pkgname={foreign_name}\npkgver=1\npkgrel=1\narch=(any)\n'
+            'package() {\n'
+            f'  for firmware in {Path(relative).name}.xz {Path(relative).name}.zst; do\n'
+            f'    install -Dm644 "$startdir/$firmware" "$pkgdir/{Path(relative).parent}/$firmware"\n'
+            '  done\n'
+            '}\n')
+        bsp.makepkg(foreign)
+        foreign_archive = foreign / f'{foreign_name}-1-1-any.pkg.tar.zst'
+        config = self.base / 'pacman.conf'
+        config.write_text('[options]\nSigLevel = Never\n')
+        hooks = self.base / 'hooks'
+        hooks.mkdir()
+        for label in ('stock', 'replacement', *compressed, 'foreign'):
+            with self.subTest(label=label):
+                root = self.base / label
+                database = root / 'var/lib/pacman'
+                database.mkdir(parents=True)
+                firmware = root / relative
+                firmware.parent.mkdir(parents=True)
+                (root / 'lib').symlink_to('usr/lib')
+                command = ['fakeroot', '--', 'pacman', '--root', str(root),
+                           '--dbpath', str(database), '--config', str(config),
+                           '--logfile', str(root / 'pacman.log'), '--hookdir', str(hooks),
+                           '--noconfirm']
+                if label == 'foreign':
+                    subprocess.run([*command, '-U', foreign_archive], check=True, capture_output=True)
+                elif label in compressed:
+                    firmware.with_name(firmware.name + label).write_bytes(compressed[label])
+                if label == 'foreign' or label in compressed:
+                    result = subprocess.run([*command, '-U', archive], text=True, capture_output=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(firmware.exists())
+                    suffixes = compressed if label == 'foreign' else (label,)
+                    for suffix in suffixes:
+                        path = firmware.with_name(firmware.name + suffix)
+                        self.assertIn(path.name + ' exists in filesystem', result.stderr)
+                        self.assertEqual(path.read_bytes(), compressed[suffix])
+                    query = subprocess.run([*command, '-Qq'], text=True, capture_output=True,
+                                           check=label == 'foreign')
+                    self.assertEqual(query.stdout.splitlines(), [foreign_name] if label == 'foreign' else [])
+                    continue
+                contents = original if label == 'stock' else b'local replacement'
+                firmware.write_bytes(contents)
+                subprocess.run([*command, '-U', archive], check=True, capture_output=True)
+                self.assertEqual(firmware.read_bytes(), contents)
+                pacnew = firmware.with_name(firmware.name + '.pacnew')
+                if label == 'stock':
+                    self.assertFalse(pacnew.exists())
+                else:
+                    self.assertEqual(pacnew.read_bytes(), original)
+                xz = firmware.with_name(firmware.name + '.xz')
+                zst = firmware.with_name(firmware.name + '.zst')
+                self.assertEqual(lzma.decompress(xz.read_bytes()), original)
+                self.assertEqual(subprocess.check_output(['zstd', '-q', '-d', '-c', zst]), original)
+                _, rows = bsp.local_firmware_payload(bsp.KEYBOARD_MANIFEST.parent,
+                                                      bsp.KEYBOARD_MANIFEST, 'keyboard firmware')
+                bsp.conflict_check(root, rows, bsp.KEYBOARD_PACKAGE, packaged_compressed_aliases=True)
+
+    @unittest.skipUnless(shutil.which('dpkg-deb'), 'dpkg-deb unavailable; no fake deb test')
+    def test_fingerprint_deb_preserves_all_raw_firmware_at_the_loader_paths(self):
+        manifest = bsp.FINGERPRINT_MANIFEST
+        out = self.base / 'deb'
+        args = self.args('package', '--format', 'deb', '--fingerprint-firmware',
+                         str(manifest.parent), '--output', str(out))
+        report = bsp.build(args)
+        self.assertEqual(report['component'], 'fingerprint-firmware')
+        self.assertFalse(report['public_distribution'])
+        self.assertEqual(report['depends'], [])
+        artifact = out / next(iter(report['files']))
+        lock = json.loads(manifest.read_text())
+        version = lock['rom'].removeprefix('OS')
+        self.assertEqual(artifact.name, f'piano-firmware-fingerprint_{version}_all.deb')
+        pinned = lock['files']
+        paths = {'./usr/lib/firmware/' + name: record for name, record in pinned.items()}
+        self.assertEqual(set(pinned), {'gfpia.elf', 'piano-goodix-cap-s.bin',
+                                      'piano-goodix-cap-t.bin', 'piano-goodix-dubai-u4.bin'})
+        data = subprocess.check_output(['dpkg-deb', '--fsys-tarfile', artifact])
+        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+            for path, expected in paths.items():
+                entry = archive.getmember(path)
+                self.assertTrue(entry.isfile())
+                self.assertEqual((entry.mode, entry.uid, entry.gid), (0o644, 0, 0))
+                installed = archive.extractfile(entry).read()
+                self.assertEqual((len(installed), hashlib.sha256(installed).hexdigest()),
+                                 (expected['bytes'], expected['sha256']))
+            self.assertEqual({member.name for member in archive
+                              if not member.isdir() and member.name.startswith('./usr/lib/firmware/')},
+                             set(paths))
+
+    def test_packaged_fingerprint_cannot_be_shadowed_by_a_direct_copy(self):
+        manifest = bsp.FINGERPRINT_MANIFEST
+        pinned = json.loads(manifest.read_text())
+        selected = [(PurePosixPath('.'), manifest, pinned)]
+        self.assertEqual(packaged_components(selected),
+                         {pinned['component']: 'fingerprint-firmware'})
+        with self.assertRaisesRegex(ValueError, 'differs from the fixed source'):
+            packaged_components([(PurePosixPath('.'), manifest, {**pinned, 'rom': 'modified'})])
+        with self.assertRaisesRegex(ValueError, 'overlaps firmware owned by a native package'):
+            packaged_components([*selected, (PurePosixPath('.'), manifest,
+                                              {**pinned, 'component': 'other'})])
+
     def test_power_profiles_adopt_only_identical_unowned_defaults(self):
         root = self.base / 'guest'
         row, data = bsp.power_profiles_payload()[0]
@@ -339,16 +578,17 @@ class BspPackageTests(unittest.TestCase):
             check()
 
     def test_local_firmware_rejects_tampering_and_publication_generation(self):
-        for component, manifest in (('touch', bsp.TOUCH_MANIFEST),
-                                    ('display', bsp.DISPLAY_MANIFEST)):
+        for component, manifest in (('touch', bsp.TOUCH_MANIFEST), ('display', bsp.DISPLAY_MANIFEST),
+                                    ('fingerprint', bsp.FINGERPRINT_MANIFEST)):
             with self.subTest(component=component):
                 source = self.base / component
                 shutil.copytree(manifest.parent, source)
                 args = self.args('stage', f'--{component}-firmware', str(source),
                                  '--output', str(self.base / 'stage'))
-                with patch.dict(os.environ, {bsp.overlay_release.ENVIRONMENT: '10.1'}):
-                    with self.assertRaisesRegex(ValueError, 'cannot be built as a publication generation'):
-                        bsp.build(args)
+                if component != 'touch':
+                    with patch.dict(os.environ, {bsp.overlay_release.ENVIRONMENT: '10.1'}):
+                        with self.assertRaisesRegex(ValueError, 'cannot be built as a publication generation'):
+                            bsp.build(args)
                 panel = source / next(iter(json.loads(manifest.read_text())['files']))
                 raw = panel.read_bytes()
                 panel.write_bytes(bytes([raw[0] ^ 1]) + raw[1:])

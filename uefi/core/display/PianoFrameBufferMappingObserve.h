@@ -3,7 +3,11 @@
 #include <PiDxe.h>
 #define PIANO_FB_MAPPING_PHASES 32U
 #define PIANO_FB_MAPPING_BASE 0xfc800000ULL
+#ifdef SUNUEFI_NP05J
+#define PIANO_FB_MAPPING_BYTES 0xDC5000ULL
+#else
 #define PIANO_FB_MAPPING_BYTES 0x1a13000ULL
+#endif
 typedef BOOLEAN (EFIAPI *PIANO_FB_MAPPING_ALIVE)(VOID);
 typedef struct {UINT64 El,Sctlr,Tcr,Ttbr0,Ttbr1,Mair,Daif;} PIANO_FB_CPU_STATE;
 typedef struct {

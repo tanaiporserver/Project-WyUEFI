@@ -49,7 +49,7 @@ def _tracked_sources(root):
     # This helper is needed while its first implementation is still untracked.
     paths.add('tools/firmware_workspace.py')
     return sorted(p for p in paths if not p.startswith(
-        ('uefi/platforms/pianoProductPkg/',)))
+        ('uefi/platforms/pianoProductPkg/', 'uefi/platforms/np05jProductPkg/')))
 
 
 def _check_repo(path, commit):
@@ -181,12 +181,16 @@ def validate_sources(root, relative_paths=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('prepare', 'build', 'validate'), nargs='?', default='prepare')
+    parser.add_argument('--device', choices=('piano', 'np05j'), default='piano')
     args = parser.parse_args()
     try:
         if args.operation in ('prepare', 'build'):
             workspace = prepare()
             if args.operation == 'build':
-                os.execv('/bin/bash', ['bash', str(workspace / 'tools/build_product.sh')])
+                cmd = ['bash', str(workspace / 'tools/build_product.sh')]
+                if args.device != 'piano':
+                    cmd.extend(['--device', args.device])
+                os.execv('/bin/bash', cmd)
             print(workspace)
         else:
             validate_sources(ROOT)

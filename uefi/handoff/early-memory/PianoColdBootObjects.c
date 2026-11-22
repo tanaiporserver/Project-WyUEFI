@@ -159,6 +159,7 @@ STATIC EFI_STATUS ColdParseDtb(COLD_DTB *D){
  }return EFI_COMPROMISED_DATA;
 }
 
+#ifndef SUNUEFI_NP05J
 STATIC BOOLEAN ColdCompatible(CONST CHAR8 *Data,UINT32 Bytes,CONST CHAR8 *Expected){
  if(!Bytes||Data[Bytes-1])return FALSE;
  for(UINT32 At=0;At<Bytes;){
@@ -246,6 +247,7 @@ STATIC EFI_STATUS ColdParseGunyah(CONST COLD_DTB *D,PIANO_GUNYAH_BOOT_INFO *Info
  if(!IsGunyah||Matches!=1||!GotVm)return EFI_NOT_FOUND;
  Info->Valid=TRUE;return EFI_SUCCESS;
 }
+#endif
 STATIC EFI_STATUS ColdLayout(VOID){
  CONST struct {CONST CHAR8 *Name;PIANO_COLD_OBJECT_ROLE Role;} Items[]={{"UEFI_FD",PianoColdObjectFirmware},{"UEFI_Stack",PianoColdObjectStack},{"CPU_Vectors",PianoColdObjectVectorReservation},{"MMU_PageTables",PianoColdObjectMmuReservation},{"SEC_Heap",PianoColdObjectSecHeap},{"Sched_Heap",PianoColdObjectScheduler},{"FV_Region",PianoColdObjectFv},{"BootHandoff",PianoColdObjectHandoff}};
  for(UINTN I=0;I<ARRAY_SIZE(Items);++I){CONST EFI_MEMORY_REGION_DESCRIPTOR *R=ColdNamed(Items[I].Name);if(!R||ColdAdd(Items[I].Role,R->Address,R->Length)!=EFI_SUCCESS)return EFI_COMPROMISED_DATA;}
@@ -290,9 +292,11 @@ EFI_STATUS PianoColdBootObjectsObserve(VOID){
   * a timeout merely because the complete SoC DT has many unrelated nodes. */
  E=ColdFresh();if(E!=EFI_SUCCESS)return ColdFinish(E,PianoColdReasonCpu);
  mCold.Coherent=TRUE;
+#ifndef SUNUEFI_NP05J
  PIANO_GUNYAH_BOOT_INFO Ga,Gb;
  if(ColdParseGunyah(&A,&Ga)==EFI_SUCCESS&&ColdParseGunyah(&B,&Gb)==EFI_SUCCESS&&
     !CompareMem(&Ga,&Gb,sizeof(Ga)))CopyMem(&mCold.Gunyah,&Ga,sizeof(Ga));
+#endif
  ColdAdd(PianoColdObjectFactoryDtb,H->Dtb,A.Bytes);ColdAdd(PianoColdObjectCombinedInitrd,A.Start,A.End-A.Start);
  ColdCpu(&mCold.After);return ColdFinish(EFI_SUCCESS,PianoColdReasonNone);
 }

@@ -7,7 +7,30 @@
 #include <Library/BaseLib.h>
 #define SCREEN_MAX_PIXELS (8U*1024U*1024U)
 STATIC VOID Put32(UINT8 *P,UINT32 V){for(UINTN I=0;I<4;++I)P[I]=(UINT8)(V>>(I*8));}
-STATIC UINT32 Crc(CONST UINT8 *P,UINTN N){UINT32 C=MAX_UINT32;for(UINTN I=0;I<N;++I){C^=P[I];for(UINTN J=0;J<8;++J)C=(C>>1)^((C&1)?0xEDB88320U:0);}return ~C;}
+STATIC UINT32 Crc(CONST UINT8 *P,UINTN N){
+  UINT32 C=MAX_UINT32;
+#if defined(SUNUEFI_NP05J) && defined(__aarch64__)
+  // ใช้คำสั่งฮาร์ดแวร์ CRC32 ของ ARMv8.1+ (crc32x/crc32b) เร่งความเร็วการคำนวณ CRC ภาพ 10.8 MB
+  UINTN I=0;
+  while(I<N && (((UINTN)(P+I)&7U)!=0)){
+    UINT32 B=P[I++];
+    __asm__ volatile ("crc32b %w0, %w0, %w1" : "+r"(C) : "r"(B));
+  }
+  while(I+8<=N){
+    UINT64 W;
+    CopyMem(&W,P+I,sizeof(W));
+    __asm__ volatile ("crc32x %w0, %w0, %x1" : "+r"(C) : "r"(W));
+    I+=8;
+  }
+  while(I<N){
+    UINT32 B=P[I++];
+    __asm__ volatile ("crc32b %w0, %w0, %w1" : "+r"(C) : "r"(B));
+  }
+#else
+  for(UINTN I=0;I<N;++I){C^=P[I];for(UINTN J=0;J<8;++J)C=(C>>1)^((C&1)?0xEDB88320U:0);}
+#endif
+  return ~C;
+}
 EFI_STATUS PianoFastbootCaptureScreen(PIANO_FASTBOOT *State,UINT32 *Width,
                                      UINT32 *Height,UINT32 *Bytes,UINT32 *Crc32){
   if(State==NULL || Width==NULL || Height==NULL || Bytes==NULL || Crc32==NULL)return EFI_INVALID_PARAMETER;

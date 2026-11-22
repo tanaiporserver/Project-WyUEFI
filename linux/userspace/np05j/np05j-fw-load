@@ -1,0 +1,151 @@
+#!/bin/sh
+LOG=/run/fw-load.log
+: > "$LOG"
+
+find_part() {
+  for p in "$@"; do
+    for u in /sys/block/sd*/sd*/uevent; do
+      [ -f "$u" ] || continue
+      if grep -q "^PARTNAME=${p}$" "$u" 2>/dev/null; then
+        echo "/dev/$(basename "$(dirname "$u")")"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+mount_ro_part() {
+  dev="$1"; mnt="$2"
+  [ -b "$dev" ] || return 1
+  mkdir -p "$mnt"
+  mount -o ro "$dev" "$mnt" 2>>"$LOG" || mount -t vfat -o ro "$dev" "$mnt" 2>>"$LOG" || mount -t ext4 -o ro "$dev" "$mnt" 2>>"$LOG" || return 1
+  echo "Mounted $dev -> $mnt (ro)" >> "$LOG"
+  return 0
+}
+
+MODEM_DEV=$(find_part modem_b modem_a || true)
+BT_DEV=$(find_part bluetooth_b bluetooth_a || true)
+DSP_DEV=$(find_part dsp_b dsp_a || true)
+echo "Parts: modem=${MODEM_DEV:-none} bt=${BT_DEV:-none} dsp=${DSP_DEV:-none}" >> "$LOG"
+
+mkdir -p /lib/firmware/qcom/sm8750 /lib/firmware/qca /lib/firmware/ath12k/QCC2072/hw1.0
+
+# 1. Mount modem_b (ADSP, CDSP, Wi-Fi 7 Peach/WCN7861)
+if [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
+  for d in /mnt/modem/image /mnt/modem; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      [ -f "$f" ] || continue
+      bn=$(basename "$f")
+      ln -sf "$f" "/lib/firmware/qcom/sm8750/$bn" 2>/dev/null || true
+    done
+  done
+  for sub in adsp cdsp; do
+    if [ ! -e "/lib/firmware/qcom/sm8750/${sub}_dtb.mdt" ]; then
+      for cand in "${sub}_dtb.mbn" "${sub}_dtbs.elf" "${sub}_dtb.elf"; do
+        if [ -e "/lib/firmware/qcom/sm8750/$cand" ]; then
+          ln -sf "/lib/firmware/qcom/sm8750/$cand" "/lib/firmware/qcom/sm8750/${sub}_dtb.mdt"
+          echo "Aliased ${sub}_dtb.mdt -> $cand" >> "$LOG"
+          break
+        fi
+      done
+    fi
+  done
+
+  # Map FastConnect 7900 / WCN7861 ("Peach" 0x110e) firmware -> ath12k/QCC2072/hw1.0/
+  PEACH_DIR=/mnt/modem/image/peach
+  ATH_DIR=/lib/firmware/ath12k/QCC2072/hw1.0
+  if [ -d "$PEACH_DIR" ]; then
+    [ -f "$PEACH_DIR/amss20.bin" ]      && ln -sf "$PEACH_DIR/amss20.bin"      "$ATH_DIR/amss.bin"
+    [ -f "$PEACH_DIR/phy_ucode20.elf" ] && ln -sf "$PEACH_DIR/phy_ucode20.elf" "$ATH_DIR/m3.bin"
+    [ -f "$PEACH_DIR/aux_ucode20.elf" ] && ln -sf "$PEACH_DIR/aux_ucode20.elf" "$ATH_DIR/aux_ucode.bin"
+    [ -f "$PEACH_DIR/bdwlan.elf" ]      && ln -sf "$PEACH_DIR/bdwlan.elf"      "$ATH_DIR/board.bin"
+    [ -f "$PEACH_DIR/regdb.bin" ]       && ln -sf "$PEACH_DIR/regdb.bin"       "$ATH_DIR/regdb.bin"
+    [ -f "$PEACH_DIR/Data20.msc" ]      && ln -sf "$PEACH_DIR/Data20.msc"      "$ATH_DIR/Data.msc"
+    for bf in "$PEACH_DIR"/bdwlan.e*; do
+      [ -f "$bf" ] || continue
+      ln -sf "$bf" "$ATH_DIR/$(basename "$bf")" 2>/dev/null || true
+    done
+    echo "Mapped Peach Wi-Fi 7 fw -> $ATH_DIR ($(ls "$ATH_DIR" | wc -l) files)" >> "$LOG"
+  fi
+fi
+
+# 2. Mount bluetooth_b (BRAHMA 2.0 / WCN7861 BT)
+if [ -n "$BT_DEV" ] && mount_ro_part "$BT_DEV" /mnt/bt_fw; then
+  for d in /mnt/bt_fw/image /mnt/bt_fw; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      [ -f "$f" ] || continue
+      bn=$(basename "$f")
+      ln -sf "$f" "/lib/firmware/qca/$bn" 2>/dev/null || true
+      case "$bn" in
+        brhbtfw*) ln -sf "$f" "/lib/firmware/qca/hmtbtfw${bn#brhbtfw}" 2>/dev/null || true ;;
+        brhbtnv*) ln -sf "$f" "/lib/firmware/qca/hmtnv${bn#brhbtnv}" 2>/dev/null || true ;;
+      esac
+    done
+  done
+  if [ ! -e /lib/firmware/qca/hmtnv20.bin ] && [ -e /lib/firmware/qca/hmtnv20.b02 ]; then
+    ln -sf /lib/firmware/qca/hmtnv20.b02 /lib/firmware/qca/hmtnv20.bin 2>/dev/null || true
+  fi
+  echo "Mapped Peach BT fw -> /lib/firmware/qca/" >> "$LOG"
+fi
+
+# 3. Mount dsp_b
+if [ -n "$DSP_DEV" ]; then
+  mount_ro_part "$DSP_DEV" /mnt/dsp || true
+fi
+
+# 4. Mount vendor_b from Android super partition (EROFS ro) for GPU gen80000_* & Audio tfa98xx.cnt
+if /bin/np05j-tool mount-vendor /mnt/vendor >> "$LOG" 2>&1; then
+  for d in /mnt/vendor/firmware /mnt/vendor/firmware_mnt/image; do
+    [ -d "$d" ] || continue
+    for f in "$d"/gen80000_*; do
+      [ -f "$f" ] || continue
+      bn=$(basename "$f")
+      ln -sf "$f" "/lib/firmware/qcom/$bn" 2>/dev/null || true
+      ln -sf "$f" "/lib/firmware/$bn" 2>/dev/null || true
+    done
+    if [ -f "$d/tfa98xx.cnt" ]; then
+      ln -sf "$d/tfa98xx.cnt" /lib/firmware/tfa98xx.cnt 2>/dev/null || true
+    fi
+  done
+  echo "Mapped vendor GPU/Audio fw: $(ls /lib/firmware/qcom/gen80000_* /lib/firmware/tfa98xx.cnt 2>/dev/null | tr '\n' ' ')" >> "$LOG"
+fi
+
+# 5. Start ADSP & CDSP Remoteprocs
+for rp in /sys/class/remoteproc/remoteproc*; do
+  [ -d "$rp" ] || continue
+  nm=$(cat "$rp/name" 2>/dev/null)
+  st=$(cat "$rp/state" 2>/dev/null)
+  fw=$(cat "$rp/firmware" 2>/dev/null)
+  if [ "$st" = "offline" ] && [ -e "/lib/firmware/$fw" ]; then
+    echo "Starting $rp ($nm) with $fw..." >> "$LOG"
+    echo start > "$rp/state" 2>>"$LOG" || echo "Start $rp failed ($?)" >> "$LOG"
+  fi
+done
+
+# 6. Bring up Bluetooth hci0
+if [ -d /sys/class/bluetooth/hci0 ]; then
+  echo "Bringing up Bluetooth hci0..." >> "$LOG"
+  /bin/np05j-tool bt-up 0 >> "$LOG" 2>&1 || true
+fi
+
+# 7. Re-probe Wi-Fi 7 (0000:01:00.0) now that /lib/firmware/ath12k/QCC2072/hw1.0/* is ready
+if [ -d /sys/bus/pci/devices/0000:01:00.0 ] && [ -e /lib/firmware/ath12k/QCC2072/hw1.0/amss.bin ]; then
+  if [ ! -e /sys/bus/pci/devices/0000:01:00.0/driver ]; then
+    echo "Probing ath12k_wifi7_pci on 0000:01:00.0..." >> "$LOG"
+    echo 0000:01:00.0 > /sys/bus/pci/drivers_probe 2>>"$LOG" || true
+  elif [ ! -d /sys/class/net/wlan0 ]; then
+    echo "Rebinding ath12k_wifi7_pci on 0000:01:00.0..." >> "$LOG"
+    echo 0000:01:00.0 > /sys/bus/pci/devices/0000:01:00.0/driver/unbind 2>>"$LOG" || true
+    sleep 1
+    echo 0000:01:00.0 > /sys/bus/pci/drivers_probe 2>>"$LOG" || true
+  fi
+fi
+
+# 8. If GPU node is present (BOOTDT_GPU.NSH) and unbound, trigger probe now that /mnt/vendor is ready
+if [ -d /sys/bus/platform/devices/3d00000.gpu ] && [ ! -e /sys/bus/platform/devices/3d00000.gpu/driver ]; then
+  echo "Probing msm_drm GPU on 3d00000.gpu..." >> "$LOG"
+  echo 3d00000.gpu > /sys/bus/platform/drivers_probe 2>>"$LOG" || true
+fi

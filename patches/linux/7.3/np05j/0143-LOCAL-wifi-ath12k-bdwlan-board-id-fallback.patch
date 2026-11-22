@@ -1,0 +1,26 @@
+diff --git a/drivers/net/wireless/ath/ath12k/core.c b/drivers/net/wireless/ath/ath12k/core.c
+--- a/drivers/net/wireless/ath/ath12k/core.c
++++ b/drivers/net/wireless/ath/ath12k/core.c
+@@ -564,6 +564,21 @@ int ath12k_core_fetch_bdf(struct ath12k_base *ab, struct ath12k_board_data *bd)
+ 		goto success;
+ 
+ api1:
+ 	bd_api = 1;
++	if (ab->qmi.target.board_id != ATH12K_BOARD_ID_DEFAULT &&
++	    ab->qmi.target.board_id < 0x100) {
++		char bdf_file[32];
++
++		scnprintf(bdf_file, sizeof(bdf_file), "bdwlan.e%02x",
++			  ab->qmi.target.board_id);
++		ret = ath12k_core_fetch_board_data_api_1(ab, bd, bdf_file);
++		if (!ret) {
++			ath12k_info(ab, "loaded board data %s (chip_id=0x%x board_id=0x%x)\n",
++				    bdf_file, ab->qmi.target.chip_id,
++				    ab->qmi.target.board_id);
++			goto success;
++		}
++	}
++
+ 	ret = ath12k_core_fetch_board_data_api_1(ab, bd, ATH12K_DEFAULT_BOARD_FILE);
+ 	if (ret) {
+ 		ath12k_core_create_firmware_path(ab, filename,

@@ -1,0 +1,1127 @@
+diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
+--- a/arch/arm64/boot/dts/qcom/Makefile
++++ b/arch/arm64/boot/dts/qcom/Makefile
+@@ -409,6 +409,9 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sm8650-qrd.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-mtp.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-qrd.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-xiaomi-piano.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j-otg.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j-gpu.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= talos-evk.dtb
+ 
+ talos-evk-el2-dtbs	:= talos-evk.dtb talos-el2.dtbo
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
+@@ -0,0 +1,760 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
++ *
++ * Common Mainline Linux Device Tree definitions for nubia NP05J (REDMAGIC Astra),
++ * Qualcomm Snapdragon 8 Elite (SM8750P / Pakala), 24 GiB LPDDR5X, 1 TB UFS 4.0.
++ *
++ * Verified against stock live DTB (nubia_np05j-live.dts) and upstream sm8750.dtsi.
++ */
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/linux-event-codes.h>
++#include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++#include "sm8750.dtsi"
++#include "pm8550.dtsi"
++#define PMK8550VE_SID 8
++#include "pm8550ve.dtsi"
++#include "pmih0108.dtsi"
++#include "pmk8550.dtsi"
++#include "sm8750-pmics.dtsi"
++
++/ {
++	model = "nubia REDMAGIC Astra (NP05J)";
++	compatible = "nubia,np05j", "qcom,sm8750";
++	chassis-type = "tablet";
++
++	aliases {
++		serial1 = &uart14;
++	};
++
++	clocks {
++		xo_board: xo-board {
++			compatible = "fixed-clock";
++			clock-frequency = <76800000>;
++			#clock-cells = <0>;
++		};
++
++		sleep_clk: sleep-clk {
++			compatible = "fixed-clock";
++			clock-frequency = <32000>;
++			#clock-cells = <0>;
++		};
++
++		bi_tcxo_div2: bi-tcxo-div2-clk {
++			compatible = "fixed-factor-clock";
++			#clock-cells = <0>;
++
++			clocks = <&rpmhcc RPMH_CXO_CLK>;
++			clock-mult = <1>;
++			clock-div = <2>;
++		};
++
++		bi_tcxo_ao_div2: bi-tcxo-ao-div2-clk {
++			compatible = "fixed-factor-clock";
++			#clock-cells = <0>;
++
++			clocks = <&rpmhcc RPMH_CXO_CLK_A>;
++			clock-mult = <1>;
++			clock-div = <2>;
++		};
++	};
++
++	cooling-fan {
++		compatible = "pwm-fan";
++		pwms = <&pm8550_pwm 3 40000>;
++		fan-supply = <&vreg_l7m_3p0>;
++		interrupts-extended = <&tlmm 183 IRQ_TYPE_EDGE_FALLING>;
++		pulses-per-revolution = <2>;
++		cooling-levels = <0 64 128 192 255>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&fan_pwm_default>, <&fan_tach_default>;
++		#cooling-cells = <2>;
++	};
++
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		pinctrl-0 = <&volume_up_n>;
++		pinctrl-names = "default";
++
++		key-volume-up {
++			label = "Volume Up";
++			linux,code = <KEY_VOLUMEUP>;
++			gpios = <&pm8550_gpios 6 GPIO_ACTIVE_LOW>;
++			debounce-interval = <15>;
++			linux,can-disable;
++			wakeup-source;
++		};
++	};
++
++	pmic_glink: pmic-glink {
++		compatible = "qcom,sm8750-pmic-glink",
++			     "qcom,sm8550-pmic-glink",
++			     "qcom,pmic-glink";
++		#address-cells = <1>;
++		#size-cells = <0>;
++	};
++
++	reserved-memory {
++		gpu_microcode_mem: gpu-microcode@9b09a000 {
++			reg = <0x0 0x9b09a000 0x0 0x2000>;
++			no-map;
++		};
++
++		display_demura_mem: display-demura@a3500000 {
++			reg = <0x0 0xa3500000 0x0 0x2c80000>;
++			no-map;
++		};
++
++		ramoops_mem: ramoops@e4a00000 {
++			reg = <0x0 0xe4a00000 0x0 0x200000>;
++			no-map;
++		};
++
++		cont_splash_mem: cont-splash@fc800000 {
++			reg = <0x0 0xfc800000 0x0 0x2b00000>;
++			no-map;
++		};
++	};
++
++	qup_opp_table_128mhz: opp-table-qup128mhz {
++		compatible = "operating-points-v2";
++
++		opp-75000000 {
++			opp-hz = /bits/ 64 <75000000>;
++			required-opps = <&rpmhpd_opp_low_svs>;
++		};
++
++		opp-128000000 {
++			opp-hz = /bits/ 64 <128000000>;
++			required-opps = <&rpmhpd_opp_svs>;
++		};
++	};
++
++	vph_pwr: vph-pwr-regulator {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vph_pwr";
++		regulator-min-microvolt = <3700000>;
++		regulator-max-microvolt = <3700000>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	/*
++	 * FastConnect 7900 ("Peach" / WCN785x) PMU power sequencing.
++	 * Live DT verified: wlan-en=tlmm 16, bt-en=pm8550ve_f_gpios 3,
++	 * sw-ctrl=tlmm 18, RF_CLK1, S5F/L3F/L2F/S4D/S1D/S7I/S3G.
++	 */
++	wcn7850-pmu {
++		compatible = "qcom,wcn7850-pmu";
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&wlan_en>, <&bt_default>;
++
++		wlan-enable-gpios = <&tlmm 16 GPIO_ACTIVE_HIGH>;
++		bt-enable-gpios = <&pm8550ve_f_gpios 3 GPIO_ACTIVE_HIGH>;
++
++		vdd-supply = <&vreg_s5f_0p85>;
++		vddio-supply = <&vreg_l3f_1p8>;
++		vddio1p2-supply = <&vreg_l2f_1p2>;
++		vddaon-supply = <&vreg_s4d_0p85>;
++		vdddig-supply = <&vreg_s1d_0p97>;
++		vddrfa1p2-supply = <&vreg_s7i_1p2>;
++		vddrfa1p8-supply = <&vreg_s3g_1p8>;
++
++		clocks = <&rpmhcc RPMH_RF_CLK1>;
++
++		regulators {
++			vreg_pmu_rfa_cmn: ldo0 {
++				regulator-name = "vreg_pmu_rfa_cmn";
++			};
++
++			vreg_pmu_aon_0p59: ldo1 {
++				regulator-name = "vreg_pmu_aon_0p59";
++			};
++
++			vreg_pmu_wlcx_0p8: ldo2 {
++				regulator-name = "vreg_pmu_wlcx_0p8";
++			};
++
++			vreg_pmu_wlmx_0p85: ldo3 {
++				regulator-name = "vreg_pmu_wlmx_0p85";
++			};
++
++			vreg_pmu_btcmx_0p85: ldo4 {
++				regulator-name = "vreg_pmu_btcmx_0p85";
++			};
++
++			vreg_pmu_rfa_0p8: ldo5 {
++				regulator-name = "vreg_pmu_rfa_0p8";
++			};
++
++			vreg_pmu_rfa_1p2: ldo6 {
++				regulator-name = "vreg_pmu_rfa_1p2";
++			};
++
++			vreg_pmu_rfa_1p8: ldo7 {
++				regulator-name = "vreg_pmu_rfa_1p8";
++			};
++
++			vreg_pmu_pcie_0p9: ldo8 {
++				regulator-name = "vreg_pmu_pcie_0p9";
++			};
++
++			vreg_pmu_pcie_1p8: ldo9 {
++				regulator-name = "vreg_pmu_pcie_1p8";
++			};
++		};
++	};
++};
++
++/* Match NP05J stock 4 MiB cpusys_vm reservation (0x80e00000..0x81200000) */
++&cpusys_vm_mem {
++	reg = <0x0 0x80e00000 0x0 0x400000>;
++};
++
++/*
++ * Safe RPMh regulator subset for UFS 4.0, USB-C, PCIe0/Wi-Fi 7, Bluetooth,
++ * and SPI4 Touchscreen. Shared bucks and touch/IO rails are kept boot-on +
++ * always-on so active OLED panel rails are never powered down.
++ */
++&apps_rsc {
++	regulators-0 {
++		compatible = "qcom,pm8550-rpmh-regulators";
++
++		vdd-bob1-supply = <&vph_pwr>;
++		vdd-bob2-supply = <&vph_pwr>;
++		vdd-l1-l4-l10-supply = <&vreg_s3g_1p8>;
++		vdd-l2-l13-l14-supply = <&vreg_bob1>;
++		vdd-l5-l16-supply = <&vreg_bob1>;
++		vdd-l15-supply = <&vreg_s3g_1p8>;
++		vdd-l17-supply = <&vreg_bob2>;
++
++		qcom,pmic-id = "b";
++
++		vreg_bob1: bob1 {
++			regulator-name = "vreg_bob1";
++			regulator-min-microvolt = <3008000>;
++			regulator-max-microvolt = <4000000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_bob2: bob2 {
++			regulator-name = "vreg_bob2";
++			regulator-min-microvolt = <2704000>;
++			regulator-max-microvolt = <3008000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l4b_1p8: ldo4 {
++			regulator-name = "vreg_l4b_1p8";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1800000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l5b_3p1: ldo5 {
++			regulator-name = "vreg_l5b_3p1";
++			regulator-min-microvolt = <3100000>;
++			regulator-max-microvolt = <3148000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l14b_3p2: ldo14 {
++			regulator-name = "vreg_l14b_3p2";
++			regulator-min-microvolt = <3200000>;
++			regulator-max-microvolt = <3200000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l15b_1p8: ldo15 {
++			regulator-name = "vreg_l15b_1p8";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1800000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l17b_2p5: ldo17 {
++			regulator-name = "vreg_l17b_2p5";
++			regulator-min-microvolt = <2504000>;
++			regulator-max-microvolt = <2504000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-1 {
++		compatible = "qcom,pm8550ve-rpmh-regulators";
++
++		vdd-l1-supply = <&vreg_s7i_1p2>;
++		vdd-l2-supply = <&vreg_s1d_0p97>;
++		vdd-s1-supply = <&vph_pwr>;
++		vdd-s4-supply = <&vph_pwr>;
++
++		qcom,pmic-id = "d";
++
++		vreg_s1d_0p97: smps1 {
++			regulator-name = "vreg_s1d_0p97";
++			regulator-min-microvolt = <880000>;
++			regulator-max-microvolt = <1100000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_s4d_0p85: smps4 {
++			regulator-name = "vreg_s4d_0p85";
++			regulator-min-microvolt = <852000>;
++			regulator-max-microvolt = <1036000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l1d_1p2: ldo1 {
++			regulator-name = "vreg_l1d_1p2";
++			regulator-min-microvolt = <1200000>;
++			regulator-max-microvolt = <1200000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l2d_0p88: ldo2 {
++			regulator-name = "vreg_l2d_0p88";
++			regulator-min-microvolt = <880000>;
++			regulator-max-microvolt = <912000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-2 {
++		compatible = "qcom,pm8550ve-rpmh-regulators";
++
++		vdd-l1-supply = <&vreg_s1d_0p97>;
++		vdd-l2-supply = <&vreg_s7i_1p2>;
++		vdd-l3-supply = <&vreg_s3g_1p8>;
++		vdd-s5-supply = <&vph_pwr>;
++
++		qcom,pmic-id = "f";
++
++		vreg_s5f_0p85: smps5 {
++			regulator-name = "vreg_s5f_0p85";
++			regulator-min-microvolt = <852000>;
++			regulator-max-microvolt = <1000000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l1f_0p88: ldo1 {
++			regulator-name = "vreg_l1f_0p88";
++			regulator-min-microvolt = <880000>;
++			regulator-max-microvolt = <920000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l2f_1p2: ldo2 {
++			regulator-name = "vreg_l2f_1p2";
++			regulator-min-microvolt = <1200000>;
++			regulator-max-microvolt = <1200000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++
++		vreg_l3f_1p8: ldo3 {
++			regulator-name = "vreg_l3f_1p8";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1800000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-3 {
++		compatible = "qcom,pm8550ve-rpmh-regulators";
++
++		vdd-l3-supply = <&vreg_s7i_1p2>;
++		vdd-s3-supply = <&vph_pwr>;
++
++		qcom,pmic-id = "g";
++
++		vreg_s3g_1p8: smps3 {
++			regulator-name = "vreg_s3g_1p8";
++			regulator-min-microvolt = <1856000>;
++			regulator-max-microvolt = <2000000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++
++		vreg_l3g_1p2: ldo3 {
++			regulator-name = "vreg_l3g_1p2";
++			regulator-min-microvolt = <1200000>;
++			regulator-max-microvolt = <1256000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-4 {
++		compatible = "qcom,pm8550ve-rpmh-regulators";
++
++		vdd-s7-supply = <&vph_pwr>;
++
++		qcom,pmic-id = "i";
++
++		vreg_s7i_1p2: smps7 {
++			regulator-name = "vreg_s7i_1p2";
++			regulator-min-microvolt = <1224000>;
++			regulator-max-microvolt = <1340000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-always-on;
++			regulator-boot-on;
++		};
++	};
++
++	regulators-5 {
++		compatible = "qcom,pm8550vs-rpmh-regulators";
++
++		vdd-l1-supply = <&vreg_s1d_0p97>;
++
++		qcom,pmic-id = "j";
++
++		vreg_l1j_0p91: ldo1 {
++			regulator-name = "vreg_l1j_0p91";
++			regulator-min-microvolt = <880000>;
++			regulator-max-microvolt = <920000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++			regulator-allow-set-load;
++			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
++						   RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++
++	regulators-6 {
++		compatible = "qcom,pm8010-rpmh-regulators";
++
++		vdd-l7-supply = <&vreg_bob1>;
++
++		qcom,pmic-id = "m";
++
++		vreg_l7m_3p0: ldo7 {
++			regulator-name = "vreg_l7m_3p0";
++			regulator-min-microvolt = <2800000>;
++			regulator-max-microvolt = <3000000>;
++			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
++		};
++	};
++};
++
++&gpi_dma1 {
++	dma-coherent;
++	status = "okay";
++};
++
++&i2c_master_hub_0 {
++	status = "okay";
++};
++
++/* Dual NXP TFA98xx stereo smart amps (@0x34, @0x35) + AW22xxx RGB LED (@0x6a) */
++&i2c_hub_3 {
++	clock-frequency = <400000>;
++	status = "okay";
++};
++
++&pcie0 {
++	pinctrl-0 = <&pcie0_default_state>;
++	pinctrl-names = "default";
++
++	status = "okay";
++};
++
++&pcie0_phy {
++	vdda-phy-supply = <&vreg_l1f_0p88>;
++	vdda-pll-supply = <&vreg_l3g_1p2>;
++
++	status = "okay";
++};
++
++&pcieport0 {
++	wake-gpios = <&tlmm 104 GPIO_ACTIVE_HIGH>;
++	reset-gpios = <&tlmm 102 GPIO_ACTIVE_LOW>;
++
++	wifi@0 {
++		compatible = "pci17cb,110e", "pci17cb,1107";
++		reg = <0x10000 0x0 0x0 0x0 0x0>;
++
++		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
++		vddaon-supply = <&vreg_pmu_aon_0p59>;
++		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
++		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
++		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
++		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
++		vddrfa1p8-supply = <&vreg_pmu_rfa_1p8>;
++		vddpcie0p9-supply = <&vreg_pmu_pcie_0p9>;
++		vddpcie1p8-supply = <&vreg_pmu_pcie_1p8>;
++	};
++};
++
++&pm8550_gpios {
++	fan_pwm_default: fan-pwm-default-state {
++		pins = "gpio9";
++		function = "func1";
++		bias-disable;
++		output-enable;
++		power-source = <0>;
++	};
++
++	volume_up_n: volume-up-n-state {
++		pins = "gpio6";
++		function = "normal";
++		bias-pull-up;
++		input-enable;
++		power-source = <1>;
++	};
++};
++
++&pm8550_pwm {
++	status = "okay";
++};
++
++/* Live DT: qcom,param-override-seq = <0x0a 0x51 0x02 0x53> */
++&pmih0108_eusb2_repeater {
++	qcom,tune-usb2-amplitude = /bits/ 8 <0xa>;
++	qcom,tune-usb2-disc-thres = /bits/ 8 <0x2>;
++
++	vdd18-supply = <&vreg_l15b_1p8>;
++	vdd3-supply = <&vreg_l5b_3p1>;
++
++	status = "okay";
++};
++
++&pon_pwrkey {
++	status = "okay";
++};
++
++&pon_resin {
++	linux,code = <KEY_VOLUMEDOWN>;
++	status = "okay";
++};
++
++&qupv3_1 {
++	dma-coherent;
++	status = "okay";
++};
++
++&qupv3_2 {
++	dma-coherent;
++	status = "okay";
++};
++
++/* ADSP (Battery/PMIC_GLINK/Type-C/Audio) & CDSP (Hexagon HTP NPU FastRPC) */
++&remoteproc_adsp {
++	firmware-name = "qcom/sm8750/adsp.mdt",
++			"qcom/sm8750/adsp_dtb.mdt";
++
++	status = "okay";
++};
++
++&remoteproc_cdsp {
++	firmware-name = "qcom/sm8750/cdsp.mdt",
++			"qcom/sm8750/cdsp_dtb.mdt";
++
++	status = "okay";
++};
++
++/*
++ * Touchscreen SPI4 bus (QUPv3 Wrap1 SE4 @ 0xa90000, GPIOs 48..51, GPI DMA1).
++ * Verified live hardware: Synaptics S3930TB0A0 (TCM v2, 15039x23999, 10-finger)
++ * on CS0, Reset = tlmm 161, IRQ = tlmm 162, avdd = L14B (3.2V), vdd = L4B (1.8V).
++ */
++&spi4 {
++	status = "okay";
++
++	touchscreen@0 {
++		compatible = "synaptics,tcm-spi";
++		reg = <0>;
++		spi-max-frequency = <5000000>;
++
++		reset-gpios = <&tlmm 161 GPIO_ACTIVE_LOW>;
++		interrupts-extended = <&tlmm 162 IRQ_TYPE_LEVEL_LOW>;
++
++		vdd-supply = <&vreg_l4b_1p8>;
++		avdd-supply = <&vreg_l14b_3p2>;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&ts_active>;
++	};
++};
++
++/* Live DT: qcom,gpios-reserved = <0x28 0x29 0x2a 0x2b 0x4a> (GPIOs 40-43, 74) */
++&tlmm {
++	gpio-reserved-ranges = <40 4>, <74 1>;
++
++	bt_default: bt-default-state {
++		sw-ctrl-pins {
++			pins = "gpio18";
++			function = "gpio";
++			bias-pull-down;
++		};
++	};
++
++	fan_tach_default: fan-tach-default-state {
++		pins = "gpio183";
++		function = "gpio";
++		drive-strength = <16>;
++		bias-pull-up;
++		input-enable;
++	};
++
++	ts_active: ts-active-state {
++		pins = "gpio161", "gpio162";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-pull-up;
++	};
++
++	uart14_np05j_default: uart14-np05j-default-state {
++		cts-pins {
++			pins = "gpio24";
++			function = "qup2_se6";
++			drive-strength = <2>;
++			bias-disable;
++		};
++
++		rts-pins {
++			pins = "gpio25";
++			function = "qup2_se6";
++			drive-strength = <2>;
++			bias-pull-down;
++		};
++
++		tx-pins {
++			pins = "gpio26";
++			function = "qup2_se6";
++			drive-strength = <2>;
++			bias-pull-up;
++		};
++
++		rx-pins {
++			pins = "gpio27";
++			function = "qup2_se6";
++			drive-strength = <2>;
++			bias-disable;
++		};
++	};
++
++	wlan_en: wlan-en-state {
++		pins = "gpio16";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-pull-down;
++	};
++};
++
++/*
++ * Bluetooth UART14 (QUPv3 Wrap2 SE6 @ 0x898000, FastConnect 7900 / BRAHMA 2.0).
++ * Restore 4-wire CTS/RTS (gpio24/25) with exact live-DT bias, CX OPP table
++ * for 51.2 MHz (3.2 Mbps), and qup-memory ICC for GENI_SE_DMA.
++ */
++&uart14 {
++	interconnects = <&clk_virt MASTER_QUP_CORE_2 QCOM_ICC_TAG_ALWAYS
++			 &clk_virt SLAVE_QUP_CORE_2 QCOM_ICC_TAG_ALWAYS>,
++			<&gem_noc MASTER_APPSS_PROC QCOM_ICC_TAG_ALWAYS
++			 &config_noc SLAVE_QUP_2 QCOM_ICC_TAG_ALWAYS>,
++			<&aggre2_noc MASTER_QUP_2 QCOM_ICC_TAG_ALWAYS
++			 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
++	interconnect-names = "qup-core", "qup-config", "qup-memory";
++
++	power-domains = <&rpmhpd RPMHPD_CX>;
++	operating-points-v2 = <&qup_opp_table_128mhz>;
++
++	pinctrl-0 = <&uart14_np05j_default>;
++	pinctrl-names = "default";
++	status = "okay";
++
++	bluetooth {
++		compatible = "qcom,wcn7850-bt";
++
++		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
++		vddaon-supply = <&vreg_pmu_aon_0p59>;
++		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
++		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
++		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
++		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
++		vddrfa1p8-supply = <&vreg_pmu_rfa_1p8>;
++
++		max-speed = <3200000>;
++	};
++};
++
++&ufs_mem_phy {
++	vdda-phy-supply = <&vreg_l1j_0p91>;
++	vdda-pll-supply = <&vreg_l3g_1p2>;
++
++	status = "okay";
++};
++
++&ufs_mem_hc {
++	reset-gpios = <&tlmm 215 GPIO_ACTIVE_LOW>;
++
++	vcc-supply = <&vreg_l17b_2p5>;
++	vcc-max-microamp = <1300000>;
++	vccq-supply = <&vreg_l1d_1p2>;
++	vccq-max-microamp = <1200000>;
++
++	status = "okay";
++};
++
++&usb_hsphy {
++	vdd-supply = <&vreg_l2d_0p88>;
++	vdda12-supply = <&vreg_l3g_1p2>;
++
++	phys = <&pmih0108_eusb2_repeater>;
++
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
+@@ -0,0 +1,28 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
++ *
++ * Default bring-up Device Tree:
++ * - Full SM8750 peripherals (QSMMU-v500, 1 TB UFS 4.0, SCMI CPUfreq,
++ *   ADSP + CDSP/NPU FastRPC, pmic-glink Battery, PCIe0 Wi-Fi 7, UART14 BT,
++ *   SPI4 Touchscreen bus, Buttons, RTC, Thermal)
++ * - USB-C locked to High-Speed Peripheral mode (CDC-ACM /dev/ttyGS0) so the
++ *   USB serial console is always available immediately in both plug orientations
++ *   even before ADSP firmware is loaded from UFS.
++ */
++
++/dts-v1/;
++
++#include "sm8750-nubia-np05j-common.dtsi"
++
++&usb {
++	/delete-property/ usb-role-switch;
++
++	dr_mode = "peripheral";
++	maximum-speed = "high-speed";
++	phys = <&usb_hsphy>;
++	phy-names = "usb2-phy";
++	qcom,select-utmi-as-pipe-clk;
++
++	status = "okay";
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
++ *
++ * Full USB-C Dual-Role (Host/OTG + USB 3.0 SuperSpeed + Peripheral) Device Tree.
++ * Uses pmic-glink (via ADSP) + tlmm GPIO 61 orientation switch + usb_dp_qmpphy.
++ */
++
++/dts-v1/;
++
++#include "sm8750-nubia-np05j-common.dtsi"
++
++&pmic_glink {
++	orientation-gpios = <&tlmm 61 GPIO_ACTIVE_HIGH>;
++
++	connector@0 {
++		compatible = "usb-c-connector";
++		reg = <0>;
++
++		power-role = "dual";
++		data-role = "dual";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++
++				pmic_glink_hs_in: endpoint {
++					remote-endpoint = <&usb_dwc3_hs>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++
++				pmic_glink_ss_in: endpoint {
++					remote-endpoint = <&usb_dp_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++&usb {
++	status = "okay";
++};
++
++&usb_dp_qmpphy {
++	vdda-phy-supply = <&vreg_l2d_0p88>;
++	vdda-pll-supply = <&vreg_l3g_1p2>;
++
++	status = "okay";
++};
++
++&usb_dp_qmpphy_out {
++	remote-endpoint = <&pmic_glink_ss_in>;
++};
++
++&usb_dwc3_hs {
++	remote-endpoint = <&pmic_glink_hs_in>;
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
+@@ -0,0 +1,239 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
++ *
++ * Isolated GPU Test Profile (BOOTDT_GPU.NSH / NP05JGPU.DTB):
++ * Inherits all verified SM8750 Phase 2/3A peripherals + safe USB-C ttyGS0
++ * + OLED efifb (headless DRM_MSM with NO MDSS/DPU/DSI), and enables:
++ *   - gpucc (0x3d90000), gxclkctl (0x3d64000)
++ *   - adreno_smmu (0x3da0000)
++ *   - Adreno 830v2 GPU (0x3d00000, chipid=0x44050001) + GMU (0x3d6c000)
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/clock/qcom,kaanapali-gxclkctl.h>
++#include <dt-bindings/clock/qcom,sm8750-gpucc.h>
++#include "sm8750-nubia-np05j-common.dtsi"
++
++/ {
++	model = "nubia REDMAGIC Astra (NP05J - Adreno 830v2 GPU Test)";
++};
++
++/* Safe USB-C High-Speed Peripheral Gadget (/dev/ttyGS0) */
++&usb {
++	/delete-property/ usb-role-switch;
++
++	dr_mode = "peripheral";
++	maximum-speed = "high-speed";
++	phys = <&usb_hsphy>;
++	phy-names = "usb2-phy";
++	qcom,select-utmi-as-pipe-clk;
++
++	status = "okay";
++};
++
++&soc {
++	gpu: gpu@3d00000 {
++		compatible = "qcom,adreno-44050001", "qcom,adreno";
++		reg = <0x0 0x03d00000 0x0 0x6c000>,
++		      <0x0 0x03d9e000 0x0 0x2000>;
++		reg-names = "kgsl_3d0_reg_memory",
++			    "cx_mem";
++
++		interrupts = <GIC_SPI 300 IRQ_TYPE_LEVEL_HIGH>;
++
++		iommus = <&adreno_smmu 0 0x0>,
++			 <&adreno_smmu 1 0x0>;
++
++		operating-points-v2 = <&gpu_opp_table>;
++
++		qcom,gmu = <&gmu>;
++		#cooling-cells = <2>;
++
++		interconnects = <&gem_noc MASTER_GFX3D QCOM_ICC_TAG_ALWAYS
++				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
++		interconnect-names = "gfx-mem";
++
++		zap-shader {
++			memory-region = <&gpu_microcode_mem>;
++			firmware-name = "qcom/gen80000_zap.mbn";
++		};
++
++		gpu_opp_table: opp-table {
++			compatible = "operating-points-v2-adreno",
++				     "operating-points-v2";
++
++			opp-222000000 {
++				opp-hz = /bits/ 64 <222000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D2>;
++				opp-peak-kBps = <5285156>;
++			};
++
++			opp-342000000 {
++				opp-hz = /bits/ 64 <342000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
++				opp-peak-kBps = <5285156>;
++			};
++
++			opp-443000000 {
++				opp-hz = /bits/ 64 <443000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
++				opp-peak-kBps = <6074219>;
++				qcom,opp-acd-level = <0xc02e5ffd>;
++			};
++
++			opp-525000000 {
++				opp-hz = /bits/ 64 <525000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_L1>;
++				opp-peak-kBps = <6074219>;
++				qcom,opp-acd-level = <0xc02e5ffd>;
++			};
++
++			opp-607000000 {
++				opp-hz = /bits/ 64 <607000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
++				opp-peak-kBps = <8171875>;
++				qcom,opp-acd-level = <0xa82e5ffd>;
++			};
++
++			opp-734000000 {
++				opp-hz = /bits/ 64 <734000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
++				opp-peak-kBps = <12449219>;
++				qcom,opp-acd-level = <0xa82a5ffd>;
++			};
++
++			opp-832000000 {
++				opp-hz = /bits/ 64 <832000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L2>;
++				opp-peak-kBps = <16500000>;
++				qcom,opp-acd-level = <0x882a5ffd>;
++			};
++
++			opp-900000000 {
++				opp-hz = /bits/ 64 <900000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_NOM>;
++				opp-peak-kBps = <18597657>;
++				qcom,opp-acd-level = <0x882a5ffd>;
++			};
++		};
++	};
++
++	gxclkctl: clock-controller@3d64000 {
++		compatible = "qcom,sm8750-gxclkctl";
++		reg = <0x0 0x03d64000 0x0 0x6000>;
++
++		power-domains = <&rpmhpd RPMHPD_GFX>,
++				<&rpmhpd RPMHPD_GMXC>,
++				<&gpucc GPU_CC_CX_GDSC>;
++
++		#power-domain-cells = <1>;
++	};
++
++	gmu: gmu@3d6c000 {
++		compatible = "qcom,adreno-gmu-830.0", "qcom,adreno-gmu";
++
++		reg = <0x0 0x03d6c000 0x0 0x32000>;
++		reg-names = "gmu";
++
++		interrupts = <GIC_SPI 304 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 305 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "hfi",
++				  "gmu";
++
++		clocks = <&gpucc GPU_CC_AHB_CLK>,
++			 <&gpucc GPU_CC_CX_GMU_CLK>,
++			 <&gpucc GPU_CC_CXO_CLK>,
++			 <&gcc GCC_DDRSS_GPU_AXI_CLK>,
++			 <&gcc GCC_GPU_GEMNOC_GFX_CLK>,
++			 <&gpucc GPU_CC_HUB_CX_INT_CLK>;
++		clock-names = "ahb",
++			      "gmu",
++			      "cxo",
++			      "axi",
++			      "memnoc",
++			      "hub";
++
++		power-domains = <&gpucc GPU_CC_CX_GDSC>,
++				<&gxclkctl GX_CLKCTL_GX_GDSC>;
++		power-domain-names = "cx",
++				     "gx";
++
++		iommus = <&adreno_smmu 5 0x0>;
++
++		qcom,qmp = <&aoss_qmp>;
++
++		operating-points-v2 = <&gmu_opp_table>;
++
++		gmu_opp_table: opp-table {
++			compatible = "operating-points-v2";
++
++			opp-500000000 {
++				opp-hz = /bits/ 64 <500000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
++			};
++
++			opp-650000000 {
++				opp-hz = /bits/ 64 <650000000>;
++				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
++			};
++		};
++	};
++
++	gpucc: clock-controller@3d90000 {
++		compatible = "qcom,sm8750-gpucc";
++		reg = <0x0 0x03d90000 0x0 0x9800>;
++
++		clocks = <&bi_tcxo_div2>,
++			 <&gcc GCC_GPU_GPLL0_CLK_SRC>,
++			 <&gcc GCC_GPU_GPLL0_DIV_CLK_SRC>;
++
++		power-domains = <&rpmhpd RPMHPD_MX>,
++				<&rpmhpd RPMHPD_CX>;
++		required-opps = <&rpmhpd_opp_low_svs>,
++				<&rpmhpd_opp_low_svs>;
++
++		#clock-cells = <1>;
++		#reset-cells = <1>;
++		#power-domain-cells = <1>;
++	};
++
++	adreno_smmu: iommu@3da0000 {
++		compatible = "qcom,sm8750-smmu-500", "qcom,adreno-smmu",
++			     "qcom,smmu-500", "arm,mmu-500";
++		reg = <0x0 0x03da0000 0x0 0x40000>;
++		#iommu-cells = <2>;
++		#global-interrupts = <1>;
++		interrupts = <GIC_SPI 674 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 678 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 679 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 680 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 681 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 682 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 683 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 684 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 685 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 686 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 687 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 688 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 422 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 476 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 574 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 575 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 576 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 577 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 660 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 662 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 665 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 666 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 667 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 669 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 670 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 700 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&gpucc GPU_CC_HLOS1_VOTE_GPU_SMMU_CLK>;
++		clock-names = "hlos";
++		power-domains = <&gpucc GPU_CC_CX_GDSC>;
++		dma-coherent;
++	};
++};

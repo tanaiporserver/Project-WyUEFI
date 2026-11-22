@@ -1,0 +1,27 @@
+# Phase 3: Synaptics TCM v2 Touchscreen + Headless Adreno 830v2 GPU + EROFS/DM for vendor_b firmware
+CONFIG_INPUT_TOUCHSCREEN=y
+CONFIG_TOUCHSCREEN_SYNAPTICS_TCM2_SPI=y
+
+# Headless Adreno 830v2 GPU (NO display/MDSS/DPU/DSI/DP/HDMI -> OLED efifb 100% untouched!)
+CONFIG_SM_GPUCC_8750=y
+CONFIG_QCOM_LLCC=y
+CONFIG_QCOM_OCMEM=y
+CONFIG_DRM_MSM=y
+# CONFIG_DRM_MSM_MDP4 is not set
+# CONFIG_DRM_MSM_MDP5 is not set
+# CONFIG_DRM_MSM_DPU is not set
+# CONFIG_DRM_MSM_DSI is not set
+# CONFIG_DRM_MSM_DP is not set
+# CONFIG_DRM_MSM_HDMI is not set
+# CONFIG_DRM_FBDEV_EMULATION is not set
+# CONFIG_DRM_SIMPLEDRM is not set
+
+# EROFS + Device-Mapper/Loop for read-only /mnt/vendor (super -> vendor_b) GPU & Audio firmware
+CONFIG_MISC_FILESYSTEMS=y
+CONFIG_EROFS_FS=y
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_LZMA=y
+CONFIG_BLK_DEV=y
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_MD=y
+CONFIG_BLK_DEV_DM=y

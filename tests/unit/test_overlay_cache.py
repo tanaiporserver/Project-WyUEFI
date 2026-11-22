@@ -16,14 +16,20 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 import build_nyarch_rootfs as nyarch
 from build import overlay_cache, overlay_packages
+from package.archive import pacman_identity
+from desktop import libcamera_arch
 
 
 class OverlayCacheTests(unittest.TestCase):
-    def test_recipe_keys_ignore_host_checks_and_keep_package_tools(self):
+    def test_recipe_keys_ignore_host_checks_publication_and_denial_only_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(['git', '-C', root, 'init', '-q'], check=True)
-            not_inputs = ('tools/check_host.py', 'tools/prepare_nv_runtime_guard.py')
+            not_inputs = ('tools/check_host.py', 'tools/prepare_nv_runtime_guard.py',
+                          'tools/repo/products.py', 'tools/repo/publish.py',
+                          'tools/build/denial_overlay.py', 'tools/desktop/denial_packages.py',
+                          'config/denial.json', 'containers/denial.Dockerfile',
+                          'patches/denial/0.6.8/series.json')
             builder = 'tools/build/overlay_packages.py'
             for name in (*not_inputs, builder):
                 path = root / name
@@ -77,26 +83,40 @@ class OverlayCacheTests(unittest.TestCase):
                       'base': overlay_packages.sha(base), 'kernel': {'source_tree': 'test-tree'},
                       'upstream': {'nyarch': 'test-git'}, 'repositories': {'core.db': 'before'},
                       'installed': 'test-package-state'}
-            names = ('libfprint', 'fprintd', 'ffmpeg', 'libwacom', 'libssc',
-                     'iio-sensor-proxy', 'fastrpc', 'pipewire-v4l2-source',
-                     'gst-plugin-pipewire', 'mesa', 'gdm', 'mutter', 'gnome-settings-daemon',
+            names = ('libfprint', 'ffmpeg', 'libwacom', 'libssc',
+                     'iio-sensor-proxy', 'fastrpc', 'mesa', 'gdm', 'mutter', 'gnome-settings-daemon',
                      'bluez-sunuefi')
+            media = {**overlay_packages.PACMAN_CAMERA_DEFAULTS, 'libcamera': libcamera_arch.PACKAGES,
+                     'plasma_camera': {'plasma-camera'}}
+            labels = {name: component for component, cohort in media.items() for name in cohort}
+            components = {
+                component: {'packages_built': True, 'package_version': '1-1', 'package_format': 'pacman',
+                            'target': 'arch', 'packages': {}}
+                for component in media
+            }
             packages = {}
-            for name in names:
+            for name in (*names, *sorted(labels)):
                 archive = root / (name + '-1-1-aarch64.pkg.tar.gz')
                 info = f'pkgname = {name}\npkgver = 1-1\narch = aarch64\n'.encode()
                 with tarfile.open(archive, 'w:gz') as stream:
                     member = tarfile.TarInfo('.PKGINFO')
                     member.size = len(info)
                     stream.addfile(member, io.BytesIO(info))
-                self.assertEqual(overlay_packages.pacman_identity(archive), (name, '1-1', 'aarch64'))
+                self.assertEqual(pacman_identity(archive), (name, '1-1', 'aarch64'))
+                info = {'version': '1-1', 'architecture': 'aarch64',
+                        'sha256': overlay_packages.sha(archive)}
+                component = labels.get(name, 'bluez' if name == 'bluez-sunuefi' else name)
                 packages[archive.name] = (archive, {
-                    'name': name, 'version': '1-1', 'architecture': 'aarch64',
-                    'sha256': overlay_packages.sha(archive),
-                    'component': 'bluez' if name == 'bluez-sunuefi' else name,
+                    **info, 'name': name, 'component': component,
                 })
+                if component in components:
+                    components[component]['packages'][name] = {**info, 'file': archive.name}
+            library = components['libcamera']['packages']
+            for name in ('pipewire', 'plasma_camera'):
+                components[name]['build_dependencies'] = {key: library[key] for key in libcamera_arch.RUNTIME_INPUTS}
             prior = root / 'build/overlay-cache' / target
-            expected = overlay_packages.export(prior, target, 'sunuefi', packages, {}, build_inputs=inputs)
+            expected = overlay_packages.export(prior, target, 'sunuefi', packages, components,
+                                               build_inputs=inputs)
             out = root / 'output'
             for field in inputs:
                 with self.subTest(field=field):
@@ -107,7 +127,8 @@ class OverlayCacheTests(unittest.TestCase):
 
             config = root / 'config'
             config.mkdir()
-            (config / 'nyarch.json').write_text(json.dumps({'base_url': base.as_uri()}))
+            mirror = 'https://arch.example/archlinuxarm'
+            (config / 'nyarch.json').write_text(json.dumps({'pacman_build_mirror': mirror}))
             (config / 'release.json').write_text('{"sensors": {}}')
             source = root / 'build/release/source-manifest.json'
             source.parent.mkdir()
@@ -119,14 +140,18 @@ class OverlayCacheTests(unittest.TestCase):
             args = SimpleNamespace(output=root / 'build/distros' / (target + '-piano'),
                                    packages_only=out, resume=False)
 
-            def assemble(_):
+            def assemble(plan, *, defer_denial):
+                self.assertEqual(plan['pacman_build_mirror'], mirror)
+                self.assertFalse(defer_denial)
                 directory = root / 'build/distros/overlays' / target / 'applications'
                 directory.mkdir(parents=True)
                 (directory / 'SOURCE.json').write_text('{}')
 
             with patch.object(nyarch, 'ROOT', root), \
                     patch.object(nyarch.os, 'geteuid', return_value=0), \
-                    patch.object(nyarch.assemble_rootfs, 'plan'), \
+                    patch.object(nyarch.urllib.request, 'urlopen',
+                                 return_value=io.BytesIO(base.read_bytes())) as download, \
+                    patch.object(nyarch.assemble_rootfs, 'plan', return_value={}), \
                     patch.object(nyarch.assemble_rootfs, 'execute', side_effect=assemble), \
                     patch.object(nyarch.release, 'build_resolver', return_value=nullcontext()), \
                     patch.object(nyarch.build_nyarch_apps, 'guest_environment',
@@ -134,6 +159,8 @@ class OverlayCacheTests(unittest.TestCase):
                     patch.object(overlay_cache, 'pacman_inputs', return_value=inputs) as identity:
                 self.assertEqual(nyarch.build(args), expected)
                 self.assertEqual(identity.call_args.args[3], inputs['base'])
+                download.assert_called_once_with(mirror + '/os/ArchLinuxARM-aarch64-latest.tar.gz',
+                                                 timeout=90)
             self.assertEqual(downloaded.read_bytes(), base.read_bytes())
             self.assertEqual(json.loads((out / 'manifest.json').read_text()), expected)
             for name, (_, row) in packages.items():

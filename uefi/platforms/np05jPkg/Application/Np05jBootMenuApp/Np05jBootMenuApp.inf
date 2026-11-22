@@ -1,0 +1,63 @@
+## @file
+#  Touch-first UEFI Boot Menu & Unlocked All-Options BIOS Setup for nubia NP05J.
+#  Supports Synaptics S3930 touchscreen, USB mouse/touch, keys, WoA/Linux/Shell.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jBootMenuApp
+  FILE_GUID                      = A1E45003-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  Np05jBootMenuApp.h
+  Np05jUiCanvas.c
+  Np05jBootMenu.c
+  Np05jBiosSetup.c
+  Np05jFileBrowser.c
+  Np05jTouchTest.c
+  Np05jOsLauncher.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  QcomPkg/QcomPkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  Np05jBiosConfigLib
+  Np05jResetLib
+  Np05jSplashLib
+  PrintLib
+  UefiApplicationEntryPoint
+  UefiBootManagerLib
+  UefiBootServicesTableLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiFileInfoGuid
+  gEfiFileSystemInfoGuid
+  gNp05jBiosConfigGuid
+
+[Protocols]
+  gChargerExProtocolGuid
+  gEfiAbsolutePointerProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiFirmwareVolume2ProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiSimplePointerProtocolGuid
+  gNp05jBiosConfigProtocolGuid
+  gNp05jFastbootProtocolGuid
+  gNp05jTouchInfoProtocolGuid

@@ -1,0 +1,33 @@
+## @file
+#  High-DPI vector UEFI splash screen library with touch pills for nubia NP05J.
+#  Adapted from Project SunUEFI (https://github.com/slwyts/Project-SunUEFI).
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jSplashLib
+  FILE_GUID                      = A1E45105-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = Np05jSplashLib|DXE_DRIVER UEFI_APPLICATION
+
+[Sources]
+  Np05jSplash.c
+  Np05jSplashAssets.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEdkiiBootLogo2ProtocolGuid

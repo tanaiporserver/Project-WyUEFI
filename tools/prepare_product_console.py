@@ -114,10 +114,19 @@ def font_header(root, chars, apply):
             'generated_sha256': hashlib.sha256(data).hexdigest()}
 
 
-def prepare(root, apply=False):
+CONSOLE_PROFILES = {
+    'piano': (4, [3200, 2136], [800, 534]),
+    'np05j': (3, [2400, 1504], [800, 501]),
+}
+
+
+def prepare(root, apply=False, device='piano'):
+    if device not in CONSOLE_PROFILES:
+        raise ValueError('unsupported console device: ' + str(device))
+    scale, physical, logical = CONSOLE_PROFILES[device]
     chars, files = translations(root, apply)
     chars.update(ch for ch in BOOT_TEXT if 0x2e80 <= ord(ch) < 0xfff0)
     output_file(root / CONSOLE / 'PianoConsoleScale.h',
                 (root / SOURCE / 'PianoConsoleScale.h').read_bytes(), apply)
-    return {'scale': 4, 'physical': [3200, 2136], 'logical': [800, 534],
+    return {'scale': scale, 'physical': physical, 'logical': logical,
             'translated_files': files, 'font': font_header(root, chars, apply)}

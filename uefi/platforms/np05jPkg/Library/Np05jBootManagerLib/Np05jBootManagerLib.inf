@@ -1,0 +1,63 @@
+## @file
+#  Touch- & splash-integrated PlatformBootManagerLib for nubia NP05J (SM8750P).
+#  Adapted from SiliciumPkg/Library/BootManagerLib and Project SunUEFI.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jBootManagerLib
+  FILE_GUID                      = A1E45106-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = PlatformBootManagerLib|DXE_DRIVER
+
+[Sources]
+  Np05jBootManager.h
+  Np05jBootManager.c
+  Np05jKeyCallback.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MsCorePkg/MsCorePkg.dec
+  MsGraphicsPkg/MsGraphicsPkg.dec
+  PcBdsPkg/PcBdsPkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  AcpiTableUpdateLib
+  BaseLib
+  BaseMemoryLib
+  BootGraphicsLib
+  DebugLib
+  DeviceBootManagerLib
+  DevicePathLib
+  MemoryAllocationLib
+  MsBootOptionsLib
+  Np05jBiosConfigLib
+  Np05jSplashLib
+  PcdLib
+  PrintLib
+  SecureBootHandlerLib
+  UefiBootManagerLib
+  UefiBootServicesTableLib
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Pcd]
+  gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gNp05jBiosConfigGuid
+  gNp05jBootMenuFileGuid
+
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiSimplePointerProtocolGuid
+  gEfiSimpleTextInputExProtocolGuid
+  gKeypadDeviceProtocolGuid

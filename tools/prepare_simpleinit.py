@@ -41,6 +41,13 @@ def prepare_filesystem(si):
                      '\t\tmode|=EFI_FILE_MODE_CREATE|EFI_FILE_MODE_WRITE;', str(path))
     path.write_text(text)
 
+    # แก้บั๊กการอ่านไฟล์หลายช่วงจาก rootfs:/// ให้เลื่อน offset และอัปเดตตำแหน่งการอ่านถูกต้อง
+    assets_c = si / 'src/filesystem/layer/assets.c'
+    text = assets_c.read_text()
+    text = transform(text, '\tmemcpy(buffer,d->file->content,ms);\n\tif(br)*br=ms;\n',
+                     '\tmemcpy(buffer,d->file->content+d->pos,ms);\n\td->pos+=ms;\n\tif(br)*br=ms;\n', str(assets_c))
+    assets_c.write_text(text)
+
     path = si / 'src/confd/file.c'
     text = path.read_text()
     old = '''		fs_seek(hand->file,0,SEEK_SET);
@@ -58,7 +65,7 @@ def prepare_filesystem(si):
     path.write_text(text)
 
 
-def prepare_defaults(root, si):
+def prepare_defaults(root, si, device='piano'):
     """Load built-in defaults before external static/user configuration."""
     main_c = si / 'src/main/uefimain.c'
     text = main_c.read_text()
@@ -110,13 +117,18 @@ def prepare_defaults(root, si):
     existing = text[begin:end]
     if '#if defined(PIANO_PRODUCT_GUI_PUMP)' not in existing:
         product = '''#if defined(PIANO_PRODUCT_GUI_PUMP) && PIANO_PRODUCT_GUI_PUMP
+#ifdef SUNUEFI_NP05J
+#define PIANO_SIMPLEINIT_USER_CFG "/sunuefi/simpleinit.np05j.cfg"
+#else
+#define PIANO_SIMPLEINIT_USER_CFG "/sunuefi/simpleinit.uefi.cfg"
+#endif
 	fsvol_info *persist=fsvol_lookup_by_part_label("persist");
 	if(persist&&fsvol_open_volume(persist,&f)==0){
 		fsh *directory=NULL;
 		if(fs_open(f,&directory,"sunuefi",FILE_FLAG_FOLDER|FILE_FLAG_CREATE|0700)==0){
 			fs_close(&directory);
-			conf_load_file(f,"/sunuefi/simpleinit.uefi.cfg");
-			set_default(f,"/sunuefi/simpleinit.uefi.cfg");
+			conf_load_file(f,PIANO_SIMPLEINIT_USER_CFG);
+			set_default(f,PIANO_SIMPLEINIT_USER_CFG);
 			f=NULL;
 		}
 		if(f)fs_close(&f);
@@ -129,7 +141,8 @@ def prepare_defaults(root, si):
     text=text.replace('int confd_quit(){\n\treturn -1;\n}',
         'int confd_quit(){\n\tif(def_fp)fs_close(&def_fp);\n\tif(def_path)free(def_path);\n\tdef_path=NULL;\n\treturn 0;\n}')
     config_c.write_text(text)
-    source = root / 'config/simpleinit.static.uefi.cfg'
+    static_name = 'config/simpleinit.np05j.uefi.cfg' if device == 'np05j' else 'config/simpleinit.static.uefi.cfg'
+    source = root / static_name
     shutil.copyfile(source, si / 'root/etc/simpleinit.static.uefi.cfg')
     return config_c
 
@@ -150,10 +163,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--product-gui-pump', action='store_true',
                         help='bind the real product client and enable cooperative GUI pump')
+    parser.add_argument('--device', choices=('piano', 'np05j'), default='piano')
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     si = root / 'upstream/simple-init'
-    build = root / ('build/simpleinit-product-edk2' if args.product_gui_pump else 'build/simpleinit-edk2')
+    if args.product_gui_pump:
+        build_dir = 'build/simpleinit-product-np05j-edk2' if args.device == 'np05j' else 'build/simpleinit-product-edk2'
+    else:
+        build_dir = 'build/simpleinit-np05j-edk2' if args.device == 'np05j' else 'build/simpleinit-edk2'
+    build = root / build_dir
     # Every build reproduces the source hooks. Legacy builds retain the Null
     # library and a disabled GUI wrapper; product changes only DSC binding.
     from prepare_product_pump import prepare
@@ -172,31 +190,75 @@ def main():
         Path('/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc'),
         Path('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'),
     ) if path.is_file()), None)
-    target_font = fontdir / 'NotoSansCJKsc-Regular.otf'
-    if not target_font.exists():
-        if source_font is None:
-            raise SystemExit('Noto Sans CJK Regular collection missing; install fonts-noto-cjk or noto-fonts-cjk')
-        collection = TTCollection(str(source_font))
-        # The installed Noto collection has JP/KR/SC/TC/HK faces in this order.
-        face = collection.fonts[2]
-        family = face['name'].getDebugName(1)
-        if 'SC' not in family:
-            raise SystemExit('Expected Simplified Chinese Noto face')
-        face.save(str(target_font))
+    default_font = si / 'root/etc/default.ttf'
+    if args.device == 'np05j':
+        # สร้างฟอนต์ subset เฉพาะอักขระละตินและสัญลักษณ์ UI (~62 KB) แทนฟอนต์ CJK ขนาดใหญ่
+        target_font = fontdir / 'NotoSansNP05J-Subset.otf'
+        if not target_font.exists():
+            if source_font is None:
+                raise SystemExit('Noto Sans CJK Regular collection missing; install fonts-noto-cjk or noto-fonts-cjk')
+            from fontTools import subset as ft_subset
+            collection = TTCollection(str(source_font))
+            face = collection.fonts[2]
+            family = face['name'].getDebugName(1)
+            if 'SC' not in family:
+                raise SystemExit('Expected Simplified Chinese Noto face')
+            opts = ft_subset.Options()
+            opts.layout_features = ['kern']
+            opts.name_IDs = ['*']
+            opts.notdef_outline = True
+            unicodes = (
+                list(range(0x0020, 0x007F))
+                + list(range(0x00A0, 0x0250))
+                + list(range(0x2000, 0x2070))
+                + list(range(0x2190, 0x2200))
+                + list(range(0x2200, 0x2300))
+                + list(range(0x2500, 0x2600))
+                + list(range(0x2600, 0x2700))
+                + list(range(0x2700, 0x27C0))
+                + [0xFFFD]
+            )
+            subsetter = ft_subset.Subsetter(options=opts)
+            subsetter.populate(unicodes=unicodes)
+            subsetter.subset(face)
+            face.save(str(target_font))
+        if default_font.is_symlink() or default_font.exists():
+            default_font.unlink()
+        default_font.symlink_to('../usr/share/fonts/NotoSansNP05J-Subset.otf')
+        if (root / '.firmware-workspace.json').is_file():
+            # ตัดฟอนต์ CJK และไฟล์แปล zh_CN ออกจาก rootfs ชั่วคราวภายใน firmware workspace เท่านั้น
+            for unused_font in ('wqy-mono-microhei.ttf', 'NotoSansCJKsc-Regular.otf'):
+                unused_path = fontdir / unused_font
+                if unused_path.is_file():
+                    unused_path.unlink()
+            unused_locale = si / 'root/usr/share/locale/zh_CN'
+            if unused_locale.exists():
+                shutil.rmtree(unused_locale)
+    else:
+        target_font = fontdir / 'NotoSansCJKsc-Regular.otf'
+        if not target_font.exists():
+            if source_font is None:
+                raise SystemExit('Noto Sans CJK Regular collection missing; install fonts-noto-cjk or noto-fonts-cjk')
+            collection = TTCollection(str(source_font))
+            # The installed Noto collection has JP/KR/SC/TC/HK faces in this order.
+            face = collection.fonts[2]
+            family = face['name'].getDebugName(1)
+            if 'SC' not in family:
+                raise SystemExit('Expected Simplified Chinese Noto face')
+            face.save(str(target_font))
+        if default_font.is_symlink():
+            default_font.unlink()
+        if not default_font.exists():
+            default_font.symlink_to('../usr/share/fonts/NotoSansCJKsc-Regular.otf')
+        for lang in ('zh_CN',):
+            directory = si / f'root/usr/share/locale/{lang}/LC_MESSAGES'
+            directory.mkdir(parents=True, exist_ok=True)
+            subprocess.run(['msgfmt', '-o', str(directory / 'simple-init.mo'), str(si / f'po/{lang}.po')], check=True)
     icons = fontdir / 'fontawesome5.ttf'
     if not icons.exists():
         url = 'https://raw.githubusercontent.com/FortAwesome/Font-Awesome/5.15.4/webfonts/fa-solid-900.ttf'
         icons.write_bytes(urllib.request.urlopen(url, timeout=30).read())
-    default_font = si / 'root/etc/default.ttf'
-    if default_font.is_symlink():
-        default_font.unlink()
-    if not default_font.exists():
-        default_font.symlink_to('../usr/share/fonts/NotoSansCJKsc-Regular.otf')
-    for lang in ('zh_CN',):
-        directory = si / f'root/usr/share/locale/{lang}/LC_MESSAGES'
-        directory.mkdir(parents=True, exist_ok=True)
-        subprocess.run(['msgfmt', '-o', str(directory / 'simple-init.mo'), str(si / f'po/{lang}.po')], check=True)
-    config_c = prepare_defaults(root, si)
+    config_c = prepare_defaults(root, si, args.device)
     prepare_filesystem(si)
     main_c = si / 'src/main/uefimain.c'
     text=main_c.read_text()
@@ -339,7 +401,12 @@ def main():
                       'MdePkg/Library/BaseDebugLibSerialPort/BaseDebugLibSerialPort.inf')
     dsc = dsc.replace('MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf',
                       'MdePkg/Library/BaseDebugLibSerialPort/BaseDebugLibSerialPort.inf')
-    static_config = root / 'config/simpleinit.static.uefi.cfg'
+    if args.device == 'np05j':
+        # ใช้ไลบรารีหน่วยความจำ ARM64 assembly (CopyMem.S / SetMem.S NEON + DC ZVA) ใน UEFI_APPLICATION
+        dsc = dsc.replace('MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf',
+                          'MdePkg/Library/BaseMemoryLibOptDxe/BaseMemoryLibOptDxe.inf')
+    static_rel = 'config/simpleinit.np05j.uefi.cfg' if args.device == 'np05j' else 'config/simpleinit.static.uefi.cfg'
+    static_config = root / static_rel
     config_text = static_config.read_text()
     dsc += '''
 [LibraryClasses]
@@ -355,11 +422,21 @@ def main():
   GCC:*_CLANGDWARF_AARCH64_CC_FLAGS = -Wno-error -Wno-deprecated-non-prototype -Wno-implicit-function-declaration -Wno-int-conversion
 '''.format(rotate=display_default(config_text, 'gui.rotate'), dpi=display_default(config_text, 'gui.dpi'))
     if args.product_gui_pump:
-        dsc += '''
+        # เปิดระดับคอมไพล์ -O3 พร้อมจูนชุดคำสั่ง ARMv8.7-A / Oryon เฉพาะ NP05J เพื่อเร่ง LVGL และ FreeType สูงสุด
+        extra_flags = '-DPIANO_PRODUCT_GUI_PUMP=1' + (
+            ' -DSUNUEFI_NP05J=1 -O3 -march=armv8.7-a+crypto -mtune=oryon-1 -fno-strict-aliasing'
+            if args.device == 'np05j' else ''
+        )
+        dsc += f'''
 [LibraryClasses.common.UEFI_APPLICATION, LibraryClasses.common.UEFI_DRIVER, LibraryClasses.common.DXE_DRIVER]
   PianoProductPumpLib|MdePkg/Library/PianoProductPumpLib/PianoProductPumpLib.inf
 [BuildOptions]
-  GCC:*_CLANGDWARF_AARCH64_CC_FLAGS = -DPIANO_PRODUCT_GUI_PUMP=1
+  GCC:*_CLANGDWARF_AARCH64_CC_FLAGS = {extra_flags}
+'''
+    elif args.device == 'np05j':
+        dsc += '''
+[BuildOptions]
+  GCC:*_CLANGDWARF_AARCH64_CC_FLAGS = -DSUNUEFI_NP05J=1 -O3 -march=armv8.7-a+crypto -mtune=oryon-1 -fno-strict-aliasing
 '''
     build.mkdir(parents=True, exist_ok=True)
     (build / 'SunSimpleInit.dsc').write_text(dsc)
@@ -367,12 +444,12 @@ def main():
              'fontawesome': {'version': '5.15.4', 'sha256': hashlib.sha256(icons.read_bytes()).hexdigest()}}
     owned_paths = (main_c,config_c,static_config,si/'root/etc/simpleinit.static.uefi.cfg',
                     exit_c,main_inf,si/'src/main/PianoSnapshot.c',keyboard,menu,touch,
-                    si/'src/filesystem/volume/uefi.c',si/'src/filesystem/layer/uefi.c',si/'src/confd/file.c',
+                    si/'src/filesystem/volume/uefi.c',si/'src/filesystem/layer/uefi.c',si/'src/filesystem/layer/assets.c',si/'src/confd/file.c',
                     touch.parent/'PianoTouchInput.h',si/'src/gui/drivers/uefi_pointer.c',gui_inf,drivers,compat_inf,
                    si/'libs/compatible/PianoQuadFloatCompat.c',arm,linux_inf,inc)
     if args.product_gui_pump:
-        from simpleinit_build_identity import PRODUCT_NAVIGATION_SOURCES
-        owned_paths += tuple(root/relative for relative in PRODUCT_NAVIGATION_SOURCES)
+        from simpleinit_build_identity import product_navigation_sources
+        owned_paths += tuple(root/relative for relative in product_navigation_sources(args.device))
     (build / 'source-manifest.json').write_text(json.dumps({'commit': commit, 'fonts': fonts,
         'product_gui_pump': args.product_gui_pump,
         'pump_hooks': prepare(root, apply=False),

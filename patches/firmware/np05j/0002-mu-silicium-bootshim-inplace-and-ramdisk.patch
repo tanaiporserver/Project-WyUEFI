@@ -1,0 +1,88 @@
+diff --git a/BootShim/InPlace.S b/BootShim/InPlace.S
+new file mode 100644
+index 00000000..fdafa993
+--- /dev/null
++++ b/BootShim/InPlace.S
+@@ -0,0 +1,32 @@
++/* AArch64 Image entry for boards whose Android loader supplies a fixed kernel window. */
++#define PAYLOAD_OFFSET 0x10000
++
++#if REQUIRES_KERNEL_HEADER != 1
++#error "In-place boot requires an AArch64 Image header"
++#endif
++
++.text
++_Image:
++  b     _Start
++  nop
++  .quad 0                         /* Image starts at the loader's aligned base. */
++  .quad PAYLOAD_OFFSET + FD_SIZE  /* Bytes required from the Image start. */
++  .quad 0xa                       /* Little endian, 4 KiB pages, aligned RAM base. */
++  .quad 0, 0, 0
++  .ascii "ARM\x64"
++  .long 0
++
++_Start:
++  adr   x1, _Payload
++  ldr   x2, =FD_BASE
++  cmp   x1, x2
++  b.ne  _UnexpectedPlacement
++  br    x1
++
++_UnexpectedPlacement:
++  wfe
++  b     _UnexpectedPlacement
++
++.ltorg
++.org PAYLOAD_OFFSET
++_Payload:
+diff --git a/BootShim/Makefile b/BootShim/Makefile
+index 1aa5912b..d7f23ca1 100644
+--- a/BootShim/Makefile
++++ b/BootShim/Makefile
+@@ -4,12 +4,18 @@ CC                = clang
+ CFLAGS            = --target=$(TARGET)
+ OBJCOPY           = llvm-objcopy
+ 
++ifeq ($(IN_PLACE),1)
++SHIM_SOURCE       = InPlace.S
++else
++SHIM_SOURCE       = BootShim.S
++endif
++
+ all: BootShim.elf BootShim.bin
+ 
+ BootShim.bin: BootShim.elf
+ 	$(OBJCOPY) -O binary $< $@
+ 
+-BootShim.elf: BootShim.S
++BootShim.elf: $(SHIM_SOURCE)
+ 	$(CC) ${CFLAGS} -c $< -o $@ -DREQUIRES_KERNEL_HEADER=$(REQUIRES_KERNEL_HEADER) -DFD_BASE=$(FD_BASE) -DFD_SIZE=$(FD_SIZE)
+ 
+ BootShim.S:
+diff --git a/build_uefi.py b/build_uefi.py
+index 0d08e3f0..efaa28d7 100755
+--- a/build_uefi.py
++++ b/build_uefi.py
+@@ -192,6 +192,7 @@ def compile_boot_shim (boot_shim_config: dict, fd_config: dict) -> bool:
+     cmd = [
+         "make",
+         f"REQUIRES_KERNEL_HEADER={int (requires_kernel_header)}",
++        f"IN_PLACE={int (boot_shim_config.get ('in_place', False))}",
+         f"FD_BASE={fd_base}",
+         f"FD_SIZE={fd_size}"
+     ]
+@@ -328,10 +329,12 @@ def create_android_boot_img (ctx: BuildContext, image_kernel_config: dict, image
+     cmd = [
+         sys.executable, str (mkbootimg),
+         "--kernel",     str (android_kernel),
+-        "--ramdisk",    "Resources/ramdisk",
+         "-o",           output_file_name
+     ]
+ 
++    if image_config.get ("include_ramdisk", True):
++        cmd.extend (["--ramdisk", "Resources/ramdisk"])
++
+     # mkbootimg Argument Map
+     argument_map = {
+         "base":           "--base",

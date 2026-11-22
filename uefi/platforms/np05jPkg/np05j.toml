@@ -1,0 +1,16 @@
+# NP05JHW1.0, 24 GiB. ABL owns placement of the complete uncompressed kernel Image.
+[boot_shim]
+requires_kernel_header = true
+in_place = true
+
+[uefi_fd]
+base = 0xA8010000
+size = 0x200000
+
+[boot_image_kernel]
+kernel_compression = "none"
+append_dtb = true
+
+[boot_image]
+header_version = 4
+include_ramdisk = false

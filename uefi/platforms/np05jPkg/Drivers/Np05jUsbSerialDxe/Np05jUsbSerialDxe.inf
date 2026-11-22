@@ -1,0 +1,69 @@
+## @file
+#  NP05J USB Composite (CDC-ACM Virtual Serial + Project SunUEFI UEFI Fastboot)
+#  DXE Driver.
+#
+#  Binds to Qualcomm UsbfnDwc3Dxe (EFI_USBFN_IO_PROTOCOL) to expose:
+#    1. Standard USB CDC-ACM serial port (/dev/ttyACM0 / COMx) for boot logs & TTY
+#    2. Project SunUEFI Fastboot 0.4 resident service (SunUEFI-np05j) across
+#       Splash, Boot Menu, BIOS Setup, TianoCore Setup (UiApp), and UEFI Shell.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jUsbSerialDxe
+  FILE_GUID                      = 4D93F6E2-1B7A-4C6E-8F14-9D0A5E2C7B11
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 2.0
+  ENTRY_POINT                    = Np05jUsbSerialDriverEntry
+
+[Sources]
+  Np05jUsbSerialDxe.h
+  Np05jUsbSerialDxe.c
+  Np05jFastbootCore.h
+  Np05jFastbootCore.c
+  Np05jFastbootScreen.c
+  Np05jFastbootStorage.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  QcomPkg/QcomPkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  MemoryMapHelperLib
+  Np05jBiosConfigLib
+  Np05jResetLib
+  PrintLib
+  UefiBootManagerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
+  gEfiEventExitBootServicesGuid
+  gEfiVTUTF8Guid
+
+[Protocols]
+  gChargerExProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiDriverBindingProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiSerialIoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiUsbFunctionIoProtocolGuid
+  gNp05jBiosConfigProtocolGuid
+  gNp05jFastbootProtocolGuid
+  gNp05jTouchInfoProtocolGuid

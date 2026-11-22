@@ -1,0 +1,13 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = NubiaBoardDxe
+  FILE_GUID = 11CC956F-48B8-0F8C-78FC-218ED0821F3A
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|NubiaBoardDxe.efi|*
+  DXE_DEPEX|NubiaBoardDxe.depex|*
+
+[Depex]
+  TRUE

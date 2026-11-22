@@ -1,0 +1,299 @@
+diff --git a/Silicon/Qualcomm/QcomPkg/Include/Protocol/EFIClock.h b/Silicon/Qualcomm/QcomPkg/Include/Protocol/EFIClock.h
+index f1979200..ac420077 100644
+--- a/Silicon/Qualcomm/QcomPkg/Include/Protocol/EFIClock.h
++++ b/Silicon/Qualcomm/QcomPkg/Include/Protocol/EFIClock.h
+@@ -41,7 +41,8 @@
+ /**
+   Protocol version.
+ */
+-#define EFI_CLOCK_PROTOCOL_VERSION 0x0000000000010009
++#define EFI_CLOCK_PROTOCOL_VERSION       0x0000000000010009
++#define EFI_CLOCK_PROTOCOL_VERSION_64BIT 0x000000000001000B
+ 
+ /**
+    Test Clock Protocol version.
+@@ -1060,6 +1061,33 @@ EFI_STATUS
+   IN  UINT32                   nLogMask
+ );
+ 
++typedef
++EFI_STATUS
++(EFIAPI *EFI_GET_CPU_PERF_LEVEL_FREQUENCY64)(
++  IN  EFI_CLOCK_PROTOCOL *This,
++  IN  UINT32              nCPU,
++  IN  UINT32              nPerfLevel,
++  OUT UINT64             *pnFrequencyHz,
++  OUT UINT64             *pnRequiredVoltage
++  );
++
++typedef
++EFI_STATUS
++(EFIAPI *EFI_SET_CPU_FREQUENCY64)(
++  IN  EFI_CLOCK_PROTOCOL *This,
++  IN  UINT32              nCPU,
++  IN  UINT64              nFrequencyHz,
++  OUT UINT64             *pnResultFreqHz
++  );
++
++typedef
++EFI_STATUS
++(EFIAPI *EFI_GET_CPU_FREQUENCY64)(
++  IN  EFI_CLOCK_PROTOCOL *This,
++  IN  UINT32              nCPU,
++  OUT UINT64             *pnFrequencyHz
++  );
++
+ /*===========================================================================
+   PROTOCOL INTERFACE
+ ===========================================================================*/
+@@ -1071,38 +1099,43 @@ EFI_STATUS
+   @inputprotoparams{clock_proto_params.tex}
+ */
+ struct _EFI_CLOCK_PROTOCOL {
+-   UINT64                           Version;
+-   EFI_CLOCK_GET_ID                 GetClockID;
+-   EFI_CLOCK_ENABLE                 EnableClock;
+-   EFI_CLOCK_DISABLE                DisableClock;
+-   EFI_CLOCK_IS_ENABLED             IsClockEnabled;
+-   EFI_CLOCK_IS_ON                  IsClockOn;
+-   EFI_CLOCK_SET_FREQ_HZ            SetClockFreqHz;
+-   EFI_CLOCK_GET_FREQ_HZ            GetClockFreqHz;
+-   EFI_CLOCK_CALC_FREQ_HZ           CalcClockFreqHz;
+-   EFI_CLOCK_SELECT_EXTERNAL_SOURCE SelectExternalSource;
+-   EFI_POWER_DOMAIN_GET_ID          GetClockPowerDomainID;
+-   EFI_POWER_DOMAIN_ENABLE          EnableClockPowerDomain;
+-   EFI_POWER_DOMAIN_DISABLE         DisableClockPowerDomain;
+-   EFI_CLOCK_ENTER_LOW_POWER_MODE   EnterLowPowerMode;
+-   EFI_CLOCK_EXIT_LOW_POWER_MODE    ExitLowPowerMode;
+-   EFI_CLOCK_SET_CLOCK_DIVIDER      SetClockDivider;
+-   EFI_CLOCK_RESET                  ResetClock;
+-   EFI_GET_MAX_PERF_LEVEL           GetMaxPerfLevel;
+-   EFI_GET_MIN_PERF_LEVEL           GetMinPerfLevel;
+-   EFI_GET_CPU_PERF_LEVEL_FREQUENCY GetCpuPerfLevelFrequency;
+-   EFI_SET_CPU_PERF_LEVEL           SetCpuPerfLevel;
+-   EFI_GET_CPU_PERF_LEVEL           GetCpuPerfLevel;
+-   EFI_GET_CPU_FREQUENCY_LEVELS     GetCPUFrequencyLevels;
+-   EFI_GET_CPU_FREQUECNY_PLAN       GetCPUFrequencyPlan;
+-   EFI_SET_CPU_FREQUENCY            SetCPUFrequency;
+-   EFI_GET_CPU_FREQUENCY            GetCPUFrequency;
+-   EFI_CLOCK_POST_INIT              PostInit;
+-   EFI_CLOCK_DIVIDER_GET_ID         GetClockDividerID;
+-   EFI_CLOCK_RESET_BRANCH           ResetClockBranch;
+-   EFI_CLOCK_INVERT                 InvertClock;
+-   EFI_CLOCK_MEASURE_FREQ_HZ        MeasureFreqHz;
+-   EFI_GET_ID                       GetID;
++   UINT64                             Version;
++   EFI_CLOCK_GET_ID                   GetClockID;
++   EFI_CLOCK_ENABLE                   EnableClock;
++   EFI_CLOCK_DISABLE                  DisableClock;
++   EFI_CLOCK_IS_ENABLED               IsClockEnabled;
++   EFI_CLOCK_IS_ON                    IsClockOn;
++   EFI_CLOCK_SET_FREQ_HZ              SetClockFreqHz;
++   EFI_CLOCK_GET_FREQ_HZ              GetClockFreqHz;
++   EFI_CLOCK_CALC_FREQ_HZ             CalcClockFreqHz;
++   EFI_CLOCK_SELECT_EXTERNAL_SOURCE   SelectExternalSource;
++   EFI_POWER_DOMAIN_GET_ID            GetClockPowerDomainID;
++   EFI_POWER_DOMAIN_ENABLE            EnableClockPowerDomain;
++   EFI_POWER_DOMAIN_DISABLE           DisableClockPowerDomain;
++   EFI_CLOCK_ENTER_LOW_POWER_MODE     EnterLowPowerMode;
++   EFI_CLOCK_EXIT_LOW_POWER_MODE      ExitLowPowerMode;
++   EFI_CLOCK_SET_CLOCK_DIVIDER        SetClockDivider;
++   EFI_CLOCK_RESET                    ResetClock;
++   EFI_GET_MAX_PERF_LEVEL             GetMaxPerfLevel;
++   EFI_GET_MIN_PERF_LEVEL             GetMinPerfLevel;
++   EFI_GET_CPU_PERF_LEVEL_FREQUENCY   GetCpuPerfLevelFrequency;
++   EFI_SET_CPU_PERF_LEVEL             SetCpuPerfLevel;
++   EFI_GET_CPU_PERF_LEVEL             GetCpuPerfLevel;
++   EFI_GET_CPU_FREQUENCY_LEVELS       GetCPUFrequencyLevels;
++   EFI_GET_CPU_FREQUECNY_PLAN         GetCPUFrequencyPlan;
++   EFI_SET_CPU_FREQUENCY              SetCPUFrequency;
++   EFI_GET_CPU_FREQUENCY              GetCPUFrequency;
++   EFI_CLOCK_POST_INIT                PostInit;
++   EFI_CLOCK_DIVIDER_GET_ID           GetClockDividerID;
++   EFI_CLOCK_RESET_BRANCH             ResetClockBranch;
++   EFI_CLOCK_INVERT                   InvertClock;
++   EFI_CLOCK_MEASURE_FREQ_HZ          MeasureFreqHz;
++   EFI_GET_ID                         GetID;
++   VOID                              *Reserved1000A_0;
++   VOID                              *Reserved1000A_1;
++   EFI_GET_CPU_PERF_LEVEL_FREQUENCY64 GetCpuPerfLevelFrequency64;
++   EFI_SET_CPU_FREQUENCY64            SetCPUFrequency64;
++   EFI_GET_CPU_FREQUENCY64            GetCPUFrequency64;
+ };
+ 
+ /*===========================================================================
+diff --git a/Silicon/Qualcomm/QcomPkg/Library/SmBiosTableLib/Utils.c b/Silicon/Qualcomm/QcomPkg/Library/SmBiosTableLib/Utils.c
+index ba8b0074..d1ac7fbb 100644
+--- a/Silicon/Qualcomm/QcomPkg/Library/SmBiosTableLib/Utils.c
++++ b/Silicon/Qualcomm/QcomPkg/Library/SmBiosTableLib/Utils.c
+@@ -15,6 +15,59 @@ STATIC EFI_CLOCK_PROTOCOL      *mClockProtocol    = NULL;
+ STATIC EFI_CHIPINFO_PROTOCOL   *mChipInfoProtocol = NULL;
+ STATIC EFI_DDRGETINFO_PROTOCOL *mDdrInfoProtocol  = NULL;
+ 
++STATIC_ASSERT (
++  OFFSET_OF (EFI_CLOCK_PROTOCOL, GetCpuPerfLevelFrequency64) == 0x110,
++  "EFI_CLOCK_PROTOCOL::GetCpuPerfLevelFrequency64 offset mismatch"
++  );
++
++STATIC
++EFI_STATUS
++GetClusterPerfLevelFreqMHz (
++  IN  UINT32  Cluster,
++  IN  UINT32  PerformanceLevel,
++  OUT UINT16 *FreqMHz)
++{
++  EFI_STATUS Status;
++
++  if (mClockProtocol->Version >= EFI_CLOCK_PROTOCOL_VERSION_64BIT &&
++      mClockProtocol->GetCpuPerfLevelFrequency64 != NULL)
++  {
++    UINT64 FreqHz          = 0;
++    UINT64 RequiredVoltage = 0;
++
++    Status = mClockProtocol->GetCpuPerfLevelFrequency64 (
++               mClockProtocol,
++               Cluster,
++               PerformanceLevel,
++               &FreqHz,
++               &RequiredVoltage
++               );
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++
++    *FreqMHz = (UINT16)(FreqHz / 1000000ULL);
++    return EFI_SUCCESS;
++  }
++
++  UINT32 FreqHz          = 0;
++  UINT32 RequiredVoltage = 0;
++
++  Status = mClockProtocol->GetCpuPerfLevelFrequency (
++             mClockProtocol,
++             Cluster,
++             PerformanceLevel,
++             &FreqHz,
++             &RequiredVoltage
++             );
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  *FreqMHz = (UINT16)(FreqHz / 1000000U);
++  return EFI_SUCCESS;
++}
++
+ EFI_STATUS
+ GetClusterSpeeds (
+   IN  UINT32  Cluster,
+@@ -22,8 +75,10 @@ GetClusterSpeeds (
+   OUT UINT16 *CurrentSpeed)
+ {
+   EFI_STATUS Status;
+-  UINT32     PerformanceLevel[2];
+-  UINT32     Freq[2];
++  UINT32     MaxPerfLevel     = 0;
++  UINT32     CurrentPerfLevel = 0;
++  UINT16     MaxFreqMHz       = 0;
++  UINT16     CurrentFreqMHz   = 0;
+ 
+   // Verify Protocol Presense
+   if (mClockProtocol == NULL) {
+@@ -36,31 +91,38 @@ GetClusterSpeeds (
+   }
+ 
+   // Get Max Performance Level
+-  Status = mClockProtocol->GetMaxPerfLevel (mClockProtocol, Cluster, &PerformanceLevel[0]);
++  Status = mClockProtocol->GetMaxPerfLevel (mClockProtocol, Cluster, &MaxPerfLevel);
+   if (EFI_ERROR (Status)) {
+     return Status;
+   }
+ 
+-  // Get Current Performance Level
+-  Status = mClockProtocol->GetCpuPerfLevel (mClockProtocol, Cluster, &PerformanceLevel[1]);
+-  if (EFI_ERROR (Status)) {
+-    return Status;
++  // Convert Max Performance Level to MHz
++  Status = GetClusterPerfLevelFreqMHz (Cluster, MaxPerfLevel, &MaxFreqMHz);
++  if (EFI_ERROR (Status) && MaxPerfLevel > 0) {
++    // Newer ClockDxe (e.g. Pakala) returns level count N from GetMaxPerfLevel
++    // while valid performance level indices are [0 .. N - 1].
++    Status = GetClusterPerfLevelFreqMHz (Cluster, MaxPerfLevel - 1, &MaxFreqMHz);
++  }
++  if (EFI_ERROR (Status) || MaxFreqMHz == 0) {
++    return EFI_ERROR (Status) ? Status : EFI_DEVICE_ERROR;
+   }
+ 
+-  // Go thru each Performance Level
+-  for (UINT8 i = 0; i < 2; i++) {
+-    UINT32 RequiredVoltage;
+-
+-    // Convert Performance Level
+-    Status = mClockProtocol->GetCpuPerfLevelFrequency (mClockProtocol, Cluster, PerformanceLevel[i], &Freq[i], &RequiredVoltage);
+-    if (EFI_ERROR (Status)) {
+-      return Status;
++  // Get Current Performance Level (fall back to MaxSpeed when SCMI LevelGet is unsupported)
++  Status = mClockProtocol->GetCpuPerfLevel (mClockProtocol, Cluster, &CurrentPerfLevel);
++  if (!EFI_ERROR (Status)) {
++    Status = GetClusterPerfLevelFreqMHz (Cluster, CurrentPerfLevel, &CurrentFreqMHz);
++    if (EFI_ERROR (Status) && CurrentPerfLevel > 0) {
++      Status = GetClusterPerfLevelFreqMHz (Cluster, CurrentPerfLevel - 1, &CurrentFreqMHz);
+     }
+   }
+ 
++  if (EFI_ERROR (Status) || CurrentFreqMHz == 0) {
++    CurrentFreqMHz = MaxFreqMHz;
++  }
++
+   // Pass Cluster Speeds
+-  *MaxSpeed     = Freq[0] / 1000000;
+-  *CurrentSpeed = Freq[1] / 1000000;
++  *MaxSpeed     = MaxFreqMHz;
++  *CurrentSpeed = CurrentFreqMHz;
+ 
+   return EFI_SUCCESS;
+ }
+diff --git a/Silicon/Silicium/SiliciumPkg/Drivers/SmBiosTableDxe/TableDefinitions.h b/Silicon/Silicium/SiliciumPkg/Drivers/SmBiosTableDxe/TableDefinitions.h
+index 9f56d07c..e75f59ae 100644
+--- a/Silicon/Silicium/SiliciumPkg/Drivers/SmBiosTableDxe/TableDefinitions.h
++++ b/Silicon/Silicium/SiliciumPkg/Drivers/SmBiosTableDxe/TableDefinitions.h
+@@ -268,7 +268,7 @@ mSmBiosType4 = {
+     // Processor Characteristics
+     //
+     .ProcessorCharacteristics = BIT2 | BIT9,
+-    .Status                   = BIT0 | BIT1,
++    .Status                   = BIT6 | BIT0,
+ 
+     //
+     // Processor Cache Handles
+diff --git a/Silicon/Silicium/SiliciumPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c b/Silicon/Silicium/SiliciumPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
+index 5cc415e5..8570f019 100644
+--- a/Silicon/Silicium/SiliciumPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
++++ b/Silicon/Silicium/SiliciumPkg/Library/MsBootOptionsLib/MsBootOptionsLib.c
+@@ -32,7 +32,7 @@ BuildFwLoadOption (
+   // Get Defined Application Name from FV
+   Status = GetSectionFromFv (FwFile, EFI_SECTION_USER_INTERFACE, 0, (VOID *)&Description, &DescriptionLength);
+   if (EFI_ERROR (Status)) {
+-    DEBUG ((EFI_D_ERROR, "%a: Failed to Get Application Name of %a! Status = %r\n", __FUNCTION__, FwFile, Status));
++    DEBUG ((EFI_D_ERROR, "%a: Failed to Get Application Name of %g! Status = %r\n", __FUNCTION__, FwFile, Status));
+     return Status;
+   }
+ 
+@@ -132,7 +132,7 @@ CreateFvBootOption (
+   // Read EFI Application Section
+   Status = mFv2Protocol->ReadSection (mFv2Protocol, FileGuid, EFI_SECTION_PE32, 0, &Buffer, &Size, &AuthenticationStatus);
+   if (EFI_ERROR (Status)) {
+-    DEBUG ((EFI_D_ERROR, "%a: Failed to Read EFI Application Section from %a! Status = %r\n", __FUNCTION__, FileGuid, Status));
++    DEBUG ((EFI_D_ERROR, "%a: Failed to Read EFI Application Section from %g! Status = %r\n", __FUNCTION__, FileGuid, Status));
+     return Status;
+   }
+ 
+@@ -150,7 +150,7 @@ CreateFvBootOption (
+   // Init Boot Option
+   Status = EfiBootManagerInitializeLoadOption (BootOption, LoadOptionNumberUnassigned, LoadOptionTypeBoot, Attributes, Description, DevicePath, OptionalData, OptionalDataSize);
+   if (EFI_ERROR (Status)) {
+-    DEBUG ((EFI_D_ERROR, "%a: Failed to Init Boot Option for %a! Status = %r\n", __FUNCTION__, FileGuid, Status));
++    DEBUG ((EFI_D_ERROR, "%a: Failed to Init Boot Option for %g! Status = %r\n", __FUNCTION__, FileGuid, Status));
+ 
+     // Free Buffers
+     FreePool (Buffer);

@@ -58,11 +58,19 @@ STATIC EFI_STATUS Rect(EFI_GRAPHICS_OUTPUT_BLT_PIXEL Pixel,UINT32 X,UINT32 Y,UIN
   return mCanvas.Fault;
 }
 STATIC CONST UINT8 *Glyph(CHAR8 Ch){
-  STATIC CONST UINT8 Space[5]={0},Dash[5]={8,8,8,8,8};
+  STATIC CONST UINT8 Space[5]={0},Dash[5]={8,8,8,8,8},Colon[5]={0,0x36,0x36,0,0},
+    Dot[5]={0,0x60,0x60,0,0},Comma[5]={0,0x50,0x30,0,0},Slash[5]={0x20,0x10,8,4,2},
+    Bang[5]={0,0,0x5f,0,0},LParen[5]={0,0x1c,0x22,0x41,0},RParen[5]={0,0x41,0x22,0x1c,0},
+    Under[5]={0x40,0x40,0x40,0x40,0x40};
   if(Ch>='a'&&Ch<='z')Ch=(CHAR8)(Ch-'a'+'A');
   if(Ch>='A'&&Ch<='Z')return mLetters[Ch-'A'];
   if(Ch>='0'&&Ch<='9')return mDigits[Ch-'0'];
-  return Ch=='-'?Dash:Space;
+  switch(Ch){
+    case '-':return Dash;case ':':return Colon;case '.':return Dot;
+    case ',':return Comma;case '/':return Slash;case '!':return Bang;
+    case '(':return LParen;case ')':return RParen;case '_':return Under;
+    default:return Space;
+  }
 }
 STATIC EFI_STATUS Text(CONST CHAR8 *String,UINT32 X,UINT32 Y,EFI_GRAPHICS_OUTPUT_BLT_PIXEL Pixel){
   UINT32 Scale=mCanvas.Scale;
@@ -219,10 +227,25 @@ STATIC EFI_STATUS MessageText(CONST CHAR16 *String,UINT32 X,UINT32 Y,UINT32 Scal
     for(UINTN G=0;G<ARRAY_SIZE(mPianoWideGlyphs);++G)if(mPianoWideGlyphs[G].UnicodeWeight==Ch){Wide=&mPianoWideGlyphs[G];break;}
     UINT32 Columns=Wide?16:8,Rows=Wide?19:7;
     if(X+(Columns+1)*Scale>=mCanvas.Width)return EFI_BAD_BUFFER_SIZE;
-    for(UINT32 Row=0;Row<Rows;++Row)for(UINT32 Col=0;Col<Columns;++Col){
-      BOOLEAN On=Wide?(((Col<8?Wide->GlyphCol1[Row]:Wide->GlyphCol2[Row])&(0x80>>(Col%8)))!=0):
-        (Col<5&&(Glyph((CHAR8)Ch)[Col]&(1U<<Row)));
-      if(On){EFI_STATUS S=Rect(Ink,X+Col*Scale,Y+(Wide?Row:Row*2+3)*Scale,Scale,Wide?Scale:2*Scale);if(S!=EFI_SUCCESS)return S;}
+    UINT32 DrawCols=Wide?16:5,CellH=Wide?Scale:2*Scale;
+    CONST UINT8 *Narrow=Wide?NULL:Glyph((CHAR8)Ch);
+    for(UINT32 Row=0;Row<Rows;++Row){
+      UINT32 Col=0,RowY=Y+(Wide?Row:Row*2+3)*Scale;
+      while(Col<DrawCols){
+        // รวมพิกเซลที่ติดกันในแนวนอนเป็นสี่เหลี่ยมเดียวเพื่อลดจำนวนการเรียก GOP Blt
+        BOOLEAN On=Wide?(((Col<8?Wide->GlyphCol1[Row]:Wide->GlyphCol2[Row])&(0x80>>(Col%8)))!=0):
+          ((Narrow[Col]&(1U<<Row))!=0);
+        if(!On){++Col;continue;}
+        UINT32 First=Col;++Col;
+        while(Col<DrawCols){
+          BOOLEAN NextOn=Wide?(((Col<8?Wide->GlyphCol1[Row]:Wide->GlyphCol2[Row])&(0x80>>(Col%8)))!=0):
+            ((Narrow[Col]&(1U<<Row))!=0);
+          if(!NextOn)break;
+          ++Col;
+        }
+        EFI_STATUS S=Rect(Ink,X+First*Scale,RowY,(Col-First)*Scale,CellH);
+        if(S!=EFI_SUCCESS)return S;
+      }
     }
     X+=(Columns+1)*Scale;
   }
@@ -236,9 +259,15 @@ EFI_STATUS PianoProductBootLogMessage(CONST CHAR16 *Title,CONST CHAR16 *Detail,E
   S=Rect(Color(238,121,0),X,Y-10*Scale,20*Scale,2*Scale);if(S!=EFI_SUCCESS)return S;
   S=MessageText(Title,X,Y,Scale+1,Color(40,44,50));if(S!=EFI_SUCCESS)return S;
   S=MessageText(Detail,X,Y+34*Scale,Scale,Color(80,84,90));if(S!=EFI_SUCCESS)return S;
+#ifdef SUNUEFI_NP05J
+  if(!Failed)return MessageText(L"Please wait...",X,Y+64*Scale,Scale,Color(110,114,120));
+  S=MessageText(L"Hold Power button to restart",X,Y+72*Scale,Scale,Color(50,54,60));if(S!=EFI_SUCCESS)return S;
+  S=MessageText(L"Press Volume Up on boot selector for Android",X,Y+100*Scale,Scale,Color(50,54,60));if(S!=EFI_SUCCESS)return S;
+#else
   if(!Failed)return MessageText(L"请稍候",X,Y+64*Scale,Scale,Color(110,114,120));
   S=MessageText(L"长按电源重启",X,Y+72*Scale,Scale,Color(50,54,60));if(S!=EFI_SUCCESS)return S;
   S=MessageText(L"在选择画面按音量上进入 Android",X,Y+100*Scale,Scale,Color(50,54,60));if(S!=EFI_SUCCESS)return S;
+#endif
   CHAR8 Code[19];Hex(Status,Code);UINT32 Saved=mCanvas.Scale;mCanvas.Scale=Scale;
   UINT32 CodeY=Y+140*Scale;
   // The failure page replaces the progress panel. Carry its matching failed

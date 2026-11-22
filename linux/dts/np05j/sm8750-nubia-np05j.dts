@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
+ *
+ * Default bring-up Device Tree:
+ * - Full SM8750 peripherals (QSMMU-v500, 1 TB UFS 4.0, SCMI CPUfreq,
+ *   ADSP + CDSP/NPU FastRPC, pmic-glink Battery, PCIe0 Wi-Fi 7, UART14 BT,
+ *   SPI4 Touchscreen bus, Buttons, RTC, Thermal)
+ * - USB-C locked to High-Speed Peripheral mode (CDC-ACM /dev/ttyGS0) so the
+ *   USB serial console is always available immediately in both plug orientations
+ *   even before ADSP firmware is loaded from UFS.
+ */
+
+/dts-v1/;
+
+#include "sm8750-nubia-np05j-common.dtsi"
+
+&usb {
+	/delete-property/ usb-role-switch;
+
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
+	phys = <&usb_hsphy>;
+	phy-names = "usb2-phy";
+	qcom,select-utmi-as-pipe-clk;
+
+	status = "okay";
+};

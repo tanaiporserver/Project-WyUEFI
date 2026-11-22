@@ -525,8 +525,12 @@ EFI_STATUS PianoProductMemoryApplyDtb(VOID *Tree,UINTN Capacity){
  if(!Tree||Capacity<40||Capacity>0x210000||FdtCheckHeader(Tree)||FdtTotalSize(Tree)>Capacity)return EFI_INVALID_PARAMETER;
  // The shipped Linux tree retains Qualcomm's root compatible; newer trees
  // may identify Piano directly. The frozen HOB, not either string, proves RAM.
+#ifdef SUNUEFI_NP05J
+ if(FdtNodeOffsetByCompatible(Tree,-1,"nubia,np05j")!=0)return EFI_UNSUPPORTED;
+#else
  if(FdtNodeOffsetByCompatible(Tree,-1,"xiaomi,piano")!=0&&
     FdtNodeOffsetByCompatible(Tree,-1,"qcom,sun")!=0)return EFI_UNSUPPORTED;
+#endif
  if(mBusy)return EFI_ALREADY_STARTED;
  EFI_STATUS S=Capture();if(S!=EFI_SUCCESS)return S;
  INT32 Length;

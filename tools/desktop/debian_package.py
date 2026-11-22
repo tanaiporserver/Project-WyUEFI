@@ -460,14 +460,15 @@ def same_target(before, after):
     return True
 
 
-def target_identity(rootfs, package, *, package_output=None):
+def target_identity(rootfs, package, *, package_output=None, extra_abi=()):
     rootfs = Path(rootfs).resolve()
     release = dict(line.split('=', 1) for line in (rootfs / 'etc/os-release').read_text().splitlines() if '=' in line)
     if release.get('ID', '').strip('"') != 'debian':
         raise ValueError('The target must be Debian; sid identifies itself as forky in os-release')
     if capture(['chroot', rootfs, 'dpkg', '--print-architecture']) != 'arm64':
         raise ValueError('The target must use ARM64 Debian packages')
-    rows, _ = signed_records(rootfs, 'Packages', (package, *ABI_PACKAGES))
+    abi_packages = (*ABI_PACKAGES, *extra_abi)
+    rows, _ = signed_records(rootfs, 'Packages', (package, *abi_packages))
     installed = {}
     text = capture(['chroot', rootfs, 'dpkg-query', '-W',
                     '-f=${Package}\t${db:Status-Status}\t${Version}\t${source:Package}\t${source:Version}\t${Architecture}\n'])
@@ -478,7 +479,7 @@ def target_identity(rootfs, package, *, package_output=None):
                                'architecture': architecture}
     policies = {}
     text = capture(['chroot', rootfs, 'env', 'LC_ALL=C', 'apt-cache', '-oDir::State::status=/dev/null',
-                    'policy', package, *ABI_PACKAGES])
+                    'policy', package, *abi_packages])
     name = None
     for line in text.splitlines():
         if line and not line[0].isspace() and line.endswith(':'):
@@ -502,7 +503,7 @@ def target_identity(rootfs, package, *, package_output=None):
                 'source_version': source_version, 'sha256': row['SHA256']}
 
     binary = select(package)
-    abi = {name: select(name) for name in ABI_PACKAGES}
+    abi = {name: select(name) for name in abi_packages}
     local = {name: row for name, row in {package: binary, **abi}.items()
              if name in installed and installed[name]['version'] != row['version']}
     source_names = {binary['source'], *(row['source'] for row in local.values())}
@@ -591,7 +592,7 @@ def recipe_inputs(inputs):
 def build_dependency_records(archives):
     if not archives:
         return {}
-    from build.overlay_packages import debian_identity
+    from package.archive import debian_identity
 
     dependencies = {}
     for archive in archives:
@@ -604,19 +605,19 @@ def build_dependency_records(archives):
 
 
 @contextmanager
-def build_root(sysroot, output, builder_root, *, local_dependencies):
+def build_root(sysroot, output, builder_root=None, *, overlay=False):
     rootfs = Path(builder_root).resolve() if builder_root else output / 'builder/rootfs'
     if builder_root and (not rootfs.is_relative_to(ROOT / 'build') or output.is_relative_to(rootfs) or
                          rootfs.is_relative_to(output)):
         raise ValueError('Use an isolated project builder, not a product rootfs')
-    if not local_dependencies:
+    if not overlay:
         if not rootfs.exists():
             rootfs.parent.mkdir(parents=True, exist_ok=True)
             run(['cp', '-a', '--reflink=auto', sysroot, rootfs])
         yield rootfs
         return
 
-    # Do not leave an alternate ABI installed in the reusable Debian builder.
+    # Keep build-only packages and alternate ABIs out of the supplied root.
     lower = rootfs if builder_root else sysroot
     with tempfile.TemporaryDirectory(prefix='builder-', dir=output) as directory:
         stage = Path(directory)
@@ -663,11 +664,16 @@ def gcc_environment(rootfs):
         yield dict(settings, CC='gcc', CXX='g++', CCACHE_COMPILERTYPE='gcc')
 
 
+def package_version_for(target, revision, keep_binary_revision):
+    field = 'version' if keep_binary_revision else 'source_version'
+    return overlay_release.debian_version(target['binary'][field] + '+sunuefi' + str(revision))
+
+
 def reusable(output, target, patches, runtime, inputs, revision, *, build_dependencies=None,
-             validate_packages=None, architecture_only=False):
+             validate_packages=None, architecture_only=False, keep_binary_revision=False):
     try:
         record = json.loads((output / 'SOURCE.json').read_text())
-        version = overlay_release.debian_version(target['binary']['source_version'] + '+sunuefi' + str(revision))
+        version = package_version_for(target, revision, keep_binary_revision)
         # Schema 2 used this same recipe before recording its version explicitly.
         recipe_version = record.get('build_recipe_version', 1 if record.get('schema_version') == 2 else None)
         command = BUILD_ARCH_COMMAND if architecture_only else BUILD_COMMAND
@@ -713,7 +719,7 @@ def complete_build(output, record, validate_packages=None):
 def build(output, sysroot, jobs, package, patches, runtime, inputs, revision=1,
           validate=None, validate_runtime=None, builder_root=None, install_dependencies=True,
           binary_package=None, test_build=None, build_dependencies=(), *, build_environment=None,
-          validate_packages=None, architecture_only=False):
+          validate_packages=None, architecture_only=False, extra_abi=(), keep_binary_revision=False):
     output = Path(output).resolve()
     sysroot = Path(sysroot or builder_root).resolve()
     if (not output.is_relative_to(ROOT / 'build') or not sysroot.is_relative_to(ROOT / 'build') or
@@ -725,13 +731,13 @@ def build(output, sysroot, jobs, package, patches, runtime, inputs, revision=1,
         raise ValueError('An architecture-only build cannot produce Architecture: all packages')
     binary_package = binary_package or package
     build_dependencies = tuple(build_dependencies)
-    target = target_identity(sysroot, binary_package, package_output=output)
+    target = target_identity(sysroot, binary_package, package_output=output, extra_abi=extra_abi)
     patch_proof = [{'path': path.relative_to(ROOT).as_posix(), 'sha256': sha(path)} for path in patches]
     inputs = input_records([Path(__file__), Path(package_build.__file__), *inputs])
     dependency_records = build_dependency_records(build_dependencies)
     if cached := reusable(output, target, patch_proof, runtime, inputs, revision,
                           build_dependencies=dependency_records, validate_packages=validate_packages,
-                          architecture_only=architecture_only):
+                          architecture_only=architecture_only, keep_binary_revision=keep_binary_revision):
         return cached
     if target.get('installed_local'):
         raise ValueError('Desktop cache does not match; rebuild from a clean signed sid target '
@@ -742,7 +748,7 @@ def build(output, sysroot, jobs, package, patches, runtime, inputs, revision=1,
     source_package = target['binary']['source']
     if source_package != package:
         raise ValueError('Unexpected Debian source package for ' + package)
-    package_version = overlay_release.debian_version(version + '+sunuefi' + str(revision))
+    package_version = package_version_for(target, revision, keep_binary_revision)
     command = BUILD_ARCH_COMMAND if architecture_only else BUILD_COMMAND
     recipe = {'target': target, 'patches': patch_proof, 'inputs': recipe_inputs(inputs),
               'package_version': package_version,
@@ -751,7 +757,7 @@ def build(output, sysroot, jobs, package, patches, runtime, inputs, revision=1,
     if dependency_records:
         recipe['build_dependencies'] = dependency_records
     identity = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()[:16]
-    with build_root(sysroot, output, builder_root, local_dependencies=bool(dependency_records)) as rootfs, \
+    with build_root(sysroot, output, builder_root, overlay=bool(dependency_records)) as rootfs, \
             devices(rootfs), (output / 'build.log').open('a') as log:
         work = rootfs / 'build' / package / identity
         cache, source = rootfs / 'build' / package / 'cache', work / 'source'
@@ -769,13 +775,13 @@ def build(output, sysroot, jobs, package, patches, runtime, inputs, revision=1,
         # Reuse the target's deb-src configuration rather than adding duplicates.
         prepare_build_indexes(rootfs, guest, refresh=install_dependencies)
         if install_dependencies:
-            builder_target = target_identity(rootfs, binary_package)
+            builder_target = target_identity(rootfs, binary_package, extra_abi=extra_abi)
             if not same_target(builder_target, target) or builder_target.get('installed_local'):
                 raise ValueError('The builder and target sid indexes differ; refresh the target APT indexes')
             guest(['apt-get', 'install', '-y', '--no-install-recommends', 'dpkg-dev', 'build-essential', 'ccache'])
             install_build_dependencies(rootfs, package, version, log, architecture_only=architecture_only)
         else:
-            builder_target = target_identity(rootfs, binary_package)
+            builder_target = target_identity(rootfs, binary_package, extra_abi=extra_abi)
             if not same_target(builder_target, target) or builder_target.get('installed_local'):
                 raise ValueError('The existing builder does not match the supplied clean target ABI/source')
         install_local_build_dependencies(rootfs, guest, build_dependencies, dependency_records)

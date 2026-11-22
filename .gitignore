@@ -6,6 +6,7 @@
 uefi/platforms/pianoGuiPkg/
 uefi/platforms/pianoLinuxPkg/
 uefi/platforms/pianoProductPkg/
+uefi/platforms/np05jProductPkg/
 __pycache__/
 *.pyc
 uefi/handoff/bootshim/BootShim.bin

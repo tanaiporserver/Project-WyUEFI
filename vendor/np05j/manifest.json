@@ -1,0 +1,254 @@
+{
+  "board_dtb": {
+    "hardware_scope_unchanged": true,
+    "path": "dtb/np05j.dtb",
+    "removed_properties": {
+      "/": [],
+      "/chosen": [
+        "bootargs",
+        "kaslr-seed",
+        "linux,initrd-end",
+        "linux,initrd-start"
+      ]
+    },
+    "source_sha256": "1d8a756de7b930d9df858eb07a380738a00e5fb44f08f7814f02e829682de5fb"
+  },
+  "files": {
+    "dtb/np05j.dtb": {
+      "bytes": 903028,
+      "sha256": "b7f6b40bd77ba6baa26bd209b53141882af85bab815cd182910007f43f1155c2"
+    },
+    "dtb/xbl-config.dtb": {
+      "bytes": 140808,
+      "sha256": "4587131d746da33c1c8da97728ab9318d5e671de742a73b0c312d8a021234621"
+    },
+    "native/ChipInfo.depex": {
+      "bytes": 36,
+      "sha256": "5a2204901e9095761d883230974b7d3265bb85eb6eecfd02550ce4d17ec61802"
+    },
+    "native/ChipInfo.efi": {
+      "bytes": 49152,
+      "sha256": "7da505160090dfd9277d3fa1701ef284c6a37069c6ee4942ab68584224113eb3"
+    },
+    "native/ClockDxe.depex": {
+      "bytes": 54,
+      "sha256": "c8001e9cea134cf8205ad4167fd0ff3b8dab6ecf325c723158cc6916e4a9b1cf"
+    },
+    "native/ClockDxe.efi": {
+      "bytes": 258048,
+      "sha256": "7c21166224cf71f2f902d6f6f00eaa677e933a1fada24139f2ace08eb7aa1738"
+    },
+    "native/CmdDbDxe.depex": {
+      "bytes": 2,
+      "sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+    },
+    "native/CmdDbDxe.efi": {
+      "bytes": 32768,
+      "sha256": "5fca0e4fd12c649bdd344697bb0356aa1b481b77100ad1f43f637571095a7a90"
+    },
+    "native/DALSys.depex": {
+      "bytes": 18,
+      "sha256": "445084b65f55991565be20b692e489f28006a91c3d0a050eae2a8eebdf12f563"
+    },
+    "native/DALSys.efi": {
+      "bytes": 344064,
+      "sha256": "95f2e936dd34d780da062ca3b0a6b0b79d23f2c859fb27c21673b985a65589ee"
+    },
+    "native/DALTLMM.depex": {
+      "bytes": 18,
+      "sha256": "51e48aff95a5c61299f0c6b7550d1e2348078025c313f63c206f4d6f5cf36477"
+    },
+    "native/DALTLMM.efi": {
+      "bytes": 49152,
+      "sha256": "4206630cf653760e462c9dccdff8c535b00b8256e03661ceba15240bfe008b7e"
+    },
+    "native/HALIOMMU.depex": {
+      "bytes": 216,
+      "sha256": "8d212b55931b8b7178a06d7d5ff305306299accdbd845743b3c58bdf2e62a45f"
+    },
+    "native/HALIOMMU.efi": {
+      "bytes": 143360,
+      "sha256": "38534a658cf11aea31f6fcae7be6b19225f299233b898bcd59ac11859057b37b"
+    },
+    "native/HWIODxeDriver.depex": {
+      "bytes": 18,
+      "sha256": "51e48aff95a5c61299f0c6b7550d1e2348078025c313f63c206f4d6f5cf36477"
+    },
+    "native/HWIODxeDriver.efi": {
+      "bytes": 32768,
+      "sha256": "7ce825696bb890ad14a0bcee486974407d1a351c9ae72e08bb08e6d42e4246f7"
+    },
+    "native/I2C.depex": {
+      "bytes": 72,
+      "sha256": "95cfa13b1308bf157c24a44e7492c34335e9af953a0056da17fb047bdeb2dd50"
+    },
+    "native/I2C.efi": {
+      "bytes": 61440,
+      "sha256": "9bff6fd4ea9cea7aed466c5b51ffe002989f649bc51f6b5ab211fd4b84fb1449"
+    },
+    "native/NpaDxe.depex": {
+      "bytes": 2,
+      "sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+    },
+    "native/NpaDxe.efi": {
+      "bytes": 77824,
+      "sha256": "34799b607fd66ee3f67b69e1c27c05cd9dafb4c0ed1a3fb8e7c536c1e4861655"
+    },
+    "native/PlatformInfoDxeDriver.depex": {
+      "bytes": 18,
+      "sha256": "51e48aff95a5c61299f0c6b7550d1e2348078025c313f63c206f4d6f5cf36477"
+    },
+    "native/PlatformInfoDxeDriver.efi": {
+      "bytes": 32768,
+      "sha256": "38a6f6910b91e2ffb649f422e7c38b8fc2abc529d7593d02c231582e16bc1cbd"
+    },
+    "native/PwrUtilsDxe.depex": {
+      "bytes": 18,
+      "sha256": "69f6f40457ed7a884f56e034cb84bf53bf4cb3210cc31839e0d1a5d86b460a94"
+    },
+    "native/PwrUtilsDxe.efi": {
+      "bytes": 32768,
+      "sha256": "c3ce15c8ae1f7e512ca2fdb6af0ce2c44943adf23f4e540e6f4caf0edf5ebc06"
+    },
+    "native/Qup.depex": {
+      "bytes": 72,
+      "sha256": "95cfa13b1308bf157c24a44e7492c34335e9af953a0056da17fb047bdeb2dd50"
+    },
+    "native/Qup.efi": {
+      "bytes": 28672,
+      "sha256": "3ce25a2c141f3f16ab2d24d1e8e382ec2ab51964f6e04978e9f5e37d03314927"
+    },
+    "native/RpmhDxe.depex": {
+      "bytes": 36,
+      "sha256": "4222f37e19a4b252aa185240a267b613ee5e464543e682f222a21fea7c0ed2a2"
+    },
+    "native/RpmhDxe.efi": {
+      "bytes": 61440,
+      "sha256": "1baf68207e9e9745407b46892e796cdb8c3acdd3250e7a187cb744804d84447f"
+    },
+    "native/SmemDxe.depex": {
+      "bytes": 2,
+      "sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+    },
+    "native/SmemDxe.efi": {
+      "bytes": 40960,
+      "sha256": "c256babbfc1ccc46f5228e97d5b523954f45c4f3e68eb49f0ae3811dcf12d7c4"
+    },
+    "native/ULogDxe.depex": {
+      "bytes": 2,
+      "sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+    },
+    "native/ULogDxe.efi": {
+      "bytes": 77824,
+      "sha256": "3a854a1e7446df2cfaa313f11361bd1528922c507ae47f0642cc7d39488fe236"
+    },
+    "native/VcsDxe.depex": {
+      "bytes": 54,
+      "sha256": "c8001e9cea134cf8205ad4167fd0ff3b8dab6ecf325c723158cc6916e4a9b1cf"
+    },
+    "native/VcsDxe.efi": {
+      "bytes": 69632,
+      "sha256": "9ec208fe033e1019bc1b8ed577f2a8f62be2c6fc47206f0945d340015011b095"
+    }
+  },
+  "native_drivers": {
+    "SmemDxe": {
+      "depex": "native/SmemDxe.depex",
+      "file_guid": "f541d663-4a48-40aa-aabf-ff158ccae34c",
+      "pe": "native/SmemDxe.efi"
+    },
+    "DALSys": {
+      "depex": "native/DALSys.depex",
+      "file_guid": "8e9bd160-b184-11df-94e2-0800200c9a66",
+      "pe": "native/DALSys.efi"
+    },
+    "ChipInfo": {
+      "depex": "native/ChipInfo.depex",
+      "file_guid": "10e193df-9966-44e7-b17c-59dd831e20fc",
+      "pe": "native/ChipInfo.efi"
+    },
+    "PlatformInfoDxeDriver": {
+      "depex": "native/PlatformInfoDxeDriver.depex",
+      "file_guid": "b105211b-bbbd-4add-a3b0-d1cf4a52154c",
+      "pe": "native/PlatformInfoDxeDriver.efi"
+    },
+    "HWIODxeDriver": {
+      "depex": "native/HWIODxeDriver.depex",
+      "file_guid": "af9763a2-033b-4109-8e17-56a98d380c92",
+      "pe": "native/HWIODxeDriver.efi"
+    },
+    "ULogDxe": {
+      "depex": "native/ULogDxe.depex",
+      "file_guid": "e43128a8-8692-42b6-8afa-676158578d18",
+      "pe": "native/ULogDxe.efi"
+    },
+    "CmdDbDxe": {
+      "depex": "native/CmdDbDxe.depex",
+      "file_guid": "aba01ff8-2ccb-4e12-8b2e-cd3f4a742993",
+      "pe": "native/CmdDbDxe.efi"
+    },
+    "PwrUtilsDxe": {
+      "depex": "native/PwrUtilsDxe.depex",
+      "file_guid": "0401b830-bff9-44a2-a5f6-95734a33c017",
+      "pe": "native/PwrUtilsDxe.efi"
+    },
+    "RpmhDxe": {
+      "depex": "native/RpmhDxe.depex",
+      "file_guid": "cb29f4d1-7f37-4692-a416-93e82e219766",
+      "pe": "native/RpmhDxe.efi"
+    },
+    "NpaDxe": {
+      "depex": "native/NpaDxe.depex",
+      "file_guid": "cb29f4d1-7f37-4692-a416-93e82e219711",
+      "pe": "native/NpaDxe.efi"
+    },
+    "VcsDxe": {
+      "depex": "native/VcsDxe.depex",
+      "file_guid": "8bd3b475-401a-4b0b-9315-edee61a1eae5",
+      "pe": "native/VcsDxe.efi"
+    },
+    "ClockDxe": {
+      "depex": "native/ClockDxe.depex",
+      "file_guid": "4db5dea6-5302-4d1a-8a82-677a683b0d29",
+      "pe": "native/ClockDxe.efi"
+    },
+    "HALIOMMU": {
+      "depex": "native/HALIOMMU.depex",
+      "file_guid": "9a00771f-36d4-4dd5-8916-c48ed9b16b86",
+      "pe": "native/HALIOMMU.efi"
+    },
+    "DALTLMM": {
+      "depex": "native/DALTLMM.depex",
+      "file_guid": "8681cc5a-0df6-441e-b4b8-e915c538f067",
+      "pe": "native/DALTLMM.efi"
+    },
+    "Qup": {
+      "depex": "native/Qup.depex",
+      "file_guid": "a16b79d2-afe0-4aed-a3ab-8ce3fd0f8c71",
+      "pe": "native/Qup.efi"
+    },
+    "I2C": {
+      "depex": "native/I2C.depex",
+      "file_guid": "04de8591-d2b3-4077-bbbe-b12070094eb6",
+      "pe": "native/I2C.efi"
+    }
+  },
+  "provenance": {
+    "board_source": "Captured runtime board FDT (nubia_np05j-live.dtb), with /chosen snapshot properties stripped",
+    "distribution_license_status": "NOT_REVIEWED",
+    "native_source": "Original EFI PE and DEPEX sections extracted from captured slot_b uefi_b.img (BOOT.MXF.2.5.1)",
+    "uefi_image_sha256": "3675bf01da38a54c618df6f30adaa2a6f84bcd969acbc18a3d74592d2cab685a",
+    "xbl_source": "Configuration FDT extracted from captured slot_b xbl_config_b.img (offset 0x7fa4, size 140808)"
+  },
+  "schema_version": 1,
+  "scope": "CAPTURED_FIRMWARE_NOT_RUNTIME_AUTHORITY",
+  "target": {
+    "device": "np05j",
+    "memory_gib": 24,
+    "soc": "SM8750P"
+  },
+  "xbl_config_dtb": {
+    "path": "dtb/xbl-config.dtb",
+    "source_sha256": "4587131d746da33c1c8da97728ab9318d5e671de742a73b0c312d8a021234621"
+  }
+}

@@ -1,0 +1,36 @@
+## @file
+#  Persistent Unlocked BIOS Configuration Library for nubia NP05J.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jBiosConfigLib
+  FILE_GUID                      = A1E45101-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = Np05jBiosConfigLib|DXE_DRIVER UEFI_APPLICATION UEFI_DRIVER
+
+[Sources]
+  Np05jBiosConfigLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gNp05jBiosConfigGuid
+  gEfiFileSystemInfoGuid
+
+[Protocols]
+  gEfiSimpleFileSystemProtocolGuid

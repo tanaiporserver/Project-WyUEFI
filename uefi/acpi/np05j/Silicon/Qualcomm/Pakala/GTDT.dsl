@@ -1,0 +1,65 @@
+// System-register PPIs are level-low and always-on. Only enabled memory-mapped frame 0 is described.
+
+[000h 0000 004h]                   Signature : "GTDT"    [Generic Timer Description Table]
+[004h 0004 004h]                Table Length : 0000009C
+[008h 0008 001h]                    Revision : 02
+[009h 0009 001h]                    Checksum : 3E
+[00Ah 0010 006h]                      Oem ID : "NUBIA "
+[010h 0016 008h]                Oem Table ID : "PAKALA  "
+[018h 0024 004h]                Oem Revision : 00008750
+[01Ch 0028 004h]             Asl Compiler ID : "INTL"
+[020h 0032 004h]       Asl Compiler Revision : 00000000
+
+[024h 0036 008h]       Counter Block Address : FFFFFFFFFFFFFFFF
+[02Ch 0044 004h]                    Reserved : 00000000
+
+[030h 0048 004h]        Secure EL1 Interrupt : 0000001D
+[034h 0052 004h]   EL1 Flags (decoded below) : 00000006
+                                Trigger Mode : 0
+                                    Polarity : 1
+                                   Always On : 1
+
+[038h 0056 004h]    Non-Secure EL1 Interrupt : 0000001E
+[03Ch 0060 004h]  NEL1 Flags (decoded below) : 00000006
+                                Trigger Mode : 0
+                                    Polarity : 1
+                                   Always On : 1
+
+[040h 0064 004h]     Virtual Timer Interrupt : 0000001B
+[044h 0068 004h]    VT Flags (decoded below) : 00000006
+                                Trigger Mode : 0
+                                    Polarity : 1
+                                   Always On : 1
+
+[048h 0072 004h]    Non-Secure EL2 Interrupt : 0000001A
+[04Ch 0076 004h]  NEL2 Flags (decoded below) : 00000006
+                                Trigger Mode : 0
+                                    Polarity : 1
+                                   Always On : 1
+[050h 0080 008h]  Counter Read Block Address : FFFFFFFFFFFFFFFF
+
+[058h 0088 004h]        Platform Timer Count : 00000001
+[05Ch 0092 004h]       Platform Timer Offset : 00000060
+
+[060h 0096 001h]               Subtable Type : 00 [Generic Timer Block]
+[061h 0097 002h]                      Length : 003C
+[063h 0099 001h]                    Reserved : 00
+[064h 0100 008h]               Block Address : 0000000016800000
+[06Ch 0108 004h]                 Timer Count : 00000001
+[070h 0112 004h]                Timer Offset : 00000014
+
+[074h 0116 001h]                Frame Number : 00
+[075h 0117 003h]                    Reserved : 000000
+[078h 0120 008h]                Base Address : 0000000016801000
+[080h 0128 008h]            EL0 Base Address : 0000000016802000
+[088h 0136 004h]             Timer Interrupt : 00000028
+[08Ch 0140 004h] Timer Flags (decoded below) : 00000000
+                                Trigger Mode : 0
+                                    Polarity : 0
+[090h 0144 004h]     Virtual Timer Interrupt : 00000026
+[094h 0148 004h] Virtual Timer Flags (decoded below) : 00000000
+                                Trigger Mode : 0
+                                    Polarity : 0
+[098h 0152 004h] Common Flags (decoded below) : 00000000
+                                      Secure : 0
+                                   Always On : 0

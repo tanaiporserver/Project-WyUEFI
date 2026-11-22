@@ -1,0 +1,35 @@
+## @file
+#  NP05J BIOS Configuration Protocol DXE Driver.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jBiosConfigDxe
+  FILE_GUID                      = A1E45102-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = Np05jBiosConfigDxeEntry
+
+[Sources]
+  Np05jBiosConfigDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  Np05jBiosConfigLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gNp05jBiosConfigProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+
+[Depex]
+  gEfiVariableArchProtocolGuid AND gEfiVariableWriteArchProtocolGuid

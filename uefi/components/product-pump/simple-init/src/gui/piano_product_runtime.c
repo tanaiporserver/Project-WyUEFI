@@ -86,8 +86,29 @@ uint32_t piano_product_gui_wait(uint32_t milliseconds) {
   if(!milliseconds)return 0;
   /* LVGL can return UINT32_MAX when no timer is ready. Never turn it into an
    * unbounded Stall or synthetic advance of the animation clock. */
+#ifdef SUNUEFI_NP05J
+  // จำกัดช่วงรอไม่เกิน 4ms เพื่อให้ LVGL ตอบสนองทัชและการเลื่อนได้ในเฟรมถัดไปทันที
+  if(milliseconds>4)milliseconds=4;
+#else
   if(milliseconds>30)milliseconds=30;
+#endif
   Before=piano_product_gui_tick();
+#ifdef SUNUEFI_NP05J
+  // คุมเวลาตาม deadline จริงและใช้ slice 500us เพื่อให้ 125 FPS นิ่งไม่ overshoot และปั๊มทัช/USB ถี่ขึ้น
+  for(Slice=0;Slice<milliseconds*2;Slice++){
+#if defined(PIANO_PRODUCT_GUI_PUMP) && PIANO_PRODUCT_GUI_PUMP
+    if(!gui_run)break;
+    piano_product_gui_pump();
+    if(!gui_run)break;
+#endif
+    if(piano_product_gui_tick()-Before>=milliseconds)break;
+    if(gBS->Stall(500)!=EFI_SUCCESS){CpuDeadLoop();return 0;}
+#if defined(PIANO_PRODUCT_GUI_PUMP) && PIANO_PRODUCT_GUI_PUMP
+    if(!PianoProductPumpBootServicesAlive()){CpuDeadLoop();return 0;}
+#endif
+    if(piano_product_gui_tick()-Before>=milliseconds)break;
+  }
+#else
   for(Slice=0;Slice<milliseconds;Slice++){
 #if defined(PIANO_PRODUCT_GUI_PUMP) && PIANO_PRODUCT_GUI_PUMP
     if(!gui_run)break;
@@ -99,6 +120,7 @@ uint32_t piano_product_gui_wait(uint32_t milliseconds) {
     if(!PianoProductPumpBootServicesAlive()){CpuDeadLoop();return 0;}
 #endif
   }
+#endif
   After=piano_product_gui_tick();
   /* The old NO_TIMER diagnostic path uses only measured wait time. Product
    * custom_tick_get uses the complete elapsed clock directly. */

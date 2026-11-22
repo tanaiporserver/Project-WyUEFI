@@ -13,12 +13,23 @@ SURFACES={"boot_selection","SimpleInit","Setup","Shell"}
 
 
 def validate(data):
-    if data.get('schema')!=1 or data.get('artifact')!='PianoUEFI-product.img':raise ValueError('Wrong product identity')
+    artifact=data.get('artifact')
+    if data.get('schema')!=1 or artifact not in ('PianoUEFI-product.img','Np05jUEFI-product.img'):
+        raise ValueError('Wrong product identity')
+    is_np05j=artifact=='Np05jUEFI-product.img'
+    if is_np05j and data.get('device',{}).get('codename')!='nubia_np05j':
+        raise ValueError('Wrong np05j device codename')
     if data.get('shared_core') is not True or data.get('entry_policy_only') is not True:raise ValueError('Entries must share one core')
     if data.get('entry_points')!=['fastboot_boot','boot','recovery']:raise ValueError('Product entry list changed')
     features=data.get('features',{})
-    if set(features)!=FEATURES or any(value is not True for value in features.values()):
+    if set(features)!=FEATURES:
         raise ValueError('Product cannot omit or silently disable a required feature')
+    for name,value in features.items():
+        if is_np05j and name=='pogo_keyboard_touchpad':
+            if not isinstance(value,bool):
+                raise ValueError('Product cannot omit or silently disable a required feature')
+        elif value is not True:
+            raise ValueError('Product cannot omit or silently disable a required feature')
     boot=data.get('boot_policy',{})
     if boot.get('splash')!='TianoCore' or boot.get('default_application')!='SimpleInit' or boot.get('setup_key')!='F12' or \
        boot.get('setup_application')!='TianoCoreUiApp' or boot.get('diagnostic_reboot_timer') is not False:

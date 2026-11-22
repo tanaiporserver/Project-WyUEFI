@@ -106,7 +106,11 @@ STATIC EFI_STATUS LogConsole(CONST volatile UINT32 *Header,VOID *Context,PIANO_F
 }
 STATIC EFI_STATUS LogTail(VOID *Context,PIANO_FB_SEND Send) {
   // The command surface exposes only this fixed reserved console region.
+#ifdef SUNUEFI_NP05J
+  return LogConsole((CONST volatile UINT32 *)(UINTN)0xE4A00000,Context,Send);
+#else
   return LogConsole((CONST volatile UINT32 *)(UINTN)0xA3500000,Context,Send);
+#endif
 }
 STATIC EFI_STATUS ValidateNativeAbi(VOID) {
   // This native module is hash-verified by prepare_native_probe.py. Reject
@@ -236,6 +240,10 @@ EFI_STATUS PianoStartUsbDebug(VOID) {
   if(!EFI_ERROR(Status))Status=gBS->CreateEvent(EVT_TIMER|EVT_NOTIFY_SIGNAL,TPL_CALLBACK,Poll,NULL,&mPoll);
   if(!EFI_ERROR(Status))Status=gBS->SetTimer(mPoll,TimerPeriodic,100000);
   if(EFI_ERROR(Status)){PianoStopUsbDebug();return Status;}
+#ifdef SUNUEFI_NP05J
+  DEBUG((DEBUG_WARN,"SUNUEFI_FASTBOOT_READY vid=18d1 pid=d00d serial=SunUEFI-np05j policy=RAM-only\n"));
+#else
   DEBUG((DEBUG_WARN,"SUNUEFI_FASTBOOT_READY vid=18d1 pid=d00d serial=SunUEFI-piano policy=RAM-only\n"));
+#endif
   return EFI_SUCCESS;
 }

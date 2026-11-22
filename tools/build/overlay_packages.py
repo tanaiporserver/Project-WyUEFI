@@ -1,16 +1,20 @@
 """Collect and verify completed native packages before assembling product images."""
 import hashlib
 import json
+import lzma
 import os
 from pathlib import Path
 import re
 import shutil
 import stat
 import subprocess
+import tarfile
 import tempfile
 
 from build import overlay_release
 from build_piano_ram_bootstrap import guest_resolve
+from package.archive import debian_identity, pacman_identity, pacman_info
+from package.download import download_pacman
 import package_bsp
 
 
@@ -18,7 +22,16 @@ DEBIAN_SHARED = ('mesa', 'sensors', 'ffmpeg', 'libcamera', 'pipewire', 'qt_multi
                  'libwacom', 'bluez')
 DEBIAN_GNOME = ('gnome_power', 'mutter', 'gdm')
 ARCH_REPOSITORIES = {'nyarch-gnome': 'sunuefi', 'steamos': 'sunuefi-steamos'}
+PACMAN_CAMERA = ('libcamera', 'pipewire', 'plasma_camera')
+PACMAN_CAMERA_DEFAULTS = {
+    'libcamera': {'libcamera', 'libcamera-ipa', 'gst-plugin-libcamera'},
+    'pipewire': {'pipewire', 'libpipewire', 'pipewire-audio', 'alsa-card-profiles',
+                 'pipewire-libcamera', 'gst-plugin-pipewire'},
+}
+# Keep netJACK2 installed alongside Valve's audio split.
+STEAMOS_PIPEWIRE_RUNTIME = {'pipewire-netjack2'}
 STEAMOS_TUNED_RECIPES = ('ethtool', 'hdparm', 'python-linux-procfs', 'python-pyinotify', 'tuned')
+STEAMOS_WEBRTC_PACKAGE = 'webrtc-audio-processing'
 ARCH_BLUEZ = 'bluez-sunuefi'
 # Scope the pacman conflict approval to replacing the single BlueZ daemon.
 ARCH_BLUEZ_INSTALL_OPTIONS = ('--ask=4',)
@@ -31,19 +44,55 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def debian_identity(path):
-    output = subprocess.check_output(
-        ['dpkg-deb', '-f', path, 'Package', 'Version', 'Architecture'], text=True)
-    fields = dict(line.split(': ', 1) for line in output.splitlines())
-    return fields['Package'], fields['Version'], fields['Architecture']
+def pacman_firmware_aliases(archive, rows):
+    raw = [row['path'] for row, _ in rows]
+    if pacman_info(archive).get('backup') != raw:
+        raise ValueError('Firmware package must preserve the original files with pacman backup')
+    expected = {row['path'] + suffix: (suffix, data) for row, data in rows
+                for suffix in ('', *package_bsp.FIRMWARE_COMPRESSION_SUFFIXES)}
+    aliases = {}
+    command = ['zstd', '-qdc', archive]
+    with subprocess.Popen(command, stdout=subprocess.PIPE) as process:
+        with tarfile.open(fileobj=process.stdout, mode='r|') as contents:
+            for member in contents:
+                name = member.name.removeprefix('./')
+                if member.isdir() or not name.startswith(package_bsp.FIRMWARE_ROOT):
+                    continue
+                if name not in expected or not member.isfile() or member.mode != 0o644:
+                    raise ValueError('Unexpected file in firmware package: ' + name)
+                suffix, original = expected.pop(name)
+                data = contents.extractfile(member).read()
+                try:
+                    if suffix == '.xz':
+                        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+                        decoded = decoder.decompress(data, max_length=len(original) + 1)
+                        if not decoder.eof or decoder.check != lzma.CHECK_CRC32 or decoder.unused_data:
+                            raise ValueError('Invalid XZ stream for kernel firmware: ' + name)
+                    elif suffix == '.zst':
+                        decoded = subprocess.check_output(['zstd', '-qdc'], input=data)
+                    else:
+                        decoded = data
+                except (lzma.LZMAError, subprocess.CalledProcessError) as error:
+                    raise ValueError('Invalid compressed firmware: ' + name) from error
+                if decoded != original:
+                    raise ValueError('Firmware differs from the pinned source: ' + name)
+                if suffix:
+                    aliases[name] = {'path': name, 'type': 'file', 'mode': '0644',
+                                     'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command)
+    if expected:
+        raise ValueError('Firmware package is missing: ' + ', '.join(expected))
+    return aliases
 
 
 def bsp_package(directory, package_format, *, component='config'):
     """Read the exact common package sealed by the builder."""
     distro, archive_format, architecture = BSP_TARGETS[package_format]
-    expected = {'config': package_bsp.NAME, 'audio-topology': package_bsp.TOPOLOGY_PACKAGE,
-                'display-firmware': package_bsp.DISPLAY_PACKAGE,
-                'power-profiles': package_bsp.POWER_PROFILES_PACKAGE}[component]
+    stock_firmware = package_bsp.IMAGE_FIRMWARE.get(component)
+    expected = (stock_firmware[0] if stock_firmware else
+                {'config': package_bsp.NAME, 'audio-topology': package_bsp.TOPOLOGY_PACKAGE,
+                 'power-profiles': package_bsp.POWER_PROFILES_PACKAGE}[component])
     manifest = directory / 'manifest.json'
     if directory.is_symlink() or manifest.is_symlink() or (directory / '.incomplete').exists():
         raise ValueError('Device package did not complete: ' + str(directory))
@@ -75,13 +124,17 @@ def bsp_package(directory, package_format, *, component='config'):
                 payload[path]['sha256'] != TOPOLOGY_PIN or record.get('public_distribution') is not True):
             raise ValueError('Audio topology package differs from the release policy')
         metadata['firmware'] = payload[path]
-    if component == 'display-firmware':
-        manifest = package_bsp.DISPLAY_MANIFEST
-        _, rows = package_bsp.local_firmware_payload(manifest.parent, manifest, 'display firmware')
+    if stock_firmware is not None:
+        _, manifest = stock_firmware
+        description = component.replace('-', ' ')
+        _, rows = package_bsp.local_firmware_payload(manifest.parent, manifest, description)
         payload = {row['path']: {**row, 'bytes': len(data)} for row, data in rows}
-        if record.get('payload_files') != payload or record.get('public_distribution') is not False:
-            raise ValueError('Display calibration package differs from the fixed source or is not local')
+        published = expected in package_bsp.PUBLISHED_STOCK_FIRMWARE
+        if record.get('payload_files') != payload or record.get('public_distribution') is not published:
+            raise ValueError(description.capitalize() + ' package differs from the fixed source or publication policy')
         metadata['firmware'] = payload
+        if package_format == 'pacman' and published:
+            metadata['compressed_firmware'] = pacman_firmware_aliases(archive, rows)
     if component == 'power-profiles':
         payload = {row['path']: {**row, 'bytes': len(data)}
                    for row, data in package_bsp.power_profiles_payload()}
@@ -96,8 +149,11 @@ def build_bsp(directory, package_format, run=None, *, component='config', firmwa
                '--format', archive_format, '--output', directory]
     if component in ('audio-topology', 'power-profiles'):
         command.append('--' + component)
-    if component == 'display-firmware':
-        command.extend(('--display-firmware', firmware_source or package_bsp.DISPLAY_MANIFEST.parent))
+    if component in package_bsp.IMAGE_FIRMWARE:
+        package, manifest = package_bsp.IMAGE_FIRMWARE[component]
+        command.extend(('--' + component, firmware_source or manifest.parent))
+        if package not in package_bsp.PUBLISHED_STOCK_FIRMWARE:
+            command = ['env', '-u', overlay_release.ENVIRONMENT, *command]
     if run is None:
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
     else:
@@ -170,6 +226,9 @@ def verify_bsp_files(rootfs, package_format, *, component='config'):
 def debian_packages(sources):
     """Index the exact files accepted by the individual package builders."""
     verify_debian_camera_packages({name: record for name, (_, record) in sources.items()})
+    from desktop.build_fingerprint_packages import verify_debian_packages
+
+    verify_debian_packages(sources['fingerprint'][1])
     packages = {}
     for component, (folder, record) in sources.items():
         for name, info in record['packages'].items():
@@ -235,7 +294,9 @@ def verify_debian_camera_packages(components):
 
 def debian_package_selection(desktop, installed):
     """Select defaults and keep updating any optional packages already installed."""
+    from desktop.build_fingerprint_packages import LIBRARY as FINGERPRINT_LIBRARY
     from desktop.build_libcamera_packages import abi_version, policy
+    from desktop.build_kwin_package import DEFAULT as KWIN_DEFAULT
     from desktop.build_pipewire_packages import DEBIAN_DEFAULT
     from desktop.build_plasma_camera_package import PACKAGE
     from desktop.build_qt_multimedia_packages import DEBIAN_DEFAULT as QT_MULTIMEDIA_DEFAULT
@@ -244,7 +305,9 @@ def debian_package_selection(desktop, installed):
     defaults = {'libcamera': {f'libcamera{abi}', f'libcamera-ipa-{abi}', 'gstreamer1.0-libcamera'},
                 'pipewire': DEBIAN_DEFAULT | {'libspa-0.2-libcamera'},
                 'qt_multimedia': QT_MULTIMEDIA_DEFAULT if desktop == 'kde' else set(),
-                'plasma_camera': {PACKAGE} if desktop == 'kde' else set()}
+                'plasma_camera': {PACKAGE} if desktop == 'kde' else set(),
+                'fingerprint': {FINGERPRINT_LIBRARY},
+                'kwin': KWIN_DEFAULT if desktop == 'kde' else set()}
     return {name: values.union(installed) for name, values in defaults.items()}
 
 
@@ -294,12 +357,27 @@ def export(directory, target, repository, packages, components=None, *, build_in
 
 
 def read_debian(path, desktop):
+    from desktop.build_fingerprint_packages import verify_debian_packages
+
     manifest = json.loads(path.read_text())
     if (manifest.get('schema_version') != 1 or manifest.get('repo') != 'apt' or
             manifest.get('target') not in ('debian-gnome', 'debian-' + desktop)):
         raise ValueError('Use a completed Debian overlay package manifest for this desktop')
     components = {name: {'packages': {}} for name in DEBIAN_GNOME}
-    needed = (*DEBIAN_SHARED, 'fingerprint', *(DEBIAN_GNOME if desktop == 'gnome' else ()))
+    needed = [*DEBIAN_SHARED, 'fingerprint']
+    if desktop == 'gnome':
+        needed.extend(DEBIAN_GNOME)
+    # Once sid includes the fix, the builder uses Debian's original packages.
+    if 'kwin' in manifest['components']:
+        from desktop.build_kwin_package import RUNTIME as KWIN_PACKAGES
+
+        kwin = manifest['components']['kwin']
+        version = kwin['package_version']
+        if (set(kwin['packages']) != set(KWIN_PACKAGES) or
+                any(row['version'] != version or row['architecture'] != KWIN_PACKAGES[name]
+                    for name, row in kwin['packages'].items())):
+            raise ValueError('Invalid native KWin package set')
+        needed.append('kwin')
     packages = {}
     names = set()
     for component in needed:
@@ -321,57 +399,12 @@ def read_debian(path, desktop):
             packages[filename] = row
             names.add(name)
     verify_debian_camera_packages(components)
+    verify_debian_packages(components['fingerprint'])
     return components, packages
 
 
-def download_debian(rootfs, download, packages, run):
-    """Use APT's archive authentication and compare to the producer's bytes."""
-    account = run(['chroot', rootfs, 'getent', 'passwd', '_apt'],
-                  capture_output=True, text=True).stdout.split(':')
-    os.chown(download, int(account[2]), int(account[3]))
-    guest = '/' + download.relative_to(rootfs).as_posix()
-    # Restrict this download to the project source, including when the same
-    # package version also exists in Debian. Dependencies use the normal list.
-    run(['chroot', rootfs, 'sh', '-ec',
-         'cd "$1"; shift; exec apt-get -o Dir::Etc::sourcelist=sources.list.d/sunuefi.sources '
-         '-o Dir::Etc::sourceparts=- download "$@"',
-         'sunuefi-package-download', guest,
-         *[row['name'] + '=' + row['version'] for row in packages.values()]])
-    expected = {(row['name'], row['version'], row['architecture']): row['sha256']
-                for row in packages.values()}
-    paths = []
-    for archive in sorted(download.glob('*.deb')):
-        identity = debian_identity(archive)
-        if archive.is_symlink() or sha(archive) != expected.pop(identity, None):
-            raise ValueError('Downloaded package differs from the published generation: ' + archive.name)
-        paths.append(guest + '/' + archive.name)
-    if expected:
-        raise ValueError('Published APT source did not return the complete package set')
-    return paths
-
-
-def pacman_info(archive):
-    text = subprocess.check_output(['bsdtar', '-xOf', archive, '.PKGINFO'], text=True)
-    fields = {}
-    for line in text.splitlines():
-        if ' = ' in line:
-            name, value = line.split(' = ', 1)
-            fields.setdefault(name, []).append(value)
-    return fields
-
-
-def pacman_identity(archive):
-    fields = pacman_info(archive)
-    names = ('pkgname', 'pkgver', 'arch')
-    if any(len(fields.get(name, ())) != 1 for name in names):
-        raise ValueError('Missing or repeated identity in ' + archive.name)
-    return tuple(fields[name][0] for name in names)
-
-
-def pacman_packages(rootfs, sources):
+def pacman_packages(rootfs, target, sources):
     """Collect exact package files from checked makepkg records, not cache globs."""
-    installed = dict(line.split(maxsplit=1) for line in subprocess.check_output(
-        ['chroot', rootfs, 'pacman', '-Q'], text=True).splitlines())
     result, names = {}, set()
     for component, (folder, rows) in sources.items():
         for filename, record in rows.items():
@@ -380,7 +413,7 @@ def pacman_packages(rootfs, sources):
                     path.is_symlink() or not path.is_file() or sha(path) != record['sha256']):
                 raise ValueError('Invalid completed pacman package: ' + filename)
             name, version, architecture = pacman_identity(path)
-            if installed.get(name) != version or architecture not in ('aarch64', 'any'):
+            if architecture not in ('aarch64', 'any'):
                 raise ValueError('Completed pacman package does not match the builder: ' + filename)
             if not overlay_release.uses_pacman_generation(version):
                 raise ValueError('Rebuilt pacman package has no current publication revision: ' + filename)
@@ -389,6 +422,11 @@ def pacman_packages(rootfs, sources):
             result[filename] = (path, {'name': name, 'version': version, 'architecture': architecture,
                                       'sha256': record['sha256'], 'component': component})
             names.add(name)
+    listing = subprocess.check_output(['chroot', rootfs, 'pacman', '-Q'], text=True)
+    installed = {line.split(maxsplit=1)[0] for line in listing.splitlines()}
+    selected = pacman_image_packages(
+        target, {filename: row for filename, (_, row) in result.items()}, installed)
+    verify_pacman_versions(selected, listing)
     return result
 
 
@@ -397,6 +435,53 @@ def pacman_outputs(directory):
     if not record.get('packages') or (directory / '.incomplete').exists():
         raise ValueError('Use a completed pacman package directory: ' + str(directory))
     return directory, record['packages']
+
+
+def build_pacman_camera(rootfs, output, *, plasma):
+    """Build the camera clients against one set of native libcamera archives."""
+    records, packages = {}, {}
+    for component in PACMAN_CAMERA:
+        if component == 'plasma_camera' and not plasma:
+            continue
+        directory = output / component.replace('_', '-')
+        inputs = ['--libcamera-packages', output / 'libcamera'] if component != 'libcamera' else []
+        subprocess.run([package_bsp.ROOT / 'build.sh', directory.name, '--rootfs', rootfs,
+                        '--output', directory, *inputs], check=True)
+        records[component] = json.loads((directory / 'SOURCE.json').read_text())
+        packages[component] = pacman_outputs(directory / 'runtime')
+    return records, packages
+
+
+def verify_pacman_camera_packages(target, packages, components):
+    from desktop import libcamera_arch, pipewire_arch
+
+    distro = 'steamos' if target == 'steamos' else 'arch'
+    expected = {
+        'libcamera': libcamera_arch.STEAMOS_PACKAGES if distro == 'steamos' else libcamera_arch.PACKAGES,
+        'pipewire': PACMAN_CAMERA_DEFAULTS['pipewire'] | (STEAMOS_PIPEWIRE_RUNTIME if distro == 'steamos' else set()),
+        'plasma_camera': {'plasma-camera'},
+    }
+    for component, names in expected.items():
+        record = components.get(component, {})
+        version = record.get('package_version')
+        entries = {
+            row['name']: {'file': filename, 'version': row['version'],
+                          'architecture': row['architecture'], 'sha256': row['sha256']}
+            for filename, row in packages.items() if row['component'] == component
+        }
+        if (record.get('packages_built') is not True or record.get('package_format') != 'pacman' or
+                record.get('target') != distro or not version or entries != record.get('packages') or
+                not names <= entries.keys() or (component != 'pipewire' and set(entries) != names) or
+                any(row['version'] != version or row['architecture'] != 'aarch64'
+                    for row in entries.values())):
+            raise ValueError(f'{target}: incomplete or inconsistent native {component} packages')
+    if any(row['name'] == pipewire_arch.V4L2_PACKAGE for row in packages.values()):
+        raise ValueError(f'{target}: standalone V4L2 plugin conflicts with native PipeWire')
+    library = components['libcamera']['packages']
+    inputs = {name: library[name] for name in libcamera_arch.RUNTIME_INPUTS}
+    for component in ('pipewire', 'plasma_camera'):
+        if components[component].get('build_dependencies') != inputs:
+            raise ValueError(f'{target}: {component} was not built with this libcamera package set')
 
 
 def read_pacman(path, target):
@@ -415,29 +500,30 @@ def read_pacman(path, target):
                 row['architecture'] not in ('aarch64', 'any')):
             raise ValueError('Invalid pacman overlay package record: ' + filename)
         names.add(name)
-    expected = {'libfprint', 'fprintd', 'ffmpeg', 'libwacom', 'libssc',
-                'iio-sensor-proxy', 'fastrpc', 'pipewire-v4l2-source', 'gst-plugin-pipewire'}
-    expected.update(('deckard-mesa-linux-aarch64', 'gamescope', 'steamos-manager', 'gtk3', 'ibus')
+    expected = {'libfprint', 'ffmpeg', 'libwacom', 'libssc', 'iio-sensor-proxy', 'fastrpc'}
+    expected.update(('deckard-mesa-linux-aarch64', 'gamescope', 'steamos-manager', 'gtk3', 'ibus', 'fprintd')
                     if target == 'steamos' else (
                         'mesa', 'gdm', 'mutter', 'gnome-settings-daemon', ARCH_BLUEZ))
     if target == 'steamos':
-        expected.update((*STEAMOS_TUNED_RECIPES, 'tuned-ppd'))
+        expected.update((*STEAMOS_TUNED_RECIPES, 'tuned-ppd', STEAMOS_WEBRTC_PACKAGE))
+    elif 'fprintd' in names:
+        raise ValueError('Arch Linux ARM uses fprintd from its distribution repository')
     if not expected <= names:
         raise ValueError('Incomplete native overlay package set')
-    return repo, manifest['packages'], manifest.get('components', {})
+    components = manifest.get('components', {})
+    verify_pacman_camera_packages(target, manifest['packages'], components)
+    return repo, manifest['packages'], components
 
 
-def download_pacman(rootfs, folder, repository, packages, guest, *, install_options=()):
-    """Download from the named repository and verify every expected payload."""
-    cache = '/' + folder.relative_to(rootfs).as_posix()
-    targets = [repository + '/' + row['name'] + '=' + row['version'] for row in packages.values()]
-    options = ['--noconfirm', *install_options, '--cachedir', cache, *targets]
-    guest(['pacman', '-Sw', *options])
-    for name, row in packages.items():
-        path = folder / name
-        if path.is_symlink() or not path.is_file() or sha(path) != row['sha256']:
-            raise ValueError('Downloaded pacman package differs from the published generation: ' + name)
-    return options
+def pacman_image_packages(target, packages, installed):
+    """Install defaults and upgrade already installed splits; publish the rest."""
+    defaults = {**PACMAN_CAMERA_DEFAULTS,
+                'plasma_camera': {'plasma-camera'} if target == 'steamos' else set()}
+    if target == 'steamos':
+        defaults['pipewire'] = defaults['pipewire'] | STEAMOS_PIPEWIRE_RUNTIME
+    return {archive: row for archive, row in packages.items()
+            if row['component'] not in defaults or row['name'] in installed
+            or row['name'] in defaults[row['component']]}
 
 
 def install_pacman(rootfs, folder, repository, packages, guest, *, overwrite=(),
@@ -507,8 +593,8 @@ def pacman_build_mode(args, target, project):
     return output, package_output, published
 
 
-def fingerprint_pacman_packages(rootfs, output, kernel_source, kernel_build, commit):
-    from build_piano_fingerprint import install_desktop, prepare_desktop_backend
+def fingerprint_pacman_packages(rootfs, output, kernel_source, kernel_build, commit, *, steamos):
+    from build_piano_fingerprint import install_pacman_desktop, prepare_desktop_backend
     from build_release_helpers import export_uapi
 
     with tempfile.TemporaryDirectory(prefix='sunuefi-fingerprint-', dir=output.parent) as temporary:
@@ -516,8 +602,8 @@ def fingerprint_pacman_packages(rootfs, output, kernel_source, kernel_build, com
         uapi = work / 'uapi'
         export_uapi(kernel_source, kernel_build, commit, uapi)
         prepare_desktop_backend(work, uapi)
-        install_desktop(rootfs, work, output)
-    return {name: pacman_outputs(output / name) for name in ('libfprint', 'fprintd')}
+        names = install_pacman_desktop(rootfs, work, output, steamos=steamos)
+    return {name: pacman_outputs(output / name) for name in names}
 
 
 def install_arch_overlays(rootfs, kernel, target, published):
@@ -530,6 +616,8 @@ def install_arch_overlays(rootfs, kernel, target, published):
     archive, bsp = shared_bsp('pacman')
     topology_archive, topology = shared_topology('pacman')
     power_archive, power = shared_bsp('pacman', component='power-profiles')
+    keyboard_archive, keyboard = shared_bsp('pacman', component='keyboard-firmware')
+    touch_archive, touch = shared_bsp('pacman', component='touch-firmware')
     check_topology_conflicts(rootfs, topology)
     install(rootfs, 'pacman', kernel, published=True)
     install_repository(rootfs, target == 'steamos')
@@ -540,25 +628,29 @@ def install_arch_overlays(rootfs, kernel, target, published):
         work = Path(temporary)
         work.chmod(0o755)
         guest(['pacman', '-Sy', '--noconfirm'])
-        common = {archive.name: bsp, topology_archive.name: topology, power_archive.name: power}
+        installed = set(guest(['pacman', '-Qq'], text=True, capture_output=True).stdout.splitlines())
+        selected = pacman_image_packages(target, packages, installed)
+        common = {archive.name: bsp, topology_archive.name: topology,
+                  power_archive.name: power, keyboard_archive.name: keyboard, touch_archive.name: touch}
         if repository == 'sunuefi':
-            bluez = {name: row for name, row in packages.items() if row['name'] == ARCH_BLUEZ}
+            bluez = {name: row for name, row in selected.items() if row['name'] == ARCH_BLUEZ}
             if bluez:
                 install_pacman(rootfs, work, repository, bluez, guest,
                                install_options=ARCH_BLUEZ_INSTALL_OPTIONS)
-            shared = {name: row for name, row in packages.items() if name not in bluez}
+            shared = {name: row for name, row in selected.items() if name not in bluez}
             install_pacman(rootfs, work, repository, {**shared, **common}, guest,
                            overwrite=matching_power_files(rootfs))
+            guest(['pacman', '-S', '--needed', '--noconfirm', 'extra/fprintd'])
         else:
             remove_steamos_power_profiles_daemon(rootfs, guest)
             # The common profiles pull in the Valve TuneD packages. Verify
             # those archives before the common package transaction uses them.
-            options = download_pacman(rootfs, work, repository, packages, guest)
+            options = download_pacman(rootfs, work, repository, selected, guest)
             install_pacman(rootfs, work, 'sunuefi', common, guest,
                            overwrite=matching_power_files(rootfs))
             guest(['pacman', '-S', *options])
-    return {**components, 'device_configuration': bsp, 'audio_topology_package': topology,
-            'power_profiles_package': power}
+    return ({**components, 'device_configuration': bsp, 'audio_topology_package': topology,
+             'power_profiles_package': power}, selected)
 
 
 def install_local_arch_power_profiles(rootfs):

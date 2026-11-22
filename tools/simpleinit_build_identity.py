@@ -28,11 +28,16 @@ PRODUCT_NAVIGATION_SOURCES = (
 )
 
 
+def product_navigation_sources(device='piano'):
+    static_cfg = 'config/simpleinit.np05j.uefi.cfg' if device == 'np05j' else 'config/simpleinit.static.uefi.cfg'
+    return tuple(static_cfg if p == 'config/simpleinit.static.uefi.cfg' else p for p in PRODUCT_NAVIGATION_SOURCES)
+
+
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def inspect(build, output, product):
+def inspect(build, output, product, device='piano'):
     from firmware_workspace import active_root
     root=active_root(ROOT) if product else ROOT
     manifest=json.loads((build/'source-manifest.json').read_text())
@@ -40,7 +45,7 @@ def inspect(build, output, product):
         raise ValueError('wrong SimpleInit product/default build mode')
     sources=manifest.get('owned_sources')
     if not isinstance(sources,dict)or not sources:raise ValueError('SimpleInit owned source fingerprint missing')
-    if product and any(relative not in sources for relative in PRODUCT_NAVIGATION_SOURCES):
+    if product and any(relative not in sources for relative in product_navigation_sources(device)):
         raise ValueError('SimpleInit product navigation source fingerprint missing')
     for relative,digest in sources.items():
         path=root/relative
@@ -70,6 +75,8 @@ def inspect(build, output, product):
     else:
         if null not in report_text or real in report_text or link_null not in main_text or link_real in main_text or '-DPIANO_PRODUCT_GUI_PUMP=1' in gui_text:
             raise ValueError('actual diagnostic build did not bind Null/disabled GUI pump')
+    if device == 'np05j' and '-DSUNUEFI_NP05J=1' not in main_text:
+        raise ValueError('actual NP05J build omitted -DSUNUEFI_NP05J=1 macro')
     built=base/'SimpleInitMain.efi';exported=output/'SimpleInit.efi'
     if sha(built)!=sha(exported):raise ValueError('exported application differs from actual build output')
     return {'product_gui_pump':product,'application_bytes':exported.stat().st_size,'application_sha256':sha(exported),
@@ -84,7 +91,8 @@ def main():
     parser.add_argument('--build-dir',type=Path,required=True)
     parser.add_argument('--output-dir',type=Path,required=True)
     parser.add_argument('--product-gui-pump',action='store_true')
-    args=parser.parse_args();record=inspect(args.build_dir,args.output_dir,args.product_gui_pump)
+    parser.add_argument('--device',choices=('piano','np05j'),default='piano')
+    args=parser.parse_args();record=inspect(args.build_dir,args.output_dir,args.product_gui_pump,args.device)
     marker=args.output_dir/'build-ok.json'
     if args.operation=='seal':marker.write_text(json.dumps(record,indent=2)+'\n')
     elif json.loads(marker.read_text())!=record:raise ValueError('sealed SimpleInit build identity is stale')

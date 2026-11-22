@@ -121,6 +121,7 @@ def unbind_memory_map(text):
 
 def prepare(root=ROOT,target=None):
     root=Path(root);target=Path(target) if target else root/'uefi/platforms/pianoProductPkg'
+    pkg_name=target.name;stem=pkg_name.removesuffix('Pkg')
     source=root/'upstream/Mu-Silicium/Silicon/Silicium/SiliciumPkg/Sec'
     inputs,actual=source_inputs(source)
     transformed=sec_source(inputs['Sec.c'].decode());shim_sha=bootshim_digest(root)
@@ -132,7 +133,7 @@ def prepare(root=ROOT,target=None):
     # always carry it and bind the only actual MemoryPeim descriptor provider.
     if memory_map.exists():
         memory_map.write_text(bind_memory_map(memory_map.read_text()))
-    dsc=target/'pianoProduct.dsc';fdf=target/'pianoProduct.fdf'
+    dsc=target/(stem+'.dsc');fdf=target/(stem+'.fdf')
     dsc_text=dsc.read_text();fdf_text=fdf.read_text()
     original='  INF SiliciumPkg/Sec/Sec.inf'
     if fdf_text.count(original)!=1:
@@ -146,11 +147,11 @@ def prepare(root=ROOT,target=None):
     for name in EARLY_CORE_FILES:
         shutil.copyfile(core_source(name, root),destination/name)
     (destination/'Sec.inf').write_text(sec_inf(inputs['Sec.inf'].decode()))
-    dsc.write_text(dsc_text+'\n[Components]\n  pianoProductPkg/Sec/Sec.inf {\n'
+    dsc.write_text(dsc_text+'\n[Components]\n  '+pkg_name+'/Sec/Sec.inf {\n'
         '    <LibraryClasses>\n'
         '      NULL|MdeModulePkg/Library/LzmaCustomDecompressLib/LzmaCustomDecompressLib.inf\n'
         '  }\n')
-    fdf.write_text(fdf_text.replace(original,'  INF pianoProductPkg/Sec/Sec.inf',1))
+    fdf.write_text(fdf_text.replace(original,'  INF '+pkg_name+'/Sec/Sec.inf',1))
     # Header is shared with the consumer; observer implementation lives only in
     # SEC and cannot accidentally link into a DXE app as a second initializer.
     app=target/'Applications/ProductCore'
@@ -179,6 +180,7 @@ def prepare(root=ROOT,target=None):
 
 def verify(root,target,record):
     root,target=Path(root),Path(target)
+    pkg_name=target.name;stem=pkg_name.removesuffix('Pkg')
     source=root/'upstream/Mu-Silicium/Silicon/Silicium/SiliciumPkg/Sec'
     inputs,actual=source_inputs(source)
     if record.get('source_files')!=actual or record.get('sec_source_sha256')!=actual['Sec.c'] or record.get('sec_inf_sha256')!=actual['Sec.inf']:
@@ -204,11 +206,11 @@ def verify(root,target,record):
     for name,digest in expected.items():
         path=target/name
         if path.is_symlink()or not path.is_file()or sha(path)!=digest:raise ValueError('Cold SEC compiled copy stale: '+name)
-    fdf=(target/'pianoProduct.fdf').read_text()
-    if fdf.count('  INF pianoProductPkg/Sec/Sec.inf')!=1 or '  INF SiliciumPkg/Sec/Sec.inf'in fdf:
+    fdf=(target/(stem+'.fdf')).read_text()
+    if fdf.count('  INF '+pkg_name+'/Sec/Sec.inf')!=1 or '  INF SiliciumPkg/Sec/Sec.inf'in fdf:
         raise ValueError('Product FDF must bind the sole actual cold SEC observer')
-    dsc=(target/'pianoProduct.dsc').read_text()
-    if dsc.count('  pianoProductPkg/Sec/Sec.inf {')!=1:raise ValueError('Product DSC omits or duplicates cold SEC')
+    dsc=(target/(stem+'.dsc')).read_text()
+    if dsc.count('  '+pkg_name+'/Sec/Sec.inf {')!=1:raise ValueError('Product DSC omits or duplicates cold SEC')
     if app.exists():
         header=app/'PianoEarlyMemory.h'
         if not header.is_file()or sha(header)!=sha(root/'uefi/handoff/early-memory/PianoEarlyMemory.h'):

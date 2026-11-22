@@ -12,6 +12,7 @@
 #include "PianoUfsProductVolume.h"
 #include "PianoProductSmem.h"
 #include "PianoReset.h"
+#include "PianoExt4.h"
 #include "PianoNvFile.h"
 #include "PianoBluetoothAddress.h"
 #include "PianoRtcOffset.h"
@@ -23,8 +24,12 @@
 #include "PianoFrameBufferMappingObserve.h"
 #include "PianoDisplayClockObserve.h"
 #include "PianoProductDisplayOwner.h"
+#ifdef SUNUEFI_NP05J
+#include "Np05jTouchService.h"
+#else
 #include "PianoPogoService.h"
 #include "PianoTouchService.h"
+#endif
 #include "LateHandoff/PianoLateHandoff.h"
 #include "LateHandoff/PianoDeviceTreeFixup.h"
 #include <Guid/EventGroup.h>
@@ -59,7 +64,9 @@ STATIC BOOLEAN mUfsAttempted,mUfsStarted,mInputStarted;
 STATIC EFI_STATUS mUfsStatus=EFI_NOT_STARTED;
 STATIC UINT64 mCounterFrequency,mCounterStart,mCounterEnd;
 STATIC PIANO_RAM_PARTITION_REPORT mRamInventory;
+#ifndef SUNUEFI_NP05J
 STATIC PIANO_UFS_PRODUCT_VOLUME mProductVolume;
+#endif
 STATIC PIANO_PRODUCT_DISPLAY_STARTUP_REPORT mDisplayStartup;
 STATIC PIANO_SMMU_RETIRED_USB_PROOF mStartupUsbProof;
 STATIC UINT32 mStartupTarget;
@@ -194,8 +201,12 @@ STATIC EFI_STATUS ProductDebugReplay(VOID *Context) {
   DEBUG((DEBUG_WARN,"PIANO_EFI_IMAGE_SAVED stage=%a status=%r\n",mEfiImageStage,mEfiImageStatus));
   PianoProductMemoryReemitDiagnostic();
   PianoLateHandoffReemitDiagnostic(&mLateHandoff);
+#ifdef SUNUEFI_NP05J
+  Np05jTouchReplay();
+#else
   PianoTouchReplay();
   PianoPogoReplay();
+#endif
   if(PianoProductDisplayRetained())return Display==EFI_SUCCESS?EFI_COMPROMISED_DATA:Display;
   if(PianoDisplaySmmuRetained())return Translation==EFI_SUCCESS?EFI_COMPROMISED_DATA:Translation;
   if(PianoFrameBufferMappingRetained())return CpuMapping==EFI_SUCCESS?EFI_COMPROMISED_DATA:CpuMapping;
@@ -380,8 +391,13 @@ STATIC EFI_STATUS StopInput(VOID *Context,PIANO_PRODUCT_INPUT_RETIRE_REPORT *Rep
 STATIC VOID RetireCoreAction(VOID) {
   EFI_STATUS Status=PianoProductOwnersResolveReturnedAction(&mOwners);
   if(Status!=EFI_SUCCESS)FailStop(Status);
+#ifdef SUNUEFI_NP05J
+  (VOID)PianoProductBootLogMessage(L"Handing Off System",L"Saving settings and closing storage",EFI_SUCCESS,FALSE);
+  mHandoffStage="owners-retire";mHandoffFailure=L"System resources failed to exit safely";
+#else
   (VOID)PianoProductBootLogMessage(L"正在交接系统",L"正在保存设置并关闭存储",EFI_SUCCESS,FALSE);
   mHandoffStage="owners-retire";mHandoffFailure=L"系统资源未能安全退出";
+#endif
   Status=PianoProductOwnersRetire(&mOwners);
   if(Status!=EFI_SUCCESS || !mOwners.Report.Clean)FailStop(Status);
 }
@@ -401,6 +417,19 @@ STATIC EFI_STATUS CompleteCoreAction(EFI_HANDLE Image) {
   }
   if(mOwners.Report.AllowedAction==PianoUsbServiceActionBoot){
     CONST PIANO_RAW_LINUX_REPORT *Raw=NULL;
+#ifdef SUNUEFI_NP05J
+    mHandoffStage="linux-prepare";mHandoffFailure=L"Linux kernel or device tree unavailable";
+    Status=PianoRawLinuxPrepare(&mOwners,Image,Image,&Raw);
+    if(Status!=EFI_SUCCESS&&BootLogAlive()){
+      PIANO_PRODUCT_MEMORY_DIAGNOSTIC Memory;PianoProductMemoryGetDiagnostic(&Memory);
+      if(EFI_ERROR(Memory.CaptureStatus)&&Memory.CaptureStatus!=EFI_NOT_STARTED)mHandoffFailure=L"Unable to read device memory layout";
+      else if(EFI_ERROR(Memory.DtbStatus)&&Memory.DtbStatus!=EFI_NOT_STARTED)mHandoffFailure=L"Device tree memory or reserved regions mismatch";
+      DEBUG((DEBUG_ERROR,"PIANO_LINUX_PREPARE_FAILED status=%r memory=%a/%r dtb=%a/%r\n",
+        Status,Memory.CaptureStage,Memory.CaptureStatus,Memory.DtbStage,Memory.DtbStatus));
+    }
+    if(Status==EFI_SUCCESS){mHandoffStage="linux-arm";mHandoffFailure=L"System handoff verification failed";Status=PianoLateHandoffArmRaw(&mLateHandoff,Image,Raw);}
+    if(Status==EFI_SUCCESS){mHandoffStage="linux-enter";mHandoffFailure=L"Unable to exit firmware boot services";Status=PianoRawLinuxEnter(Raw);}
+#else
     mHandoffStage="linux-prepare";mHandoffFailure=L"Linux 内核或设备树不可用";
     Status=PianoRawLinuxPrepare(&mOwners,Image,Image,&Raw);
     if(Status!=EFI_SUCCESS&&BootLogAlive()){
@@ -412,6 +441,7 @@ STATIC EFI_STATUS CompleteCoreAction(EFI_HANDLE Image) {
     }
     if(Status==EFI_SUCCESS){mHandoffStage="linux-arm";mHandoffFailure=L"系统交接检查失败";Status=PianoLateHandoffArmRaw(&mLateHandoff,Image,Raw);}
     if(Status==EFI_SUCCESS){mHandoffStage="linux-enter";mHandoffFailure=L"无法退出固件服务";Status=PianoRawLinuxEnter(Raw);}
+#endif
     FailStop(Status==EFI_SUCCESS?EFI_ABORTED:Status);
   }
   FailStop(EFI_UNSUPPORTED);
@@ -510,7 +540,11 @@ STATIC VOID EFIAPI InstalledSystemWatchdogExpired(UINT64 Time) {
   if(BootLogAlive() && !PianoProductDisplayRetained() && !PianoDisplaySmmuRetained() &&
      !PianoFrameBufferMappingRetained() && !PianoDisplayClockRetained() &&
      !PianoProductDisplayOwnerRetained())
+#ifdef SUNUEFI_NP05J
+    (VOID)PianoProductBootLogMessage(L"Boot Timeout",L"OS bootloader did not respond",EFI_TIMEOUT,TRUE);
+#else
     (VOID)PianoProductBootLogMessage(L"启动超时",L"系统引导程序未响应",EFI_TIMEOUT,TRUE);
+#endif
 #ifdef __aarch64__
   __asm__ volatile("msr daifset, #15" ::: "memory");
 #endif
@@ -523,7 +557,11 @@ STATIC EFI_STATUS PrepareInstalledSystem(CONST EFI_DEVICE_PATH_PROTOCOL *Path) {
   mLinuxActive=TRUE;
   mEfiImageStage="not-started";
   mEfiImageStatus=EFI_NOT_STARTED;
+#ifdef SUNUEFI_NP05J
+  (VOID)PianoProductBootLogMessage(L"Booting System",L"Please wait...",EFI_SUCCESS,FALSE);
+#else
   (VOID)PianoProductBootLogMessage(L"正在启动系统",L"请稍候",EFI_SUCCESS,FALSE);
+#endif
   return EFI_SUCCESS;
 }
 STATIC VOID FinishInstalledSystemAttempt(EFI_STATUS Status) {
@@ -565,14 +603,22 @@ STATIC BOOLEAN CanTryNextInstalledSystem(EFI_STATUS Status) {
 STATIC EFI_STATUS ReturnToBootMenu(EFI_STATUS Status,CONST CHAR16 *Title,CONST CHAR16 *Detail) {
   if(Title && Detail){
     (VOID)PianoProductBootLogMessage(Title,Detail,Status,FALSE);
+#ifdef SUNUEFI_NP05J
+    gBS->Stall(1200000);
+#else
     gBS->Stall(2000000);
+#endif
   }
   EFI_STATUS Cancel=PianoBootPolicyCancelExit();
   if(Cancel!=EFI_SUCCESS)FailStop(Cancel);
   return EFI_NOT_READY;
 }
 STATIC EFI_STATUS StartInstalledLinux(EFI_HANDLE Image){
+#ifdef SUNUEFI_NP05J
+  mHandoffStage="linux-boot-manager";mHandoffFailure=L"Failed to load or hand off OS bootloader";
+#else
   mHandoffStage="linux-boot-manager";mHandoffFailure=L"系统引导程序未能加载或交接";
+#endif
   mEfiImageStage="not-started";mEfiImageStatus=EFI_NOT_STARTED;
   CONST PIANO_BOOT_POLICY_REPORT *Policy=PianoBootPolicyReport();
   PIANO_BOOT_DISPATCH Dispatch={.Selection=Policy->BootSelection,.Number=Policy->BootOptionNumber,
@@ -597,6 +643,23 @@ STATIC EFI_STATUS StartInstalledLinux(EFI_HANDLE Image){
   // failed local boot must never create another menu/countdown automatically.
   Status=PianoProductOwnersResolveReturnedAction(&mOwners);
   if(Status==EFI_NOT_READY){
+#ifdef SUNUEFI_NP05J
+    if(Dispatch.SystemBlocked){
+      if(LinuxStatus==EFI_NOT_READY)return ReturnToBootMenu(LinuxStatus,L"USB Device In Use",L"Unplug the USB cable and try again");
+      FailStop(LinuxStatus);
+    }
+    if(Dispatch.Selection==PianoBootAutomatic && !Dispatch.StartedSystem){
+      return LinuxStatus==EFI_NOT_FOUND?ReturnToBootMenu(LinuxStatus,NULL,NULL):
+        ReturnToBootMenu(LinuxStatus,L"Unable to Boot from Boot Order",L"Returned to menu, please check boot entries");
+    }
+    // บน NP05J หากผู้ใช้กด Boot Linux แต่ยังไม่ได้ติดตั้ง Linux ใน sunuefi_esp ให้กลับเมนูแทนการค้างในหน้า Failure
+    if(LinuxStatus==EFI_NOT_FOUND)
+      return ReturnToBootMenu(LinuxStatus,L"Linux Not Found",L"Install Linux to sunuefi_esp or choose another entry");
+    if(mEfiImageStatus!=EFI_SUCCESS&&mEfiImageStatus!=EFI_NOT_STARTED)
+      mHandoffFailure=L"Linux boot verification failed, update firmware and boot image";
+    else if(LinuxStatus==EFI_TIMEOUT)mHandoffFailure=L"Timed out reading Linux boot image";
+    else if(LinuxStatus==EFI_UNSUPPORTED||LinuxStatus==EFI_LOAD_ERROR)mHandoffFailure=L"Unsupported Linux boot image format, please update image";
+#else
     if(Dispatch.SystemBlocked){
       if(LinuxStatus==EFI_NOT_READY)return ReturnToBootMenu(LinuxStatus,L"USB 设备仍在使用",L"请拔下 USB 设备后重试");
       FailStop(LinuxStatus);
@@ -610,12 +673,16 @@ STATIC EFI_STATUS StartInstalledLinux(EFI_HANDLE Image){
     else if(LinuxStatus==EFI_NOT_FOUND)mHandoffFailure=L"未找到 Linux，请更新启动镜像";
     else if(LinuxStatus==EFI_TIMEOUT)mHandoffFailure=L"读取 Linux 启动镜像超时";
     else if(LinuxStatus==EFI_UNSUPPORTED||LinuxStatus==EFI_LOAD_ERROR)mHandoffFailure=L"Linux 启动镜像格式不受支持，请更新镜像";
+#endif
     FailStop(LinuxStatus);
   }
   return Status;
 }
 EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *SystemTable) {
   if(Image==NULL || SystemTable==NULL)return EFI_INVALID_PARAMETER;
+#ifdef SUNUEFI_NP05J
+  DEBUG((DEBUG_WARN,"SUNUEFI_RAMLOG_BEGIN\n"));
+#endif
   BootLogStart();
   // Use the device tree from the validated BootShim handoff.
   PIANO_PRODUCT_PAYLOAD_VIEW Source={0};CONST VOID *Fdt=NULL;
@@ -668,6 +735,9 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
   Status=PianoStartKeys(Fdt);mInputStarted=Status==EFI_SUCCESS;BootLogStage("INPUT",Status);
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_INPUT_START status=%r started=%u\n",Status,mInputStarted));
   if(Status!=EFI_SUCCESS)FailStop(Status);
+  // UFS connects its partitions as soon as it publishes the disk handles.
+  Status=PianoExt4Register(Image,SystemTable);
+  DEBUG((DEBUG_WARN,"PIANO_EXT4_DRIVER_BINDING status=%r\n",Status));
   // The actual probe owns the clock/GDSC bring-up before the persistent UFS
   // action. Product never relies on an inherited ABL clock being sufficient.
   BootLogStage("UFS",EFI_NOT_STARTED);
@@ -676,6 +746,7 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
   if(mStartupTarget==1)(VOID)PianoProductDisplayCheckpoint("AFTER UFS",3);
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_UFS_START attempted=%u status=%r started=%u original_media_readonly=1\n",mUfsAttempted,mUfsStatus,mUfsStarted));
   if(!mUfsAttempted || !mUfsStarted){mBootLogStage=PianoUfsStartupStage();FailStop(mUfsStatus);}
+#ifndef SUNUEFI_NP05J
   PIANO_UFS_WINDOW_IO ProductStorageIo={0};
   mBootLogStage="UFS VOLUME";
   Status=PianoUfsProductTransportIo(&mProductVolume,&ProductStorageIo);
@@ -690,6 +761,11 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
     DEBUG((DEBUG_WARN,"PIANO_PRODUCT_STORAGE_FAT_PUBLISHED writable=1 container_headers_excluded=1 nv_slots_private=1\n"));
   } else if(Status!=EFI_NOT_FOUND)FailStop(Status);
   mBootLogStage="UFS";
+#else
+  // ข้าม legacy PianoUEFI Storage volume (รูปทรง LUN4 เฉพาะของ piano) บน NP05J
+  // โดยยังคงใช้พาร์ติชันมาตรฐาน persist / sunuefi_esp / sunuefi_root ผ่าน GPT/BlockIO
+  DEBUG((DEBUG_WARN,"NP05J_PRODUCT_STORAGE_LEGACY_VOLUME skipped=1 readonly_originals=1 format_performed=0\n"));
+#endif
   Status=PianoNvFileStart();
   DEBUG((DEBUG_WARN,"PIANO_NV_FILE_BACKEND status=%r\n",Status));
   (VOID)PianoBluetoothAddressInitialize();
@@ -728,6 +804,17 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
   if(Status!=EFI_SUCCESS || Runtime==NULL || Runtime->Revision!=PIANO_PRODUCT_RUNTIME_REVISION)FailStop(EFI_NOT_READY);
   // Keyboard and touchscreen are only armed here; their first hardware access
   // happens in the shared pump after the owner ledger below registers them
+#ifdef SUNUEFI_NP05J
+  EFI_STATUS TouchStart=Np05jTouchStart(Fdt);BOOLEAN TouchStarted=TouchStart==EFI_SUCCESS;
+  DEBUG((DEBUG_WARN,"NP05J_PRODUCT_TOUCH_START status=%r owner=%u\n",TouchStart,TouchStarted));
+  // NP05J ใช้ GPIO bit-bang SPI4 ไม่มี Pogo หรือ GPI DMA จึงตั้ง OWNER_POGO และ OWNER_GPI เป็น Absent
+  PIANO_PRODUCT_OWNERS_CONFIG Config={.Revision=1,.Fdt=Fdt,.ExpectedOwnerMask=PIANO_OWNER_ALL_MASK,
+    .StartedOwnerMask=(PIANO_OWNER_CORE_MASK&~(UsbStarted?0:PIANO_OWNER_USB))|(mDisplayStartup.Held?PIANO_OWNER_DISPLAY:0)|(TouchStarted?PIANO_OWNER_TOUCH:0),
+    .AbsentOwnerMask=PIANO_OWNER_USB_HOST|PIANO_OWNER_POGO|PIANO_OWNER_GPI|(TouchStarted?0:PIANO_OWNER_TOUCH)|(UsbStarted?0:PIANO_OWNER_USB)|(mDisplayStartup.Held?0:PIANO_OWNER_DISPLAY),
+    .StartupUsbProof=UsbStarted?NULL:&mStartupUsbProof,
+    .Runtime=Runtime,.InputContext=NULL,.StopInput=StopInput,.PogoContext=NULL,.StopPogo=NULL,.TouchContext=NULL,.StopTouch=Np05jTouchStop,
+    .DisplayContext=mDisplayStartup.LeaseContext,.StopDisplay=PianoProductDisplayStop,.DisplayStartup=mDisplayStartup};
+#else
   EFI_STATUS PogoStart=PianoPogoStart(Fdt);BOOLEAN PogoStarted=PogoStart==EFI_SUCCESS;
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_POGO_START status=%r owner=%u\n",PogoStart,PogoStarted));
   EFI_STATUS TouchStart=PianoTouchStart(Fdt);BOOLEAN TouchStarted=TouchStart==EFI_SUCCESS;
@@ -739,6 +826,7 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
     .StartupUsbProof=UsbStarted?NULL:&mStartupUsbProof,
     .Runtime=Runtime,.InputContext=NULL,.StopInput=StopInput,.PogoContext=NULL,.StopPogo=PianoPogoStop,.TouchContext=NULL,.StopTouch=PianoTouchStop,
     .DisplayContext=mDisplayStartup.LeaseContext,.StopDisplay=PianoProductDisplayStop,.DisplayStartup=mDisplayStartup};
+#endif
   Status=PianoProductOwnersInitialize(&mOwners,&Config);if(Status!=EFI_SUCCESS)FailStop(Status);
   PIANO_LATE_HANDOFF_ENV Late={.Context=Image,.Services=gBS,.SystemTable=SystemTable,
     .ParentImage=Image,.Owners=&mOwners,.BootServicesAlive=LateServicesAlive,
@@ -747,8 +835,16 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
   Status=PianoLateHandoffInitialize(&mLateHandoff,&Late);if(Status!=EFI_SUCCESS)FailStop(Status);
   Status=PianoDeviceTreeFixupInstall(BootLogAlive,PianoProductMemoryValidateDtb);if(Status!=EFI_SUCCESS)FailStop(Status);
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_LATE_EXIT provider_bound=1 phase=unarmed standard_efi=1\n"));
+#ifdef SUNUEFI_NP05J
+  CONST UINTN StartupKeysMs=200;
+#else
   CONST UINTN StartupKeysMs=1000;
+#endif
+#ifdef SUNUEFI_NP05J
+  (VOID)PianoProductBootLogMessage(L"Preparing Boot",L"ESC: Boot Options  F12: UEFI Setup",EFI_SUCCESS,FALSE);
+#else
   (VOID)PianoProductBootLogMessage(L"正在准备启动",L"Esc：启动选项  F12：固件设置",EFI_SUCCESS,FALSE);
+#endif
   Status=PianoBootPolicyStartupWindow(StartupKeysMs);
   if(Status!=EFI_SUCCESS)FailStop(Status);
   DEBUG((DEBUG_WARN,"PIANO_PRODUCT_BOOT_WINDOW status=%r budget_ms=%u f12_setup=1 esc_boot_menu=1 volume_boot_menu=1 usb_pumped=%u entry_hint=%u default_action=%u target=%u\n",Status,
@@ -779,7 +875,11 @@ EFI_STATUS EFIAPI PianoProductCoreEntry(EFI_HANDLE Image,EFI_SYSTEM_TABLE *Syste
       if(mOwners.Report.RequestedAction==PianoUsbServiceActionBoot){
         EFI_STATUS Host=PianoUsbControllerServiceLeaveHost();
         if(Host==EFI_NOT_READY){
+#ifdef SUNUEFI_NP05J
+          (VOID)ReturnToBootMenu(Host,L"USB Device In Use",L"Unplug the USB cable and try again");
+#else
           (VOID)ReturnToBootMenu(Host,L"USB 设备仍在使用",L"请拔下 USB 设备后重试");
+#endif
           continue;
         }
         if(Host!=EFI_SUCCESS)FailStop(Host);

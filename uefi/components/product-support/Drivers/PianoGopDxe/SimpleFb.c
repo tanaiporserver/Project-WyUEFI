@@ -33,10 +33,59 @@ FrameRectValid (UINTN X,UINTN Y,UINTN Width,UINTN Height)
     Width<=mFrameWidth-X && Height<=mFrameHeight-Y;
 }
 
+#if defined(SUNUEFI_NP05J) && defined(__aarch64__)
+STATIC UINTN
+GetDataCacheLineSize (
+  VOID
+  )
+{
+  STATIC UINTN LineSize;
+  if (LineSize == 0U) {
+    UINT64 Ctr;
+    __asm__ volatile ("mrs %0, ctr_el0" : "=r"(Ctr));
+    LineSize = (UINTN)4U << ((Ctr >> 16) & 0xFU);
+    if (LineSize < 16U) {
+      LineSize = 64U;
+    }
+  }
+  return LineSize;
+}
+
+STATIC VOID
+CleanCacheLinesNoDsb (
+  IN UINTN Address,
+  IN UINTN Bytes,
+  IN UINTN LineSize
+  )
+{
+  UINTN End = Address + Bytes;
+  UINTN Cur = Address & ~(LineSize - 1U);
+  while (Cur < End) {
+    __asm__ volatile ("dc cvac, %0" : : "r"(Cur) : "memory");
+    Cur += LineSize;
+  }
+}
+#endif
+
 STATIC VOID
 PublishFrameRect (UINTN X,UINTN Y,UINTN Width,UINTN Height)
 {
   UINTN Offset=Y*mFrameStride+X*mFramePixelBytes,Bytes=Width*mFramePixelBytes;
+#if defined(SUNUEFI_NP05J) && defined(__aarch64__)
+  if(X==0 && Bytes==mFrameStride){
+    WriteBackDataCacheRange((VOID *)(mFrameBase+Offset),Height*mFrameStride);
+  }else if(Height<=1){
+    WriteBackDataCacheRange((VOID *)(mFrameBase+Offset),Bytes);
+  }else{
+    // ทำความสะอาด cache line ครบทุกแถวก่อน แล้วค่อย dsb sy ครั้งเดียวท้ายสุดเพื่อลด barrier overhead
+    UINTN LineSize=GetDataCacheLineSize();
+    UINTN Addr=mFrameBase+Offset;
+    for(UINTN Row=0;Row<Height;++Row,Addr+=mFrameStride){
+      CleanCacheLinesNoDsb(Addr,Bytes,LineSize);
+    }
+    __asm__ volatile ("dsb sy" ::: "memory");
+  }
+#else
   // Only the initialized framebuffer allocation is involved. No invalidate,
   // whole-cache maintenance, MMU change or device-DMA ownership is performed.
   if(X==0 && Bytes==mFrameStride){
@@ -44,6 +93,7 @@ PublishFrameRect (UINTN X,UINTN Y,UINTN Width,UINTN Height)
   }else for(UINTN Row=0;Row<Height;++Row)
     WriteBackDataCacheRange((VOID *)(mFrameBase+Offset+Row*mFrameStride),Bytes);
   // The real ArmCacheMaintenanceLib supplies its required final DSB.
+#endif
 }
 
 STATIC EFI_STATUS
@@ -133,7 +183,76 @@ FrameBufferGopBlt (
   Tpl = gBS->RaiseTPL (TPL_NOTIFY);
 
   // Draw to Frame Buffer
+#if defined(SUNUEFI_NP05J) && defined(__aarch64__)
+  if(BltOperation==EfiBltVideoToVideo && mFramePixelBytes==sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL)){
+    // คัดลอก Video-to-Video ตรงด้วย BaseMemoryLibOptDxe แล้ว flush cache ครั้งเดียวท้ายสุด
+    UINTN RowBytes=Width*mFramePixelBytes;
+    for(UINTN I=0;I<Height;++I){
+      UINTN Row=DestinationY>SourceY?Height-I-1:I;
+      UINT8 *Src=(UINT8 *)mFrameBase+(SourceY+Row)*mFrameStride+SourceX*mFramePixelBytes;
+      UINT8 *Dst=(UINT8 *)mFrameBase+(DestinationY+Row)*mFrameStride+DestinationX*mFramePixelBytes;
+      CopyMem(Dst,Src,RowBytes);
+    }
+    PublishFrameRect(DestinationX,DestinationY,Width,Height);
+    Status=EFI_SUCCESS;
+  }else if(BltOperation==EfiBltVideoFill &&
+           This->Mode->Info->PixelFormat==PixelBlueGreenRedReserved8BitPerColor &&
+           mFramePixelBytes==sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL)){
+    // เติมสีตรงด้วย SetMem32 (ARM64 NEON) แทน pixel loop ใน FrameBufferBltLib
+    UINT32 Pixel=0;
+    CopyMem(&Pixel,BltBuffer,sizeof(Pixel));
+    UINTN RowBytes=Width*mFramePixelBytes;
+    UINT8 *Dst=(UINT8 *)mFrameBase+DestinationY*mFrameStride+DestinationX*mFramePixelBytes;
+    if(DestinationX==0 && RowBytes==mFrameStride){
+      SetMem32(Dst,Height*mFrameStride,Pixel);
+    }else{
+      for(UINTN Row=0;Row<Height;++Row,Dst+=mFrameStride){
+        SetMem32(Dst,RowBytes,Pixel);
+      }
+    }
+    PublishFrameRect(DestinationX,DestinationY,Width,Height);
+    Status=EFI_SUCCESS;
+  }else if(BltOperation==EfiBltBufferToVideo &&
+           This->Mode->Info->PixelFormat==PixelBlueGreenRedReserved8BitPerColor &&
+           mFramePixelBytes==sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL) &&
+           (!Delta || ((Delta%sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL))==0 &&
+                       Delta/sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL)>=SourceX+Width))){
+    // คัดลอกพิกเซลตรงเข้า Video โดยไม่ผ่าน FrameBufferBlt ต่อพิกเซลเมื่อรูปแบบสีตรงกัน
+    UINTN RowBytes=Width*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    UINTN SrcDelta=Delta?Delta:RowBytes;
+    UINT8 *Src=(UINT8 *)BltBuffer+SourceY*SrcDelta+SourceX*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    UINT8 *Dst=(UINT8 *)mFrameBase+DestinationY*mFrameStride+DestinationX*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    if(SourceX==0 && DestinationX==0 && RowBytes==mFrameStride && SrcDelta==mFrameStride){
+      CopyMem(Dst,Src,Height*mFrameStride);
+    }else{
+      for(UINTN Row=0;Row<Height;++Row,Src+=SrcDelta,Dst+=mFrameStride){
+        CopyMem(Dst,Src,RowBytes);
+      }
+    }
+    PublishFrameRect(DestinationX,DestinationY,Width,Height);
+    Status=EFI_SUCCESS;
+  }else if(BltOperation==EfiBltVideoToBltBuffer &&
+           This->Mode->Info->PixelFormat==PixelBlueGreenRedReserved8BitPerColor &&
+           mFramePixelBytes==sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL) &&
+           (!Delta || ((Delta%sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL))==0 &&
+                       Delta/sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL)>=DestinationX+Width))){
+    // อ่าน Video-to-Buffer ตรงด้วย CopyMem สำหรับ fastboot oem screenshot และ ConsoleScale
+    UINTN RowBytes=Width*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    UINTN DstDelta=Delta?Delta:RowBytes;
+    UINT8 *Src=(UINT8 *)mFrameBase+SourceY*mFrameStride+SourceX*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    UINT8 *Dst=(UINT8 *)BltBuffer+DestinationY*DstDelta+DestinationX*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
+    if(SourceX==0 && DestinationX==0 && RowBytes==mFrameStride && DstDelta==mFrameStride){
+      CopyMem(Dst,Src,Height*mFrameStride);
+    }else{
+      for(UINTN Row=0;Row<Height;++Row,Src+=mFrameStride,Dst+=DstDelta){
+        CopyMem(Dst,Src,RowBytes);
+      }
+    }
+    Status=EFI_SUCCESS;
+  }else if(BltOperation==EfiBltVideoToVideo){
+#else
   if(BltOperation==EfiBltVideoToVideo){
+#endif
     // The selected library's downward copy starts at Y+Height, one row past
     // the rectangle. Use its real read/write primitives through one bounded
     // scratch row, bottom-up for downward overlap and top-down otherwise.

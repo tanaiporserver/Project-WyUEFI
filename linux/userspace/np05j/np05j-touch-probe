@@ -1,0 +1,46 @@
+#!/bin/sh
+echo "=== SPI4 Touchscreen Bus & Reset Probe ==="
+ls -la /dev/spidev* 2>/dev/null || echo "No /dev/spidev* found"
+for r in /sys/class/regulator/regulator.*; do
+  nm=$(cat "$r/name" 2>/dev/null)
+  case "$nm" in
+    vreg_l4b_1p8|vreg_l14b_3p2)
+      echo "  $nm : state=$(cat "$r/state" 2>/dev/null) uV=$(cat "$r/microvolts" 2>/dev/null)"
+      ;;
+  esac
+done
+
+# Find TLMM gpiochip base for GPIO 161 (reset) & GPIO 162 (irq)
+BASE=""
+for gc in /sys/class/gpio/gpiochip*; do
+  [ -d "$gc" ] || continue
+  lbl=$(cat "$gc/label" 2>/dev/null)
+  case "$lbl" in
+    *f100000*tlmm*|*pinctrl*)
+      BASE=$(cat "$gc/base" 2>/dev/null)
+      break
+      ;;
+  esac
+done
+if [ -n "$BASE" ]; then
+  RST=$((BASE + 161))
+  IRQ=$((BASE + 162))
+  echo "TLMM base=$BASE -> Touch RST=gpio$RST (161), IRQ=gpio$IRQ (162)"
+  echo "$IRQ" > /sys/class/gpio/export 2>/dev/null || true
+  echo in > "/sys/class/gpio/gpio${IRQ}/direction" 2>/dev/null || true
+  echo "  IRQ before reset: $(cat "/sys/class/gpio/gpio${IRQ}/value" 2>/dev/null)"
+  if [ "$1" = "reset" ]; then
+    echo "$RST" > /sys/class/gpio/export 2>/dev/null || true
+    echo out > "/sys/class/gpio/gpio${RST}/direction" 2>/dev/null || true
+    echo 0 > "/sys/class/gpio/gpio${RST}/value" 2>/dev/null || true
+    sleep 1
+    echo 1 > "/sys/class/gpio/gpio${RST}/value" 2>/dev/null || true
+    sleep 1
+    echo "  Reset pulsed LOW->HIGH; IRQ after reset: $(cat "/sys/class/gpio/gpio${IRQ}/value" 2>/dev/null)"
+  fi
+fi
+
+/bin/np05j-tool spi-probe
+if [ -n "$IRQ" ]; then
+  echo "  IRQ after probe: $(cat "/sys/class/gpio/gpio${IRQ}/value" 2>/dev/null)"
+fi

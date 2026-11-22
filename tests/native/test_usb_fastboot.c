@@ -19,7 +19,7 @@ static PIANO_DMA_BUFFER *all[]={&mRing,&mTrbs[0],&mTrbs[1],&mSetup,&mTx,&mTrbs[2
 static VOID model_init(VOID) {
   PIANO_DMA_DEVICE Device={0};init();gBS=&bs;bs.Stall=stall;gRT=&rt;rt.ResetSystem=reset;
   ZeroMem(&mControl,sizeof(mControl));ZeroMem(mPending,sizeof(mPending));ZeroMem(mEnding,sizeof(mEnding));ZeroMem(mPayload,sizeof(mPayload));
-  mControl.Speed=4;mControl.SuperSpeed=TRUE;mConfigured=mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=FALSE;
+  mControl.Speed=4;mControl.SuperSpeed=TRUE;mConfigured=mBulkLive=mBulkPrepared=mConfigWaiting=mStatusWaiting=mClearHaltWaiting=FALSE;mClearHaltEp=0;
   ClearFastboot();PianoFastbootInit(&mFastboot,NULL,FastbootSend,NULL);mFastboot.Query=FastbootQuery;mFastboot.Diagnostic=FastbootDiagnostic;
   for(UINTN I=0;I<ARRAY_SIZE(all);++I)assert(PianoDmaAllocate(&Device,4096,4096,32,PianoDmaBidirectional,all[I])==EFI_SUCCESS);
   assert(ArmSetup()==EFI_SUCCESS);setup_packet(5,1);status_complete();
@@ -47,6 +47,75 @@ static VOID cmd(CONST CHAR8 *Text,CONST CHAR8 *Expected) {
   assert(wire_bytes==strlen(Expected) && !memcmp(wire,Expected,wire_bytes));
 }
 static VOID end(UINT8 Ep) {assert(Event((8U<<24)|(7U<<6)|((UINT32)Ep<<1))==EFI_SUCCESS);}
+static VOID setup_request(UINT8 Type,UINT8 Request,UINT16 Value,UINT16 Index,UINT16 Length) {
+  UINT8 Packet[8]={Type,Request,(UINT8)Value,(UINT8)(Value>>8),(UINT8)Index,(UINT8)(Index>>8),(UINT8)Length,(UINT8)(Length>>8)};
+  assert(mPending[0] && mPhase==0);CopyMem(mSetup.Cpu,Packet,sizeof(Packet));
+  DWC_TRB *T=mTrbs[0].Cpu;T->Size=0;T->Control&=~BIT0;assert(Event(0xC040)==EFI_SUCCESS);
+}
+static VOID clear_halt_tests(UINT32 *Header,UINT8 *Pattern,UINTN PatternBytes) {
+  CONST CHAR8 *Log="SUNUEFI_RAMLOG_BEGIN\nclear halt preserved log\n";
+  UINTN LogLen=strlen(Log);
+  Header[0]=0x43474244;Header[1]=Header[2]=(UINT32)LogLen;CopyMem(Header+3,Log,LogLen);
+  cmd("oem ramlog","OKAY");
+  assert(mFastboot.Upload!=NULL && mFastboot.UploadBytes==LogLen && mPending[2]);
+
+  // 1) CLEAR_FEATURE(0x81) เมื่อ EP3 ว่าง: ต้องส่ง DEPCMD_CLEARSTALL | BIT11 และคง Upload ไว้
+  regs[0xC83C/4]=0;
+  setup_request(2,1,0,0x81,0);
+  assert(regs[0xC83C/4]==(5U|BIT11) && !mClearHaltWaiting && mPhase==2);
+  status_complete();
+  assert(mPending[2] && mFastboot.Upload!=NULL && mFastboot.UploadBytes==LogLen);
+
+  // 2) CLEAR_FEATURE(0x01) เมื่อ EP2 รอ OUT TRB อยู่ (จำลอง macOS ClearPipeStallBothEnds):
+  // ทดสอบกรณี XferNotReady(STATUS) มาถึงก่อน END_TRANSFER completion
+  regs[0xC82C/4]=0;
+  setup_request(2,1,0,1,0);
+  assert(mEnding[2] && mPending[2] && mClearHaltWaiting && mClearHaltEp==2 && mPhase==2);
+  assert(Event(0x20C2)==EFI_SUCCESS && mStatusWaiting && mPhase==2);
+  end(2);
+  assert(regs[0xC82C/4]==5U && !mClearHaltWaiting && !mPending[2] && mPhase==3);
+  DWC_TRB *Status=mTrbs[1].Cpu;Status->Control&=~BIT0;assert(Event(0xC042)==EFI_SUCCESS);
+  assert(mPhase==0 && mPending[2] && mFastboot.Upload!=NULL && mFastboot.UploadBytes==LogLen);
+
+  // ข้อมูล ramlog ที่ stage ไว้ยังส่งผ่าน upload ได้ครบถ้วนหลัง CLEAR_FEATURE
+  out("upload",6);drain();
+  assert(wire_bytes==LogLen+16 && !memcmp(wire+12,Log,LogLen) && !memcmp(wire+12+LogLen,"OKAY",4));
+
+  // 3) CLEAR_FEATURE(0x81) ขณะ EP3 มี reply ค้างอยู่: ต้อง END_TRANSFER, ล้าง frames แต่รักษา Upload
+  out("getvar:version",14);assert(mPending[3] && !mPending[2]);
+  regs[0xC83C/4]=0;
+  setup_request(2,1,0,0x81,0);
+  assert(mEnding[3] && mPending[3] && !mFrames && mClearHaltWaiting && mClearHaltEp==3 && mFastboot.Upload!=NULL);
+  assert(Event(0x20C2)==EFI_SUCCESS && mStatusWaiting && mPhase==2);
+  end(3);
+  assert(regs[0xC83C/4]==(5U|BIT11) && !mClearHaltWaiting && !mPending[3] && mPhase==3);
+  Status=mTrbs[1].Cpu;Status->Control&=~BIT0;assert(Event(0xC042)==EFI_SUCCESS);
+  assert(mPhase==0 && mPending[2] && !mPending[3] && mFastboot.Upload!=NULL);
+
+  // 4) CLEAR_FEATURE(0x01) ขณะ Receiving: ยกเลิก download ที่ค้าง และทดสอบกรณี END_TRANSFER จบก่อน STATUS
+  cmd("download:00010011","DATA00010011");assert(mFastboot.Receiving && mPending[2]);
+  out(Pattern,PatternBytes>4096?4096:PatternBytes);
+  assert(mFastboot.Receiving && mFastboot.Received>0);
+  regs[0xC82C/4]=0;
+  setup_request(2,1,0,1,0);
+  assert(!mFastboot.Receiving && mFastboot.Download==NULL && mEnding[2] && mClearHaltWaiting && mPhase==2);
+  end(2);
+  assert(regs[0xC82C/4]==5U && !mClearHaltWaiting && !mPending[2] && mPhase==2);
+  status_complete();
+  assert(mPhase==0 && mPending[2]);
+  cmd("getvar:version","OKAY0.4");
+
+  // 5) High-Speed CLEAR_FEATURE(0x81) ต้องไม่ตั้ง BIT11 (ClearPendIN เฉพาะ SuperSpeed)
+  mControl.Speed=0;mControl.SuperSpeed=FALSE;regs[0xC83C/4]=0;
+  setup_request(2,1,0,0x81,0);
+  assert(regs[0xC83C/4]==5U && !mClearHaltWaiting && mPhase==2);
+  status_complete();
+  mControl.Speed=4;mControl.SuperSpeed=TRUE;
+
+  // 6) คำขอ CLEAR_FEATURE ที่ไม่ถูกต้องต้องถูก STALL และคงสถานะเดิม
+  setup_request(2,1,0,2,0);assert(mPhase==0 && !mControl.ClearHalt && mPending[2]);
+  setup_request(2,1,1,1,0);assert(mPhase==0 && !mControl.ClearHalt && mPending[2]);
+}
 static VOID descriptors(VOID) {
   UINT8 U[]={0x80,6,0,2,0,0,255,0},Data[256];UINTN Bytes;PIANO_USB_CONTROL_ACTION Action;
   for(UINT8 Speed=0;Speed<6;++Speed) {
@@ -148,6 +217,7 @@ int USB_FASTBOOT_TEST_MAIN(void) {
   UINT8 *SavedLarge=malloc(LargeBytes);assert(SavedLarge);CopyMem(SavedLarge,mFastboot.Upload,LargeBytes);memset(LiveLog,'Z',LargeBytes);
   out("upload",6);drain();assert(wire_bytes==LargeBytes+16&&wire_packets==66&&!memcmp(wire,"DATA00040000",12)&&!memcmp(wire+12,SavedLarge,LargeBytes)&&!memcmp(wire+12+LargeBytes,"OKAY",4));
   assert(mBulkTx.Bytes==4096);free(SavedLarge);
+  clear_halt_tests(Header,Pattern,sizeof(Pattern));
   // IN's DMA copy stays intact while config0 zeros/frees all CPU-owned data.
   out("getvar:version",14);assert(mPending[3]);UINT8 Active[7];CopyMem(Active,mBulkTx.Cpu,7);
   setup_packet(9,0);assert(mEnding[3] && mPending[3] && mBulkTx.Active && !mFrames && !mFastboot.Download && !mFastboot.Upload);
@@ -156,6 +226,9 @@ int USB_FASTBOOT_TEST_MAIN(void) {
   end(3);assert(!mPending[3] && !mBulkTx.Active && !mConfigWaiting && mPhase==3);
   DWC_TRB *Status=mTrbs[1].Cpu;Status->Control&=~BIT0;assert(Event(0xC042)==EFI_SUCCESS);
   assert(!mConfigured && mControl.Configuration==0 && !mBulkLive);
+  // ขณะยังไม่ configured ต้อง STALL CLEAR_FEATURE สำหรับ bulk endpoint 0x01 และ 0x81
+  setup_request(2,1,0,1,0);assert(mPhase==0 && !mControl.ClearHalt);
+  setup_request(2,1,0,0x81,0);assert(mPhase==0 && !mControl.ClearHalt);
   configure();assert(mPending[2]);assert(Event(0x101)==EFI_SUCCESS);
   assert(!mConfigured && mControl.Configuration==0 && mEnding[2] && mBulkRx.Active && !mFastboot.Upload);
   end(2);assert(!mBulkRx.Active && !mPending[2]);

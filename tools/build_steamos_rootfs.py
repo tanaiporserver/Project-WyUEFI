@@ -99,6 +99,9 @@ def kde_recipes(output, root):
         prepare_commands = ''.join(
             f'  patch --batch --fuzz=0 -p1 -i "$srcdir/{p.name}"\n'
             for p in patches)
+        # Match Valve's native Wayland compositor package.
+        package_commands = ('  setcap CAP_SYS_NICE=+ep "$pkgdir/usr/bin/kwin_wayland"\n'
+                            if item['name'] == 'kwin' else '')
         license = ' '.join(q(p) for p in item.get(
             'license', ['GPL-2.0-or-later', 'LGPL-2.1-or-later']))
         (folder / 'PKGBUILD').write_text(
@@ -133,6 +136,7 @@ def kde_recipes(output, root):
             '-DBUILD_TESTING=OFF -DBUILD_QCH=OFF\n'
             '  cmake --build build -j4\n}\n'
             'package() {\n  DESTDIR="$pkgdir" cmake --install build\n'
+            + package_commands +
             '  install -d "$pkgdir/usr/share/licenses/$pkgname"\n'
             '  cp -a "$pkgname-$pkgver/LICENSES/." "$pkgdir/usr/share/licenses/$pkgname/"\n}\n')
     return [item['name'] for item in packages]
@@ -153,6 +157,38 @@ def kde_package_is_current(package_dir, recipe):
             bool(record.get('packages')))
 
 
+def build_webrtc(root, output, config):
+    name = overlay_packages.STEAMOS_WEBRTC_PACKAGE
+    abseil = subprocess.check_output(['chroot', root, 'pacman', '-Q', 'abseil-cpp'],
+                                    text=True).split()[1]
+    series = ROOT / config['patch_series']
+    policy = json.loads(series.read_text())
+    patches = runtime_helpers.source_patches(series)
+    recipe = output / (name + '-recipe')
+    recipe.mkdir(parents=True, exist_ok=True)
+    for patch in patches:
+        shutil.copy2(patch, recipe / patch.name)
+    template = (ROOT / 'linux/bsp/steamos' / name / 'PKGBUILD').read_text()
+    for key, value in {
+        'VERSION': shlex.quote(policy['version']),
+        'ABSEIL_VERSION': abseil,
+        'ABSEIL_DEPENDENCY': shlex.quote('abseil-cpp=' + abseil.rsplit('-', 1)[0]),
+        'SOURCE_URL': shlex.quote(policy['source']['url']),
+        'SOURCE_SHA256': policy['source']['sha256'],
+        'PATCHES': shlex.join(patch.name for patch in patches),
+        'PATCH_SHA256S': ' '.join(digest(patch) for patch in patches),
+    }.items():
+        template = template.replace('@' + key + '@', value)
+    (recipe / 'PKGBUILD').write_text(template)
+
+    packages = output / 'packages' / name
+    if kde_package_is_current(packages, recipe):
+        build_arch_package.install_cached(root, packages)
+    else:
+        build_arch_package.build(root, recipe, packages, check=True)
+    return overlay_packages.pacman_outputs(packages)
+
+
 def gtk3_recipe(output):
     config = json.loads((ROOT / 'config/steamos.json').read_text())['gtk3']
     patch, = runtime_helpers.source_patches(ROOT / config['patch_series'])
@@ -168,28 +204,44 @@ def gtk3_recipe(output):
 
 
 def kde_repository_package_works(root, name):
-    """Reuse Valve's matching package when its Qt relocations resolve."""
+    """Keep an unpatched Valve package when it works with the installed Qt."""
     item = next(p for p in json.loads((ROOT / 'config/steamos.json').read_text())['kde_packages']
                 if p['name'] == name)
     if item.get('patch_series') or item.get('patches'):
         return False
     installed = subprocess.run(['chroot', root, 'pacman', '-Q', name], capture_output=True, text=True)
-    if installed.returncode or installed.stdout.split()[1].rsplit('-', 1)[0] != item['version']:
+    if installed.returncode:
         return False
+
+    version = installed.stdout.split()[1].rsplit('-', 1)[0]
+    order = int(subprocess.check_output(
+        ['chroot', root, 'vercmp', version, item['version']], text=True))
+    if order < 0:
+        return False
+
     files = subprocess.check_output(['chroot', root, 'pacman', '-Qlq', name], text=True).splitlines()
-    checked = 0
-    for name in files:
-        path = root / name.lstrip('/')
+    checked = False
+    for filename in files:
+        path = root / filename.lstrip('/')
         if not path.is_file() or path.is_symlink() or '.so' not in path.name:
             continue
-        if path.open('rb').read(4) != b'\x7fELF':
-            continue
-        result = subprocess.run(['chroot', root, 'ldd', '-r', name], capture_output=True, text=True)
+        with path.open('rb') as entry:
+            if entry.read(4) != b'\x7fELF':
+                continue
+        result = subprocess.run(['chroot', root, 'env', 'LC_ALL=C', 'ldd', '-r', filename],
+                                capture_output=True, text=True)
         if result.returncode or any(word in result.stdout + result.stderr
                                    for word in ('not found', 'undefined symbol')):
-            return False
-        checked += 1
-    return checked > 0
+            break
+        checked = True
+    else:
+        if checked:
+            return True
+
+    if order > 0:
+        raise ValueError(f'Valve {name} {version} failed the Qt library check; '
+                         f'update its source recipe instead of rebuilding {item["version"]}.')
+    return False
 
 
 def mesa_recipe(output, config):
@@ -325,26 +377,32 @@ done
             ROOT, root, kernel / 'manifest.json', base_record['base']['rootfs_sha256'])
         if reused := overlay_cache.restore_pacman(ROOT, package_output, target, cache_inputs):
             return reused
+    installed_overlays = None
     if published:
-        records = overlay_packages.install_arch_overlays(root, kernel, target, published)
+        records, installed_overlays = overlay_packages.install_arch_overlays(root, kernel, target, published)
     else:
         source, _ = sensors.source_workspace(output / 'sensor-source', cfg['sensors'])
         records, packages = build_overlays(root, output, source, steamos_config)
         if package_output:
             commit = json.loads((kernel / 'manifest.json').read_text())['source_commit']
             packages.update(overlay_packages.fingerprint_pacman_packages(
-                root, output / 'fingerprint-packages', kernel_source, args.kernel_build.resolve(), commit))
+                root, output / 'fingerprint-packages', kernel_source, args.kernel_build.resolve(),
+                commit, steamos=True))
             overlay_cache.check_pacman_inputs(ROOT, root, cache_inputs)
             return overlay_packages.export(package_output, target, overlay_packages.ARCH_REPOSITORIES[target],
-                                           overlay_packages.pacman_packages(root, packages), records,
+                                           overlay_packages.pacman_packages(root, target, packages), records,
                                            build_inputs=cache_inputs)
         bsp, topology, _ = overlay_packages.install_local_arch_bsp(
             root, power=records['power_profiles_package'])
         records.update(device_configuration=bsp, audio_topology_package=topology)
-    finish_product(args, root, output, kernel, kernel_source, base_record, records, published)
+    finish_product(args, root, output, kernel, kernel_source, base_record, records, installed_overlays)
 
 
 def build_overlays(root, output, source, steamos_config):
+    from desktop.libcamera_arch import build_target
+
+    if build_target(root) != 'steamos':
+        raise ValueError('SteamOS overlays require the Valve pacman build root')
     outputs = {}
     for name in kde_recipes(output / 'kde-recipes', root):
         if kde_repository_package_works(root, name):
@@ -426,26 +484,27 @@ def build_overlays(root, output, source, steamos_config):
         build_arch_package.install_cached(root, gamescope)
     outputs['gamescope'] = overlay_packages.pacman_outputs(gamescope)
     ffmpeg = output / 'packages/ffmpeg'
-    if not build_arch_ffmpeg.is_current(ffmpeg):
+    if not build_arch_ffmpeg.is_current(ffmpeg, root):
         if ffmpeg.exists():
             shutil.rmtree(ffmpeg)
         build_arch_ffmpeg.build(root, ffmpeg)
     else:
         build_arch_package.install_cached(root, ffmpeg)
     outputs['ffmpeg'] = overlay_packages.pacman_outputs(ffmpeg)
-    pipewire = output / 'packages/pipewire'
-    run(ROOT / 'build.sh', 'pipewire', '--rootfs', root, '--output', pipewire)
+    outputs[overlay_packages.STEAMOS_WEBRTC_PACKAGE] = build_webrtc(
+        root, output, steamos_config['webrtc_audio_processing'])
+    records, camera_packages = overlay_packages.build_pacman_camera(root, output / 'packages', plasma=True)
+    outputs.update(camera_packages)
     libwacom = output / 'packages/libwacom'
     run(ROOT / 'build.sh', 'libwacom', '--rootfs', root, '--output', libwacom)
-    outputs['pipewire'] = overlay_packages.pacman_outputs(pipewire / 'runtime')
     outputs['libwacom'] = overlay_packages.pacman_outputs(libwacom / 'runtime')
-    records = {name: json.loads((directory / 'SOURCE.json').read_text())
-               for name, directory in (('ffmpeg', ffmpeg), ('pipewire', pipewire), ('libwacom', libwacom))}
+    records.update({name: json.loads((directory / 'SOURCE.json').read_text())
+                    for name, directory in (('ffmpeg', ffmpeg), ('libwacom', libwacom))})
     records['power_profiles_package'] = power
     return records, outputs
 
 
-def finish_product(args, root, output, kernel, kernel_source, base_record, records, published):
+def finish_product(args, root, output, kernel, kernel_source, base_record, records, installed_overlays):
     client = output / 'steam-client'
     if (not (client / 'SOURCE.json').is_file() or
             json.loads((client / 'SOURCE.json').read_text()) != prepare_steam_client.source_record()):
@@ -481,7 +540,7 @@ def finish_product(args, root, output, kernel, kernel_source, base_record, recor
     stage_arch_piano.stage(argparse.Namespace(
         rootfs=root, kernel=kernel, runtime=runtime,
         bootstrap_sysroot=args.bootstrap_sysroot, desktop='steamos',
-        published_packages=published[1] if published else None,
+        published_packages=installed_overlays,
         device_configuration=records['device_configuration'],
         audio_topology_package=records['audio_topology_package'],
         power_profiles_package=records['power_profiles_package']))
@@ -490,7 +549,7 @@ def finish_product(args, root, output, kernel, kernel_source, base_record, recor
     record.update(base_source=base_record, **records,
                   steam_client=json.loads((client / 'SOURCE.json').read_text()),
                   steam_runtime=runtime_record)
-    if published:
+    if installed_overlays is not None:
         record['overlay_manifest_sha256'] = digest(args.published_packages)
     manifest.write_text(json.dumps(record, indent=2) + '\n')
 

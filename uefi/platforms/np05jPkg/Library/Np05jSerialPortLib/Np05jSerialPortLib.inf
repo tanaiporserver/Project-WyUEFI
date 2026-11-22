@@ -1,0 +1,38 @@
+## @file
+#  NP05J dual-sink SerialPortLib: framebuffer console + 256 KiB RAM ring buffer
+#  for low-level USB CDC-ACM UART log streaming.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = Np05jSerialPortLib
+  FILE_GUID                      = 6C74D53A-73E0-467E-9A56-C8B4843E1A4B
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = SerialPortLib
+
+[Sources]
+  Np05jSerialPortLib.c
+  FrameBuffer.h
+  Font.h
+
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  ArmLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  MemoryMapHelperLib
+  TimerLib
+
+[FixedPcd]
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferWidth
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferHeight
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferColorDepth
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferDelay

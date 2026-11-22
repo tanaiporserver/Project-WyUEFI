@@ -7,6 +7,8 @@ typedef struct {
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION Info;
   EFI_GRAPHICS_OUTPUT_PROTOCOL *Physical;
   UINTN Scale;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Scratch;
+  UINTN ScratchPixels;
 } PIANO_CONSOLE_SURFACE;
 
 STATIC EFI_STATUS EFIAPI PianoConsoleQuery(EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
@@ -40,43 +42,82 @@ STATIC EFI_STATUS EFIAPI PianoConsoleBlt(EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
   if(Delta==0)Delta=W*sizeof(*Buffer);
   if(Delta%sizeof(*Buffer)||Delta/sizeof(*Buffer)<(Op==EfiBltBufferToVideo?Sx:Dx)+W)
     return EFI_INVALID_PARAMETER;
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Scaled=AllocatePool(RowPixels*Rows*sizeof(*Buffer));
-  if(!Scaled)return EFI_OUT_OF_RESOURCES;
+  UINTN NeedPixels=RowPixels*Rows;
+  // นำบัฟเฟอร์สเกลกลับมาใช้ซ้ำเพื่อลดการจองและคืนหน่วยความจำทุกตัวอักษรใน UEFI Setup/Shell
+  if(NeedPixels>S->ScratchPixels){
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Next=AllocatePool(NeedPixels*sizeof(*Buffer));
+    if(!Next)return EFI_OUT_OF_RESOURCES;
+    if(S->Scratch)FreePool(S->Scratch);
+    S->Scratch=Next;S->ScratchPixels=NeedPixels;
+  }
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Scaled=S->Scratch;
   EFI_STATUS Status;
   if(Op==EfiBltBufferToVideo){
-    for(UINTN Y=0;Y<Rows;++Y){
-      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Source=(VOID *)((UINT8 *)Buffer+(Sy+Y/N)*Delta);
-      for(UINTN X=0;X<RowPixels;++X)Scaled[Y*RowPixels+X]=Source[Sx+X/N];
+    UINTN RowBytes=RowPixels*sizeof(*Buffer);
+    for(UINTN SrcY=0;SrcY<H;++SrcY){
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Source=(VOID *)((UINT8 *)Buffer+(Sy+SrcY)*Delta);
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *FirstRow=Scaled+(SrcY*N)*RowPixels;
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Dst=FirstRow;
+      // ขยายแนวนอนแบบไม่ต้องหารด้วย N และทำซ้ำแถวที่เหลือด้วย CopyMem
+      if(N==3){
+        for(UINTN SrcX=0;SrcX<W;++SrcX){
+          EFI_GRAPHICS_OUTPUT_BLT_PIXEL Px=Source[Sx+SrcX];
+          Dst[0]=Px;Dst[1]=Px;Dst[2]=Px;Dst+=3;
+        }
+      }else if(N==4){
+        for(UINTN SrcX=0;SrcX<W;++SrcX){
+          EFI_GRAPHICS_OUTPUT_BLT_PIXEL Px=Source[Sx+SrcX];
+          Dst[0]=Px;Dst[1]=Px;Dst[2]=Px;Dst[3]=Px;Dst+=4;
+        }
+      }else{
+        for(UINTN SrcX=0;SrcX<W;++SrcX){
+          EFI_GRAPHICS_OUTPUT_BLT_PIXEL Px=Source[Sx+SrcX];
+          for(UINTN K=0;K<N;++K)*Dst++=Px;
+        }
+      }
+      for(UINTN Dup=1;Dup<N;++Dup){
+        CopyMem(FirstRow+Dup*RowPixels,FirstRow,RowBytes);
+      }
     }
-    Status=S->Physical->Blt(S->Physical,Scaled,Op,0,0,Dx*N,Dy*N,RowPixels,Rows,RowPixels*sizeof(*Buffer));
+    Status=S->Physical->Blt(S->Physical,Scaled,Op,0,0,Dx*N,Dy*N,RowPixels,Rows,RowBytes);
   }else{
     Status=S->Physical->Blt(S->Physical,Scaled,Op,Sx*N,Sy*N,0,0,RowPixels,Rows,RowPixels*sizeof(*Buffer));
     if(!EFI_ERROR(Status))for(UINTN Y=0;Y<H;++Y){
       EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Dest=(VOID *)((UINT8 *)Buffer+(Dy+Y)*Delta);
-      for(UINTN X=0;X<W;++X)Dest[Dx+X]=Scaled[Y*N*RowPixels+X*N];
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL *SrcRow=Scaled+(Y*N)*RowPixels;
+      for(UINTN X=0;X<W;++X)Dest[Dx+X]=SrcRow[X*N];
     }
   }
-  FreePool(Scaled);return Status;
+  return Status;
 }
 STATIC EFI_STATUS PianoConsoleAttach(GRAPHICS_CONSOLE_DEV *Private,UINT32 *Width,UINT32 *Height){
   EFI_GRAPHICS_OUTPUT_PROTOCOL *Physical=Private->GraphicsOutput;
-  if(!Physical||*Width!=3200||*Height!=2136)return EFI_SUCCESS;
+  UINT32 Scale=0;
+  if(!Physical)return EFI_SUCCESS;
+  // ปรับสเกลข้อความคอนโซลและ UiApp ตามความละเอียดแผงจอจริงของแต่ละรุ่น
+  if(*Width==3200&&*Height==2136)Scale=4;
+  else if(*Width==2400&&*Height==1504)Scale=3;
+  else return EFI_SUCCESS;
   PIANO_CONSOLE_SURFACE *S=AllocateZeroPool(sizeof(*S));
   if(!S)return EFI_OUT_OF_RESOURCES;
-  S->Physical=Physical;S->Scale=4;
+  S->Physical=Physical;S->Scale=Scale;
   S->Mode=*Physical->Mode;S->Info=*Physical->Mode->Info;
-  S->Info.HorizontalResolution=*Width/4;S->Info.VerticalResolution=*Height/4;
+  S->Info.HorizontalResolution=*Width/Scale;S->Info.VerticalResolution=*Height/Scale;
   S->Info.PixelsPerScanLine=S->Info.HorizontalResolution;
   S->Info.PixelFormat=PixelBltOnly;
   S->Mode.Info=&S->Info;S->Mode.SizeOfInfo=sizeof(S->Info);
   S->Mode.FrameBufferBase=0;S->Mode.FrameBufferSize=0;
   S->Gop=(EFI_GRAPHICS_OUTPUT_PROTOCOL){PianoConsoleQuery,PianoConsoleSet,PianoConsoleBlt,&S->Mode};
   Private->GraphicsOutput=&S->Gop;Private->PianoConsoleSurface=S;
+  DEBUG((DEBUG_INFO,"PIANO_CONSOLE_SCALE factor=%u physical=%ux%u logical=%ux%u\n",
+    Scale,*Width,*Height,S->Info.HorizontalResolution,S->Info.VerticalResolution));
   *Width=S->Info.HorizontalResolution;*Height=S->Info.VerticalResolution;
-  DEBUG((DEBUG_INFO,"PIANO_CONSOLE_SCALE factor=4 physical=3200x2136 logical=800x534\n"));
   return EFI_SUCCESS;
 }
 STATIC VOID PianoConsoleDetach(GRAPHICS_CONSOLE_DEV *Private){
   PIANO_CONSOLE_SURFACE *S=Private->PianoConsoleSurface;
-  if(S){Private->GraphicsOutput=S->Physical;Private->PianoConsoleSurface=NULL;FreePool(S);}
+  if(S){
+    if(S->Scratch)FreePool(S->Scratch);
+    Private->GraphicsOutput=S->Physical;Private->PianoConsoleSurface=NULL;FreePool(S);
+  }
 }

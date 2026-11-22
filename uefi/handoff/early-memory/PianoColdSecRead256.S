@@ -41,7 +41,7 @@ PianoColdSecRead256:
   str x19, [x2, #80]
   str xzr, [x2, #8]
   str xzr, [x2, #16]
-  adr x9, .Lresume
+  adr x9, .Lfaulted
   str x9, [x2, #64]
   mov x9, #1
   str x9, [x2]
@@ -54,27 +54,26 @@ PianoColdSecRead256:
   msr daifclr, #4
   mov x4, #0
 .Lword:
-  mrs x9, sctlr_el1
-  cmp x9, x5
-  b.ne .Lstate_changed
-  str x0, [x2, #24]
   mov w9, #0
 .Lload:
   ldr w9, [x0]
-.Lresume:
-  ldr x10, [x2, #8]
-  cbnz x10, .Lrestore
   str w9, [x1], #4
   add x4, x4, #1
-  str x4, [x2, #88]
   add x0, x0, #4
   subs x3, x3, #4
   b.ne .Lword
+  mrs x9, sctlr_el1
+  cmp x9, x5
+  b.ne .Lstate_changed
   mov x10, #0
+  b .Lrestore
+.Lfaulted:
+  mov x10, #1
   b .Lrestore
 .Lstate_changed:
   mov x10, #2
 .Lrestore:
+  str x4, [x2, #88]
   // Flush pending errors while the owned SError vector remains installed.
   dsb sy
   isb
@@ -137,8 +136,9 @@ PianoColdReadVectors:
   adr x13, .Lload
   cmp x9, x13
   b.ne .Lsavedfatal
-  ldr x13, [x2, #24]
-  cmp x11, x13
+  // บันทึกที่อยู่ target load เฉพาะตอนเกิด fault เพื่อลดการเขียน uncached DRAM ในลูปปกติ
+  str x0, [x2, #24]
+  cmp x11, x0
   b.ne .Lsavedfatal
   lsr x13, x10, #26
   cmp x13, #0x25

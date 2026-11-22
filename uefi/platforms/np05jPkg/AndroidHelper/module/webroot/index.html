@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>SunUEFI - nubia NP05J</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+<nav class="tabs" aria-label="SunUEFI" role="tablist">
+  <div class="rail-brand" aria-hidden="true"><img src="sun.svg" alt=""><span>SunUEFI</span></div>
+  <button id="tab-boot" role="tab" aria-selected="true" aria-controls="panel-boot" data-tab="boot">
+    <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8m-5-5a8 8 0 1 0 10 0"/></svg></span>
+    <span data-i18n="tabBoot">Boot</span>
+  </button>
+  <button id="tab-storage" role="tab" aria-selected="false" aria-controls="panel-storage" data-tab="storage" tabindex="-1">
+    <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="2"/><rect x="4" y="14" width="16" height="7" rx="2"/><path d="M7 6h.1M7 17h.1m5-11h5m-5 11h5"/></svg></span>
+    <span data-i18n="tabStorage">Install</span>
+  </button>
+  <button id="tab-maintenance" role="tab" aria-selected="false" aria-controls="panel-maintenance" data-tab="maintenance" tabindex="-1">
+    <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4a6 6 0 0 0-7 7L3 16a3 3 0 0 0 4 4l5-5a6 6 0 0 0 8-7l-4 4-4-4 4-4z"/></svg></span>
+    <span data-i18n="tabMaint">Tools</span>
+  </button>
+</nav>
+
+<main>
+  <header class="page-header">
+    <div>
+      <p class="eyebrow"><img src="sun.svg" alt="">SunUEFI / NP05J</p>
+      <h1 id="page-title" data-i18n="tabBoot">Boot</h1>
+    </div>
+    <button id="language" class="language" aria-label="Switch language">TH</button>
+  </header>
+
+  <div id="panel-boot" role="tabpanel" aria-labelledby="tab-boot">
+    <div class="status-line">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span data-i18n="current">Current System</span>
+      <strong>Android (NP05J)</strong>
+      <span id="health" class="health" data-i18n="reading">Checking...</span>
+    </div>
+
+    <section class="boot-card" aria-labelledby="choose-title">
+      <h2 id="choose-title" data-i18n="choose">Select Startup System</h2>
+      <fieldset class="routes">
+        <legend class="visually-hidden" data-i18n="choose">Select Startup System</legend>
+        <label class="route">
+          <input type="radio" name="route" value="android" checked>
+          <span class="route-content">
+            <span class="route-icon android-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32"><path d="M8 13h16v10H8zM10 11a6 6 0 0 1 12 0M10 4l-2-3m14 3 2-3M5 14v8m22-8v8M12 23v5m8-5v5"/><path class="eyes" d="M12 9h.1M20 9h.1"/></svg>
+            </span>
+            <span class="route-copy"><strong>Android</strong><small data-i18n="androidDesc">MyOS / Stock</small></span>
+            <span class="radio-mark" aria-hidden="true"></span>
+          </span>
+        </label>
+        <label class="route">
+          <input type="radio" name="route" value="uefi">
+          <span class="route-content">
+            <span class="route-icon uefi-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32"><rect x="4" y="5" width="24" height="17" rx="3"/><path d="M12 27h8m-4-5v5m-8-17 4 3-4 3m8 0h7"/></svg>
+            </span>
+            <span class="route-copy"><strong>UEFI</strong><small data-i18n="uefiDesc">Win11 ARM / Linux / Menu</small></span>
+            <span class="radio-mark" aria-hidden="true"></span>
+          </span>
+        </label>
+      </fieldset>
+
+      <fieldset id="entry-group" class="entry-group" hidden>
+        <legend data-i18n="entry">Target</legend>
+        <div id="entries" class="entries">
+          <button type="button" class="entry" data-entry="windows" aria-pressed="true" data-i18n="btnWin11">Windows 11 ARM</button>
+          <button type="button" class="entry" data-entry="linux" aria-pressed="false" data-i18n="btnLinux">Linux (DTB/ACPI)</button>
+          <button type="button" class="entry" data-entry="uefi" aria-pressed="false" data-i18n="btnUefiMenu">UEFI Boot Menu</button>
+          <button type="button" class="entry" data-entry="bios" aria-pressed="false" data-i18n="btnBios">Unlocked BIOS Setup</button>
+        </div>
+      </fieldset>
+
+      <p id="remember" class="hint" data-i18n="bootDesc">Writes a one-shot NEXTv1 request into the SPLITv1 combined boot image and reboots directly.</p>
+      <button id="btnSaveReboot" type="button" class="primary">
+        <span data-i18n="saveReboot">Save &amp; Reboot</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+      </button>
+    </section>
+  </div>
+
+  <div id="panel-storage" role="tabpanel" aria-labelledby="tab-storage" hidden>
+    <section class="boot-card storage-card">
+      <div class="section-heading">
+        <h2 data-i18n="deviceStatusTitle">Device &amp; Boot Status</h2>
+        <button id="btnRefresh" type="button" class="quiet" data-i18n="refresh">Refresh</button>
+      </div>
+      <div class="partition-list">
+        <div class="partition"><h3 data-i18n="deviceLabel">Device</h3><strong id="stDevice">nubia NP05J</strong></div>
+        <div class="partition"><h3 data-i18n="slotLabel">Slot</h3><strong id="stSlot">_a</strong></div>
+        <div class="partition"><h3 data-i18n="modeLabel">Boot Mode</h3><strong id="stMode">Checking...</strong></div>
+        <div class="partition"><h3 data-i18n="touchLabel">Touch IC</h3><strong id="stTouch">Synaptics S3930</strong></div>
+      </div>
+    </section>
+
+    <section class="boot-card storage-card">
+      <h2 data-i18n="storageTitle">Combined Boot Installer</h2>
+      <p class="hint" data-i18n="storageDesc">Backup stock Android boot v4, install pre-UEFI touch BootSelect + Mu-Silicium UEFI, or restore stock byte-for-byte.</p>
+      <div class="row">
+        <label for="selTimeout" data-i18n="timeoutLabel">Pre-UEFI Selector Timeout (sec):</label>
+        <input id="selTimeout" type="number" min="0" max="15" value="3">
+      </div>
+      <button id="btnInstall" type="button" class="primary">
+        <span data-i18n="btnInstall">Backup Stock + Install Combined SunUEFI Boot</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+      </button>
+      <button id="btnRestore" type="button" class="danger" data-i18n="btnRestore">Restore Stock Android Boot (RSTRv1)</button>
+    </section>
+  </div>
+
+  <div id="panel-maintenance" role="tabpanel" aria-labelledby="tab-maintenance" hidden>
+    <section class="tools" aria-labelledby="tools-title">
+      <h2 id="tools-title" data-i18n="maintTitle">Hardware Reset Modes &amp; Diagnostics</h2>
+      <div class="tool-list">
+        <button id="btnClearReq" type="button" class="tool">
+          <span class="tool-symbol" aria-hidden="true">✓</span>
+          <span class="tool-copy"><strong data-i18n="btnClearReq">Clear Pending NEXTv1 Request</strong><small data-i18n="clearDesc">Clear pending one-shot UEFI/Windows/Linux request</small></span>
+          <span class="chevron" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="tool" data-reboot-raw="recovery">
+          <span class="tool-symbol" aria-hidden="true">↺</span>
+          <span class="tool-copy"><strong data-i18n="btnRecovery">Reboot Recovery</strong><small>PMK8550 SDAM recovery target</small></span>
+          <span class="chevron" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="tool" data-reboot-raw="bootloader">
+          <span class="tool-symbol" aria-hidden="true">⚡</span>
+          <span class="tool-copy"><strong data-i18n="btnBootloader">Reboot Bootloader / Fastboot</strong><small>Qualcomm ABL fastboot mode</small></span>
+          <span class="chevron" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="tool" data-reboot-raw="edl">
+          <span class="tool-symbol" aria-hidden="true">!</span>
+          <span class="tool-copy"><strong data-i18n="btnEdl">Reboot Qualcomm EDL (9008)</strong><small>Hardware emergency download mode</small></span>
+          <span class="chevron" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <p id="message" role="status" aria-live="polite"></p>
+  <details id="device-details">
+    <summary data-i18n="consoleLabel">Output Log</summary>
+    <pre id="logOut">Ready.</pre>
+  </details>
+</main>
+</body>
+</html>

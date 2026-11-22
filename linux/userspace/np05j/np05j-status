@@ -1,0 +1,79 @@
+#!/bin/sh
+echo "============================================================"
+echo "  nubia NP05J (REDMAGIC Astra) - Mainline Linux 7.3.5 Phase3"
+echo "============================================================"
+echo "Kernel : $(uname -r) $(uname -m) | DT: $(tr '\0' ' ' < /proc/device-tree/model 2>/dev/null || echo ACPI)"
+echo "CPUs   : online=$(cat /sys/devices/system/cpu/online 2>/dev/null) | RAM: $(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.1f/%.1f GiB", a/1048576, t/1048576}' /proc/meminfo)"
+for p in /sys/devices/system/cpu/cpufreq/policy*; do
+  [ -d "$p" ] || continue
+  echo "CPUFreq: $(basename "$p") cur=$(cat "$p/scaling_cur_freq" 2>/dev/null)kHz max=$(cat "$p/cpuinfo_max_freq" 2>/dev/null)kHz"
+done
+D_GCC=$(ls /sys/bus/platform/drivers/gcc-sm8750 2>/dev/null | grep clock | tr '\n' ' ')
+D_SCM=$(ls /sys/bus/platform/drivers/qcom_scm 2>/dev/null | grep scm | tr '\n' ' ')
+D_SMMU=$(ls /sys/bus/platform/drivers/arm-smmu 2>/dev/null | grep iommu | tr '\n' ' ')
+echo "SoC    : gcc=${D_GCC:-NO} scm=${D_SCM:-NO} smmu=${D_SMMU:-NO}"
+
+echo "--- Wi-Fi 7 (PCIe0) & Bluetooth ---"
+PCI_FOUND=0
+for d in /sys/bus/pci/devices/*; do
+  [ -d "$d" ] || continue
+  PCI_FOUND=1
+  ven=$(cat "$d/vendor" 2>/dev/null)
+  dev=$(cat "$d/device" 2>/dev/null)
+  drv=$(basename "$(readlink "$d/driver" 2>/dev/null)" 2>/dev/null)
+  echo "  PCI $(basename "$d") : ${ven}:${dev} drv=${drv:-none}"
+done
+[ "$PCI_FOUND" -eq 0 ] && echo "  (no PCI devices enumerated)"
+WIFI_INFO=""
+for n in /sys/class/net/*; do
+  [ -d "$n" ] || continue
+  bn=$(basename "$n")
+  mac=$(cat "$n/address" 2>/dev/null)
+  st=$(cat "$n/operstate" 2>/dev/null)
+  WIFI_INFO="${WIFI_INFO}${bn}(${st},${mac}) "
+done
+echo "  Net    : ${WIFI_INFO:-none}"
+echo "  BT HCI : $(ls /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
+
+echo "--- Touchscreen, GPU (Adreno 830v2) & Audio/Fan ---"
+for ev in /sys/class/input/event*; do
+  [ -d "$ev" ] || continue
+  nm=$(cat "$ev/device/name" 2>/dev/null)
+  case "$nm" in
+    *Synaptics*|*Touch*|*TCM*)
+      echo "  Touch  : /dev/input/$(basename "$ev") -> $nm"
+      ;;
+  esac
+done
+DRM_NODES=$(ls /dev/dri/renderD* /dev/dri/card* 2>/dev/null | tr '\n' ' ')
+echo "  GPU    : ${DRM_NODES:-not enabled (use BOOTDT_GPU.NSH)} | gpu_fw=$(ls /lib/firmware/qcom/gen80000_* 2>/dev/null | wc -l) files"
+FAN_INFO="not found"
+for h in /sys/class/hwmon/hwmon*; do
+  [ "$(cat "$h/name" 2>/dev/null)" = "pwmfan" ] && FAN_INFO="pwm=$(cat "$h/pwm1" 2>/dev/null) rpm=$(cat "$h/fan1_input" 2>/dev/null || echo ?)"
+done
+echo "  Fan/I2C: fan=[${FAN_INFO}] | i2c=$(ls /dev/i2c-* 2>/dev/null | tr '\n' ' ') | tfa98xx.cnt=$([ -e /lib/firmware/tfa98xx.cnt ] && echo ok || echo no)"
+
+echo "--- Remoteproc (ADSP / CDSP NPU), Battery, UFS & USB-C ---"
+for rp in /sys/class/remoteproc/remoteproc*; do
+  [ -d "$rp" ] || continue
+  echo "  $(basename "$rp") ($(cat "$rp/name" 2>/dev/null)): state=$(cat "$rp/state" 2>/dev/null) fw=$(cat "$rp/firmware" 2>/dev/null)"
+done
+echo "  FastRPC: $(ls /dev/fastrpc* 2>/dev/null | tr '\n' ' ')"
+for ps in /sys/class/power_supply/*; do
+  [ -d "$ps" ] || continue
+  pn=$(basename "$ps")
+  cap=$(cat "$ps/capacity" 2>/dev/null)
+  volt=$(cat "$ps/voltage_now" 2>/dev/null)
+  st=$(cat "$ps/status" 2>/dev/null)
+  echo "  Power  : $pn status=${st:-?} cap=${cap:-?}% uV=${volt:-?}"
+done
+echo "  UFS    : $(ls /sys/block 2>/dev/null | grep '^sd' | tr '\n' ' ') (modem=$(mount | grep -q /mnt/modem && echo ro || echo no) bt=$(mount | grep -q /mnt/bt_fw && echo ro || echo no) vendor=$(mount | grep -q /mnt/vendor && echo ro || echo no))"
+echo "  TypeC  : $(ls /sys/class/typec 2>/dev/null | tr '\n' ' ') | UDC: $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ') | TTY: $([ -c /dev/ttyGS0 ] && echo /dev/ttyGS0 || echo none)"
+
+if [ -f /sys/kernel/debug/devices_deferred ]; then
+  DC=$(wc -l < /sys/kernel/debug/devices_deferred)
+  echo "Deferred (${DC}): $(tr '\n' ' ' < /sys/kernel/debug/devices_deferred | cut -c1-120)"
+fi
+echo "--- Key dmesg lines ---"
+dmesg | grep -E 'synaptics_tcm2|PCIe BDF|ath12k|WCN7861|wlan0|mhi0|Bluetooth|hci0|msm_drm|adreno|gmu|gpucc|remoteproc|battmgr|error|Error' | tail -n 16
+echo "============================================================"

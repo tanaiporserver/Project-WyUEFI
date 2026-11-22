@@ -1,0 +1,29 @@
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = Np05jProbe
+  FILE_GUID      = 6BD65BF5-835A-433F-97D8-CB31C3EB7F51
+  MODULE_TYPE    = UEFI_APPLICATION
+  ENTRY_POINT    = UefiMain
+
+[Sources]
+  Np05jProbe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  QcomPkg/QcomPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DevicePathLib
+  MemoryAllocationLib
+  UefiApplicationEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+
+[Guids]
+  gEfiUfsLU0Guid
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiGraphicsOutputProtocolGuid

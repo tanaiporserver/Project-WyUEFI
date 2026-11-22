@@ -1,0 +1,850 @@
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -1414,6 +1414,15 @@ config TOUCHSCREEN_HIMAX_HX83112B
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called himax_hx83112b.
+ 
+ source "drivers/input/touchscreen/nt36532e/Kconfig"
+ 
++config TOUCHSCREEN_SYNAPTICS_TCM2_SPI
++	tristate "Synaptics TouchComm v2 (TCM v2) SPI touchscreen"
++	depends on SPI
++	help
++	  Say Y here to enable support for Synaptics TouchComm v2 (TCM v2)
++	  SPI touchscreens such as S3930TB0A0.
++
++	  If unsure, say N.
++
+ endif
+diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+@@ -119,4 +119,5 @@ obj-$(CONFIG_TOUCHSCREEN_IQS5XX)	+= iqs5xx.o
+ obj-$(CONFIG_TOUCHSCREEN_IQS7211)	+= iqs7211.o
+ obj-$(CONFIG_TOUCHSCREEN_ZINITIX)	+= zinitix.o
+ obj-$(CONFIG_TOUCHSCREEN_HIMAX_HX83112B)	+= himax_hx83112b.o
+ obj-$(CONFIG_TOUCHSCREEN_NT36532E_SPI)	+= nt36532e/
++obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_TCM2_SPI)	+= synaptics_tcm2_spi.o
+diff --git a/drivers/input/touchscreen/synaptics_tcm2_spi.c b/drivers/input/touchscreen/synaptics_tcm2_spi.c
+new file mode 100644
+index 000000000000..111111111111
+--- /dev/null
++++ b/drivers/input/touchscreen/synaptics_tcm2_spi.c
+@@ -0,0 +1,816 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Synaptics TouchComm v2 (TCM v2) SPI Touchscreen Driver
++ *
++ * Designed for Synaptics S3930TB0A0 (nubia NP05J / REDMAGIC Astra) on
++ * Qualcomm SM8750 QUPv3 SPI4 with GPI DMA (full-duplex transfers required).
++ */
++
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/input.h>
++#include <linux/input/mt.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/of.h>
++#include <linux/regulator/consumer.h>
++#include <linux/slab.h>
++#include <linux/spi/spi.h>
++#include <linux/unaligned.h>
++
++#define TCM2_HDR_SIZE			4
++#define TCM2_CRC16_SIZE			2
++#define TCM2_MAX_XFER			512
++#define TCM2_REPORT_RD_SIZE		384
++#define TCM2_MAX_REPORT_CFG		256
++#define TCM2_MAX_OBJECTS		10
++
++/* TCM v2 command codes */
++#define TCM2_CMD_ACK			0x00
++#define TCM2_CMD_IDENTIFY		0x02
++#define TCM2_CMD_RESET			0x04
++#define TCM2_CMD_ENABLE_REPORT		0x05
++#define TCM2_CMD_DISABLE_REPORT		0x06
++#define TCM2_CMD_GET_REPORT		0x0a
++#define TCM2_CMD_GET_APP_INFO		0x20
++#define TCM2_CMD_GET_TOUCH_REPORT_CFG	0x25
++
++/* TCM v2 status / report codes */
++#define TCM2_STATUS_IDLE		0x00
++#define TCM2_STATUS_OK			0x01
++#define TCM2_STATUS_CONTINUED_READ	0x03
++#define TCM2_STATUS_WAIT		0x04
++#define TCM2_STATUS_INVALID		0x08
++#define TCM2_REPORT_IDENTIFY		0x10
++#define TCM2_REPORT_TOUCH		0x11
++#define TCM2_REPORT_STATUS		0x12
++
++/* TCM touch report config entity codes */
++#define TOUCH_ENTITY_END			0x00
++#define TOUCH_ENTITY_FOREACH_ACTIVE_OBJ		0x01
++#define TOUCH_ENTITY_FOREACH_OBJ		0x02
++#define TOUCH_ENTITY_FOREACH_END		0x03
++#define TOUCH_ENTITY_PAD_TO_NEXT_BYTE		0x04
++#define TOUCH_ENTITY_TIMESTAMP			0x05
++#define TOUCH_ENTITY_OBJ_INDEX			0x06
++#define TOUCH_ENTITY_OBJ_CLASSIFICATION		0x07
++#define TOUCH_ENTITY_OBJ_X_POS			0x08
++#define TOUCH_ENTITY_OBJ_Y_POS			0x09
++#define TOUCH_ENTITY_OBJ_Z			0x0a
++#define TOUCH_ENTITY_OBJ_X_WIDTH		0x0b
++#define TOUCH_ENTITY_OBJ_Y_WIDTH		0x0c
++#define TOUCH_ENTITY_OBJ_TX_POS			0x0d
++#define TOUCH_ENTITY_OBJ_RX_POS			0x0e
++#define TOUCH_ENTITY_0D_BUTTONS			0x0f
++#define TOUCH_ENTITY_GESTURE_ID			0x10
++#define TOUCH_ENTITY_FRAME_RATE			0x11
++#define TOUCH_ENTITY_POWER_IM			0x12
++#define TOUCH_ENTITY_CID_IM			0x13
++#define TOUCH_ENTITY_RAIL_IM			0x14
++#define TOUCH_ENTITY_CID_VARIANCE_IM		0x15
++#define TOUCH_ENTITY_NSM_FREQ_INDEX		0x16
++#define TOUCH_ENTITY_NSM_STATE			0x17
++#define TOUCH_ENTITY_NUM_ACTIVE_OBJS		0x18
++#define TOUCH_ENTITY_CPU_CYCLES			0x19
++#define TOUCH_ENTITY_FACE_DETECT		0x1a
++#define TOUCH_ENTITY_GESTURE_DATA		0x1b
++#define TOUCH_ENTITY_FORCE_MEASUREMENT		0x1c
++#define TOUCH_ENTITY_FP_AREA_MEET		0x1d
++#define TOUCH_ENTITY_SENSING_MODE		0x1e
++
++/* Object classification values */
++#define TOUCH_CLASS_LIFT		0
++#define TOUCH_CLASS_FINGER		1
++#define TOUCH_CLASS_GLOVED		2
++#define TOUCH_CLASS_STYLUS		3
++#define TOUCH_CLASS_ERASER		4
++#define TOUCH_CLASS_SMALL_OBJ		5
++#define TOUCH_CLASS_PALM		6
++
++struct tcm2_object {
++	u8 active;
++	u8 classification;
++	u16 x;
++	u16 y;
++	u16 z;
++	u16 x_width;
++	u16 y_width;
++};
++
++struct tcm2_ts {
++	struct spi_device *spi;
++	struct input_dev *input;
++	struct mutex lock;
++
++	struct gpio_desc *reset_gpio;
++	struct regulator *vdd;
++	struct regulator *avdd;
++
++	/* DMA-safe SPI bounce buffers (both TX and RX always non-NULL for GPI DMA) */
++	u8 *tx_buf;
++	u8 *rx_buf;
++
++	u8 seq;
++	u16 max_x;
++	u16 max_y;
++	u16 max_objects;
++	u16 max_read_size;
++	u16 max_write_size;
++
++	u8 report_cfg[TCM2_MAX_REPORT_CFG];
++	u16 report_cfg_len;
++	u8 report_buf[TCM2_MAX_XFER];
++};
++
++static u8 tcm2_crc6(u8 b0, u8 b1, u8 b2, u8 seq)
++{
++	u8 crc = 0x3f;
++	const u8 bytes[3] = { b0, b1, b2 };
++	u8 tail[2] = { 0, (u8)(seq & 1) };
++	int i, j;
++
++	for (j = 0; j < 3; j++) {
++		for (i = 7; i >= 0; i--) {
++			u8 bit = (bytes[j] >> i) & 1;
++			u8 fb = ((crc >> 5) & 1) ^ bit;
++
++			crc = (crc << 1) & 0x3f;
++			if (fb)
++				crc ^= 0x03;
++		}
++	}
++
++	for (j = 0; j < 2; j++) {
++		u8 fb = ((crc >> 5) & 1) ^ tail[j];
++
++		crc = (crc << 1) & 0x3f;
++		if (fb)
++			crc ^= 0x03;
++	}
++
++	return (u8)(((seq & 1) << 6) | crc);
++}
++
++static bool tcm2_hdr_crc_ok(const u8 *hdr)
++{
++	u8 seq = (hdr[3] >> 6) & 1;
++
++	return hdr[3] == tcm2_crc6(hdr[0], hdr[1], hdr[2], seq);
++}
++
++static u16 tcm2_crc16(const u8 *data, size_t len)
++{
++	u16 crc = 0xffff;
++	size_t i;
++	int bit;
++
++	for (i = 0; i < len; i++) {
++		crc ^= (u16)data[i] << 8;
++		for (bit = 0; bit < 8; bit++) {
++			if (crc & 0x8000)
++				crc = (crc << 1) ^ 0x1021;
++			else
++				crc <<= 1;
++		}
++	}
++
++	return crc;
++}
++
++/*
++ * Full-duplex SPI helper: Qualcomm SM8750 QUPv3 SPI4 uses GPI DMA which
++ * requires both tx_buf and rx_buf to be non-NULL on every transfer.
++ */
++static int tcm2_spi_xfer(struct tcm2_ts *ts, size_t len)
++{
++	struct spi_transfer xfer = {
++		.tx_buf = ts->tx_buf,
++		.rx_buf = ts->rx_buf,
++		.len = len,
++	};
++
++	if (len == 0 || len > TCM2_MAX_XFER)
++		return -EINVAL;
++
++	return spi_sync_transfer(ts->spi, &xfer, 1);
++}
++
++static int tcm2_send_packet(struct tcm2_ts *ts, u8 cmd,
++			    const u8 *payload, u16 payload_len)
++{
++	size_t total = TCM2_HDR_SIZE;
++
++	if (payload_len > 0)
++		total += payload_len + TCM2_CRC16_SIZE;
++
++	if (total > TCM2_MAX_XFER)
++		return -EINVAL;
++
++	ts->tx_buf[0] = cmd;
++	ts->tx_buf[1] = payload_len & 0xff;
++	ts->tx_buf[2] = (payload_len >> 8) & 0xff;
++	ts->tx_buf[3] = tcm2_crc6(ts->tx_buf[0], ts->tx_buf[1],
++				  ts->tx_buf[2], ts->seq);
++
++	if (payload_len > 0 && payload) {
++		u16 crc;
++
++		memcpy(ts->tx_buf + TCM2_HDR_SIZE, payload, payload_len);
++		crc = tcm2_crc16(ts->tx_buf, TCM2_HDR_SIZE + payload_len);
++		ts->tx_buf[TCM2_HDR_SIZE + payload_len] = (crc >> 8) & 0xff;
++		ts->tx_buf[TCM2_HDR_SIZE + payload_len + 1] = crc & 0xff;
++	}
++
++	return tcm2_spi_xfer(ts, total);
++}
++
++static int tcm2_read_packet(struct tcm2_ts *ts, size_t read_len,
++			    u8 *code_out, u8 *payload_out, u16 max_payload,
++			    u16 *payload_len_out)
++{
++	u8 code;
++	u16 plen, copy_len;
++	int ret;
++
++	if (read_len < TCM2_HDR_SIZE)
++		read_len = TCM2_HDR_SIZE;
++	if (read_len > TCM2_MAX_XFER)
++		read_len = TCM2_MAX_XFER;
++
++	memset(ts->tx_buf, 0xff, read_len);
++	ret = tcm2_spi_xfer(ts, read_len);
++	if (ret)
++		return ret;
++
++	if (!tcm2_hdr_crc_ok(ts->rx_buf))
++		return -EBADMSG;
++
++	code = ts->rx_buf[0];
++	plen = get_unaligned_le16(ts->rx_buf + 1);
++
++	if (code_out)
++		*code_out = code;
++	if (payload_len_out)
++		*payload_len_out = plen;
++
++	if (plen > 0 && payload_out && max_payload > 0) {
++		size_t avail = (read_len > TCM2_HDR_SIZE) ?
++			       (read_len - TCM2_HDR_SIZE) : 0;
++
++		copy_len = min_t(u16, plen, max_payload);
++		if (copy_len > avail)
++			copy_len = avail;
++		memcpy(payload_out, ts->rx_buf + TCM2_HDR_SIZE, copy_len);
++	}
++
++	return 0;
++}
++
++/*
++ * Send a TCM v2 command and read back its response.
++ * Handles seq toggle, WAIT retries, and seq resync on INVALID.
++ */
++static int tcm2_command(struct tcm2_ts *ts, u8 cmd,
++			const u8 *tx_payload, u16 tx_len,
++			u8 *resp_code, u8 *rx_payload, u16 rx_max,
++			u16 *rx_len, size_t read_size, unsigned int wait_us)
++{
++	int attempt, poll, ret;
++	u8 code = 0;
++	u16 plen = 0;
++
++	for (attempt = 0; attempt < 3; attempt++) {
++		ret = tcm2_send_packet(ts, cmd, tx_payload, tx_len);
++		if (ret)
++			return ret;
++
++		for (poll = 0; poll < 15; poll++) {
++			if (wait_us)
++				usleep_range(wait_us, wait_us + 500);
++
++			ret = tcm2_read_packet(ts, read_size, &code,
++					       rx_payload, rx_max, &plen);
++			if (ret)
++				continue;
++
++			if (code == TCM2_STATUS_WAIT) {
++				usleep_range(2000, 3000);
++				continue;
++			}
++
++			if (code == TCM2_STATUS_INVALID) {
++				ts->seq ^= 1;
++				break;
++			}
++
++			ts->seq ^= 1;
++			if (resp_code)
++				*resp_code = code;
++			if (rx_len)
++				*rx_len = plen;
++			return 0;
++		}
++	}
++
++	return -EIO;
++}
++
++static u32 tcm2_get_bits(const u8 *buf, size_t buf_len,
++			 unsigned int bit_pos, unsigned int nbits)
++{
++	u32 val = 0;
++	unsigned int i;
++
++	if (nbits == 0 || nbits > 32)
++		return 0;
++	if ((bit_pos + nbits + 7) / 8 > buf_len)
++		return 0;
++
++	for (i = 0; i < nbits; i++) {
++		unsigned int pos = bit_pos + i;
++
++		if (buf[pos >> 3] & (1U << (pos & 7)))
++			val |= (1U << i);
++	}
++
++	return val;
++}
++
++static void tcm2_parse_and_report_touch(struct tcm2_ts *ts,
++					const u8 *data, u16 data_len)
++{
++	struct tcm2_object objs[TCM2_MAX_OBJECTS];
++	unsigned int bit_pos = 0;
++	unsigned int total_bits = (unsigned int)data_len * 8;
++	unsigned int idx = 0;
++	unsigned int loop_start = 0;
++	unsigned int obj_idx = 0;
++	unsigned int iter = 0;
++	unsigned int active_objs = 0;
++	bool has_num_active = false;
++	bool in_loop = false;
++	bool active_only = false;
++	bool obj_loop_seen = false;
++	unsigned int i;
++	int loops = 0;
++
++	if (!ts->report_cfg_len || !data_len)
++		return;
++
++	memset(objs, 0, sizeof(objs));
++
++	while (idx < ts->report_cfg_len && loops++ < 1024) {
++		u8 code = ts->report_cfg[idx++];
++		u8 bits;
++		u32 val;
++
++		switch (code) {
++		case TOUCH_ENTITY_END:
++			goto done;
++
++		case TOUCH_ENTITY_FOREACH_ACTIVE_OBJ:
++			iter = 0;
++			obj_idx = 0;
++			obj_loop_seen = true;
++			if (has_num_active && active_objs == 0) {
++				/* Skip loop body up to FOREACH_END */
++				while (idx < ts->report_cfg_len) {
++					u8 c = ts->report_cfg[idx++];
++
++					if (c == TOUCH_ENTITY_FOREACH_END)
++						break;
++					if (c == TOUCH_ENTITY_END)
++						goto done;
++					if (c != TOUCH_ENTITY_PAD_TO_NEXT_BYTE &&
++					    idx < ts->report_cfg_len)
++						idx++;
++				}
++				break;
++			}
++			in_loop = true;
++			active_only = true;
++			loop_start = idx;
++			break;
++
++		case TOUCH_ENTITY_FOREACH_OBJ:
++			iter = 0;
++			obj_idx = 0;
++			in_loop = true;
++			active_only = false;
++			loop_start = idx;
++			obj_loop_seen = true;
++			break;
++
++		case TOUCH_ENTITY_FOREACH_END:
++			if (!in_loop)
++				break;
++			iter++;
++			obj_idx = iter;
++			if (active_only) {
++				if (bit_pos + 8 <= total_bits &&
++				    iter < ts->max_objects &&
++				    (!has_num_active || iter < active_objs))
++					idx = loop_start;
++				else
++					in_loop = false;
++			} else {
++				if (iter < ts->max_objects &&
++				    bit_pos < total_bits)
++					idx = loop_start;
++				else
++					in_loop = false;
++			}
++			break;
++
++		case TOUCH_ENTITY_PAD_TO_NEXT_BYTE:
++			bit_pos = ALIGN(bit_pos, 8);
++			break;
++
++		case TOUCH_ENTITY_OBJ_INDEX:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (val < TCM2_MAX_OBJECTS)
++				obj_idx = val;
++			break;
++
++		case TOUCH_ENTITY_OBJ_CLASSIFICATION:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS) {
++				objs[obj_idx].classification = val;
++				objs[obj_idx].active =
++					(val != TOUCH_CLASS_LIFT &&
++					 val != TOUCH_CLASS_PALM);
++			}
++			break;
++
++		case TOUCH_ENTITY_OBJ_X_POS:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS)
++				objs[obj_idx].x = val;
++			break;
++
++		case TOUCH_ENTITY_OBJ_Y_POS:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS)
++				objs[obj_idx].y = val;
++			break;
++
++		case TOUCH_ENTITY_OBJ_Z:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS)
++				objs[obj_idx].z = val;
++			break;
++
++		case TOUCH_ENTITY_OBJ_X_WIDTH:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS)
++				objs[obj_idx].x_width = val;
++			break;
++
++		case TOUCH_ENTITY_OBJ_Y_WIDTH:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			val = tcm2_get_bits(data, data_len, bit_pos, bits);
++			bit_pos += bits;
++			if (obj_idx < TCM2_MAX_OBJECTS)
++				objs[obj_idx].y_width = val;
++			break;
++
++		case TOUCH_ENTITY_NUM_ACTIVE_OBJS:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			active_objs = tcm2_get_bits(data, data_len, bit_pos, bits);
++			has_num_active = true;
++			bit_pos += bits;
++			break;
++
++		case TOUCH_ENTITY_GESTURE_DATA:
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			/* Gesture data uses 1-byte bit count */
++			bits = ts->report_cfg[idx++];
++			bit_pos += bits;
++			break;
++
++		default:
++			/* All other standard and custom entities carry a 1-byte bit length */
++			if (idx >= ts->report_cfg_len)
++				goto done;
++			bits = ts->report_cfg[idx++];
++			bit_pos += bits;
++			break;
++		}
++	}
++
++done:
++	if (!obj_loop_seen)
++		return;
++
++	for (i = 0; i < ts->max_objects; i++) {
++		input_mt_slot(ts->input, i);
++		if (objs[i].active) {
++			u16 major = max(objs[i].x_width, objs[i].y_width);
++			u16 minor = min(objs[i].x_width, objs[i].y_width);
++
++			dev_info_once(&ts->spi->dev,
++				      "First touch event: slot=%u x=%u y=%u z=%u\n",
++				      i, objs[i].x, objs[i].y, objs[i].z);
++
++			input_mt_report_slot_state(ts->input, MT_TOOL_FINGER, true);
++			input_report_abs(ts->input, ABS_MT_POSITION_X,
++					 min(objs[i].x, ts->max_x));
++			input_report_abs(ts->input, ABS_MT_POSITION_Y,
++					 min(objs[i].y, ts->max_y));
++			input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR,
++					 major ? major : 1);
++			input_report_abs(ts->input, ABS_MT_TOUCH_MINOR,
++					 minor ? minor : 1);
++			input_report_abs(ts->input, ABS_MT_PRESSURE,
++					 objs[i].z ? objs[i].z : 1);
++		} else {
++			input_mt_report_slot_state(ts->input, MT_TOOL_FINGER, false);
++		}
++	}
++
++	input_mt_sync_frame(ts->input);
++	input_sync(ts->input);
++}
++
++static irqreturn_t tcm2_irq_handler(int irq, void *dev_id)
++{
++	struct tcm2_ts *ts = dev_id;
++	u8 code = 0;
++	u16 plen = 0;
++	int ret;
++
++	mutex_lock(&ts->lock);
++
++	ret = tcm2_command(ts, TCM2_CMD_GET_REPORT, NULL, 0,
++			   &code, ts->report_buf, sizeof(ts->report_buf),
++			   &plen, TCM2_REPORT_RD_SIZE, 400);
++	if (ret) {
++		dev_dbg(&ts->spi->dev, "GET_REPORT failed: %d\n", ret);
++		goto out;
++	}
++
++	if (code == TCM2_REPORT_TOUCH && plen > 0) {
++		u16 avail = min_t(u16, plen, sizeof(ts->report_buf));
++
++		tcm2_parse_and_report_touch(ts, ts->report_buf, avail);
++	}
++
++out:
++	mutex_unlock(&ts->lock);
++	return IRQ_HANDLED;
++}
++
++static int tcm2_hw_init(struct tcm2_ts *ts)
++{
++	struct device *dev = &ts->spi->dev;
++	u8 buf[TCM2_MAX_REPORT_CFG];
++	u8 code = 0;
++	u16 plen = 0;
++	u8 enable_touch = TCM2_REPORT_TOUCH;
++	char part[17];
++	u32 build_id;
++	int i, ret;
++
++	/* Pulse reset if available to ensure clean app-mode startup */
++	if (ts->reset_gpio) {
++		gpiod_set_value_cansleep(ts->reset_gpio, 1);
++		msleep(20);
++		gpiod_set_value_cansleep(ts->reset_gpio, 0);
++		msleep(200);
++	}
++
++	/* Drain any startup identify report with CMD_ACK (ignore errors) */
++	tcm2_send_packet(ts, TCM2_CMD_ACK, NULL, 0);
++	usleep_range(5000, 10000);
++	tcm2_read_packet(ts, 64, &code, buf, sizeof(buf), &plen);
++
++	/* 1. CMD_IDENTIFY */
++	memset(buf, 0, sizeof(buf));
++	ret = tcm2_command(ts, TCM2_CMD_IDENTIFY, NULL, 0,
++			   &code, buf, sizeof(buf), &plen, 64, 15000);
++	if (ret || (code != TCM2_STATUS_OK && code != TCM2_REPORT_IDENTIFY) || plen < 24) {
++		dev_err(dev, "CMD_IDENTIFY failed: ret=%d code=0x%02x len=%u\n",
++			ret, code, plen);
++		return ret ? ret : -ENODEV;
++	}
++
++	memcpy(part, buf + 2, 16);
++	for (i = 0; i < 16; i++) {
++		if (part[i] < 0x20 || part[i] > 0x7e) {
++			part[i] = '\0';
++			break;
++		}
++	}
++	part[16] = '\0';
++	build_id = get_unaligned_le32(buf + 18);
++	ts->max_write_size = get_unaligned_le16(buf + 22);
++	ts->max_read_size = (plen >= 26) ? get_unaligned_le16(buf + 24) : 256;
++
++	dev_info(dev, "Synaptics TCM v%u mode=0x%02x part='%s' build=%u max_wr=%u max_rd=%u\n",
++		 buf[0], buf[1], part, build_id, ts->max_write_size, ts->max_read_size);
++
++	/* 2. CMD_GET_APP_INFO */
++	memset(buf, 0, sizeof(buf));
++	ret = tcm2_command(ts, TCM2_CMD_GET_APP_INFO, NULL, 0,
++			   &code, buf, sizeof(buf), &plen, 80, 15000);
++	if (!ret && code == TCM2_STATUS_OK && plen >= 38) {
++		/*
++		 * App Info layout (Synaptics TCM v2, verified on S3930TB0A0):
++		 * [32..33]=max_x (15039), [34..35]=max_y (23999),
++		 * [36..37]=max_objects (10)
++		 */
++		ts->max_x = get_unaligned_le16(buf + 32);
++		ts->max_y = get_unaligned_le16(buf + 34);
++		ts->max_objects = get_unaligned_le16(buf + 36);
++	}
++	if (!ts->max_x || !ts->max_y) {
++		ts->max_x = 15039;
++		ts->max_y = 23999;
++	}
++	if (!ts->max_objects || ts->max_objects > TCM2_MAX_OBJECTS)
++		ts->max_objects = TCM2_MAX_OBJECTS;
++
++	dev_info(dev, "Touch resolution: %ux%u, max_objects=%u\n",
++		 ts->max_x, ts->max_y, ts->max_objects);
++
++	/* 3. CMD_GET_TOUCH_REPORT_CONFIG */
++	memset(buf, 0, sizeof(buf));
++	ret = tcm2_command(ts, TCM2_CMD_GET_TOUCH_REPORT_CFG, NULL, 0,
++			   &code, buf, sizeof(buf), &plen, 256, 15000);
++	if (!ret && code == TCM2_STATUS_OK && plen > 0) {
++		ts->report_cfg_len = min_t(u16, plen, sizeof(ts->report_cfg));
++		memcpy(ts->report_cfg, buf, ts->report_cfg_len);
++		dev_info(dev, "Touch report config (%u bytes): %*ph\n",
++			 ts->report_cfg_len,
++			 min_t(int, ts->report_cfg_len, 32), ts->report_cfg);
++	} else {
++		dev_warn(dev, "GET_TOUCH_REPORT_CONFIG failed (ret=%d code=0x%02x len=%u)\n",
++			 ret, code, plen);
++	}
++
++	/* 4. CMD_ENABLE_REPORT for REPORT_TOUCH (0x11) */
++	ret = tcm2_command(ts, TCM2_CMD_ENABLE_REPORT, &enable_touch, 1,
++			   &code, buf, sizeof(buf), &plen, 32, 15000);
++	if (ret || code != TCM2_STATUS_OK)
++		dev_warn(dev, "ENABLE_REPORT(0x11) returned ret=%d code=0x%02x\n",
++			 ret, code);
++	else
++		dev_info(dev, "Touch report 0x11 enabled\n");
++
++	return 0;
++}
++
++static int tcm2_probe(struct spi_device *spi)
++{
++	struct device *dev = &spi->dev;
++	struct tcm2_ts *ts;
++	int ret;
++
++	spi->mode = SPI_MODE_0;
++	spi->bits_per_word = 8;
++	if (!spi->max_speed_hz)
++		spi->max_speed_hz = 5000000;
++
++	ret = spi_setup(spi);
++	if (ret)
++		return dev_err_probe(dev, ret, "spi_setup failed\n");
++
++	ts = devm_kzalloc(dev, sizeof(*ts), GFP_KERNEL);
++	if (!ts)
++		return -ENOMEM;
++
++	ts->tx_buf = devm_kzalloc(dev, TCM2_MAX_XFER, GFP_KERNEL);
++	ts->rx_buf = devm_kzalloc(dev, TCM2_MAX_XFER, GFP_KERNEL);
++	if (!ts->tx_buf || !ts->rx_buf)
++		return -ENOMEM;
++
++	ts->spi = spi;
++	mutex_init(&ts->lock);
++	spi_set_drvdata(spi, ts);
++
++	ts->vdd = devm_regulator_get_optional(dev, "vdd");
++	if (IS_ERR(ts->vdd)) {
++		if (PTR_ERR(ts->vdd) != -ENODEV)
++			return dev_err_probe(dev, PTR_ERR(ts->vdd), "vdd regulator\n");
++		ts->vdd = NULL;
++	}
++
++	ts->avdd = devm_regulator_get_optional(dev, "avdd");
++	if (IS_ERR(ts->avdd)) {
++		if (PTR_ERR(ts->avdd) != -ENODEV)
++			return dev_err_probe(dev, PTR_ERR(ts->avdd), "avdd regulator\n");
++		ts->avdd = NULL;
++	}
++
++	if (ts->vdd) {
++		ret = regulator_enable(ts->vdd);
++		if (ret)
++			return ret;
++	}
++	if (ts->avdd) {
++		ret = regulator_enable(ts->avdd);
++		if (ret)
++			return ret;
++	}
++
++	ts->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
++	if (IS_ERR(ts->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(ts->reset_gpio), "reset gpio\n");
++
++	ret = tcm2_hw_init(ts);
++	if (ret)
++		return ret;
++
++	ts->input = devm_input_allocate_device(dev);
++	if (!ts->input)
++		return -ENOMEM;
++
++	ts->input->name = "Synaptics S3930 TCMv2 Touchscreen";
++	ts->input->id.bustype = BUS_SPI;
++	ts->input->dev.parent = dev;
++
++	input_set_abs_params(ts->input, ABS_MT_POSITION_X, 0, ts->max_x, 0, 0);
++	input_set_abs_params(ts->input, ABS_MT_POSITION_Y, 0, ts->max_y, 0, 0);
++	input_set_abs_params(ts->input, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
++	input_set_abs_params(ts->input, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
++	input_set_abs_params(ts->input, ABS_MT_PRESSURE, 0, 255, 0, 0);
++
++	ret = input_mt_init_slots(ts->input, ts->max_objects,
++				  INPUT_MT_DIRECT | INPUT_MT_DROP_UNUSED);
++	if (ret)
++		return ret;
++
++	ret = input_register_device(ts->input);
++	if (ret)
++		return ret;
++
++	if (spi->irq > 0) {
++		ret = devm_request_threaded_irq(dev, spi->irq, NULL,
++						tcm2_irq_handler,
++						IRQF_TRIGGER_LOW | IRQF_ONESHOT,
++						"synaptics_tcm2_spi", ts);
++		if (ret)
++			return dev_err_probe(dev, ret, "request_threaded_irq failed\n");
++	} else {
++		dev_warn(dev, "No IRQ configured\n");
++	}
++
++	dev_info(dev, "Registered multi-touch input device (irq=%d)\n", spi->irq);
++	return 0;
++}
++
++static const struct of_device_id tcm2_of_match[] = {
++	{ .compatible = "synaptics,tcm-spi" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, tcm2_of_match);
++
++static const struct spi_device_id tcm2_spi_id[] = {
++	{ "tcm-spi", 0 },
++	{ "synaptics-tcm2", 0 },
++	{ }
++};
++MODULE_DEVICE_TABLE(spi, tcm2_spi_id);
++
++static struct spi_driver tcm2_spi_driver = {
++	.driver = {
++		.name = "synaptics_tcm2_spi",
++		.of_match_table = tcm2_of_match,
++	},
++	.probe = tcm2_probe,
++	.id_table = tcm2_spi_id,
++};
++module_spi_driver(tcm2_spi_driver);
++
++MODULE_DESCRIPTION("Synaptics TouchComm v2 (TCM v2) SPI Touchscreen Driver");
++MODULE_LICENSE("GPL");

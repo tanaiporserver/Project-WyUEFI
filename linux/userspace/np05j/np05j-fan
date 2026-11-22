@@ -1,0 +1,21 @@
+#!/bin/sh
+HW=""
+for h in /sys/class/hwmon/hwmon*; do
+  [ "$(cat "$h/name" 2>/dev/null)" = "pwmfan" ] && HW="$h" && break
+done
+if [ -z "$HW" ]; then
+  echo "pwmfan hwmon not found"
+  exit 1
+fi
+if [ -n "$1" ]; then
+  pct="$1"
+  if [ "$pct" -lt 0 ] 2>/dev/null || [ "$pct" -gt 100 ] 2>/dev/null; then
+    echo "Usage: np05j-fan [0..100]  (0=OFF, 50=half, 100=MAX ~27,600 RPM)"
+    exit 1
+  fi
+  raw=$((255 - (pct * 255 / 100)))
+  echo "$raw" > "$HW/pwm1" && sleep 1
+fi
+raw_cur=$(cat "$HW/pwm1" 2>/dev/null || echo 255)
+pct_cur=$(((255 - raw_cur) * 100 / 255))
+echo "Cooling Fan ($HW): speed=${pct_cur}% (raw_pwm=${raw_cur}/255 inverted) | rpm=$(cat "$HW/fan1_input" 2>/dev/null || echo n/a)"

@@ -23,9 +23,11 @@ import stage_piano_kernel_modules as modules
 import stage_piano_ram_hardware as hardware
 from assemble_rootfs import product_fstab
 from build import overlay_packages, overlay_release
+from build.denial import image_manifest
 from package_bsp import POWER_PROFILES_PACKAGE
 from make_kernel_initramfs import make_newc, validate_static_arm64_elf
 from package import camera
+from package.download import download_debian
 from prepare_debian_desktop import DESKTOPS, desktop_packages
 from prepare_release_kernel import release_series
 
@@ -81,7 +83,7 @@ def image_status(desktop):
 def plan(kernel, source, output, runtime_dir=None, kernel_build=None,
          public_source=None, firmware_source=None, root=ROOT, resume=False,
          sensors_dir=None, ffmpeg_dir=None, boot_task_snapshot=False, desktop='gnome', mutter_dir=None,
-         packages_only=None, published_packages=None):
+         packages_only=None, published_packages=None, denial_packages=None):
     root = Path(root).resolve(); config = json.loads((root / 'config/release.json').read_text())
     if desktop not in DESKTOPS:
         raise ValueError('Release desktop must be gnome, kde or denial')
@@ -104,6 +106,8 @@ def plan(kernel, source, output, runtime_dir=None, kernel_build=None,
             raise ValueError('Use a separate build/distros/overlays directory for package builds')
     if published_packages and (sensors_dir or ffmpeg_dir or mutter_dir or packages_only):
         raise ValueError('Published packages cannot be combined with local package selection')
+    denial_packages = image_manifest(denial_packages, 'debian-denial', desktop=desktop,
+                                     published=published_packages is not None)
     if published_packages:
         published_packages = Path(published_packages).resolve()
         overlay_packages.read_debian(published_packages, desktop)
@@ -187,7 +191,9 @@ def plan(kernel, source, output, runtime_dir=None, kernel_build=None,
                   if published_packages
                   else 'build overlays in a separate signed Debian sid root and install the native packages')]
         if desktop == 'denial':
-            steps.append('install Denial from its signed APT source and enable its mobile session')
+            steps.append('install exact Denial packages from the signed SunUEFI and Denial APT sources'
+                         if denial_packages else
+                         'install Denial from its signed APT source and enable its mobile session')
         steps.append('stage the hardware runtime, apply product defaults and build the initial initramfs')
     return {'status': 'PLAN_ONLY', 'resume': resume, 'desktop': desktop,
             'previous_kernel_release': previous.get('kernel_release') if previous else None,
@@ -199,6 +205,7 @@ def plan(kernel, source, output, runtime_dir=None, kernel_build=None,
             'boot_task_snapshot': boot_task_snapshot,
             'packages_only': str(package_output) if packages_only else None,
             'published_packages': str(published_packages) if published_packages else None,
+            'denial_packages': str(denial_packages) if denial_packages else None,
             'runtime_dir': str(Path(runtime_dir).resolve()) if runtime_dir else None,
             'kernel_build': str(Path(kernel_build or root / 'build/kernels/release').resolve()),
             'public_source': str(public), 'firmware_source': str(firmware), 'config': config,
@@ -837,6 +844,17 @@ def build_overlays(record, rootfs, kernel, run, directory=None, *, uapi=None):
     if bluez_record is None:
         raise ValueError('BlueZ package does not match the signed Debian source and HoG patch')
     sources['bluez'] = bluez / 'runtime', bluez_record
+    if record['desktop'] == 'kde' or record.get('packages_only'):
+        from desktop import build_kwin_package as kwin_builder
+
+        kwin = directory / 'kwin'
+        target, series, patches = kwin_builder.selection(rootfs)
+        if series is not None:
+            run([ROOT / 'build.sh', 'kwin', '--sysroot', rootfs, '--output', kwin])
+            kwin_record = kwin_builder.reusable(kwin, target, series, patches)
+            if kwin_record is None:
+                raise ValueError('KWin packages do not match the signed Debian source and HDR fix')
+            sources['kwin'] = kwin / 'runtime', kwin_record
     if record['desktop'] == 'gnome':
         gsd = directory / 'gsd/runtime'
         run([ROOT / 'build.sh', 'gsd', '--output', gsd.parent, '--sysroot', rootfs])
@@ -852,7 +870,6 @@ def build_overlays(record, rootfs, kernel, run, directory=None, *, uapi=None):
         if gdm_record is None:
             raise ValueError('GDM packages do not match the shared source patches')
         sources['gdm'] = gdm / 'runtime', gdm_record
-    install_overlays(rootfs, run, overlay_packages.debian_packages(sources), desktop=record['desktop'])
     sources['fingerprint'] = build_fingerprint_overlay(
         record, rootfs, kernel, directory / 'fingerprint-packages', uapi)
     return sources
@@ -866,7 +883,7 @@ def install_overlays(rootfs, run, packages, *, desktop, extra=(), published=Fals
     cohort = any(row.get('component') == 'pipewire' and
                  row.get('name') == 'libpipewire-0.3-modules' for row in records.values())
     installed = set()
-    if cohort:
+    if any(row.get('component') in ('pipewire', 'kwin', 'fingerprint') for row in records.values()):
         text = capture(['chroot', rootfs, 'dpkg-query', '-W',
                         '-f=${Package}\t${db:Status-Status}\n'])
         installed = {row.split()[0] for row in text.splitlines() if row.endswith('\tinstalled')}
@@ -896,7 +913,7 @@ def install_overlays(rootfs, run, packages, *, desktop, extra=(), published=Fals
         prepare_build_indexes(rootfs, lambda args: run(['chroot', rootfs, *args]),
                               refresh=published)
         if published:
-            paths = overlay_packages.download_debian(rootfs, work, packages, run)
+            paths = download_debian(rootfs, work, packages, run)
         else:
             paths = []
             for name, (archive, row) in packages.items():
@@ -918,12 +935,13 @@ def install_overlays(rootfs, run, packages, *, desktop, extra=(), published=Fals
 
 
 def build_fingerprint_overlay(record, rootfs, kernel, fingerprint, uapi):
-    """Build libfprint against the same installed runtime as the other packages."""
-    from build_piano_fingerprint import install_debian_desktop, prepare_desktop_backend
+    """Build the complete native package set without installing development packages."""
+    from build_piano_fingerprint import prepare_desktop_backend
     from build_release_helpers import export_uapi
+    from desktop import build_fingerprint_packages
 
     if record['runtime_dir']:
-        install_debian_desktop(rootfs, Path(record['runtime_dir']), fingerprint)
+        metadata = build_fingerprint_packages.build(fingerprint, rootfs, Path(record['runtime_dir']))
     else:
         with tempfile.TemporaryDirectory(prefix='sunuefi-fingerprint-', dir=Path(record['output'])) as temporary:
             work = Path(temporary)
@@ -932,11 +950,8 @@ def build_fingerprint_overlay(record, rootfs, kernel, fingerprint, uapi):
                 export_uapi(Path(record['source']), Path(record['kernel_build']),
                             kernel['source_commit'], uapi)
             prepare_desktop_backend(work, uapi)
-            install_debian_desktop(rootfs, work, fingerprint)
-    metadata = json.loads((fingerprint / 'SOURCE.json').read_text())
-    metadata['packages'] = {'libfprint-2-2': metadata['package']}
-    folder = fingerprint / 'runtime' if (fingerprint / 'runtime').is_dir() else fingerprint
-    return folder, metadata
+            metadata = build_fingerprint_packages.build(fingerprint, rootfs, work)
+    return fingerprint / 'runtime', metadata
 
 
 def build_local_overlays(record, kernel, run):
@@ -1057,6 +1072,8 @@ def execute(record):
             bsp_archive, bsp = overlay_packages.shared_bsp('debian')
             topology_archive, topology = overlay_packages.shared_topology('debian')
             power_archive, power = overlay_packages.shared_bsp('debian', component='power-profiles')
+            keyboard_archive, keyboard = overlay_packages.shared_bsp('debian', component='keyboard-firmware')
+            touch_archive, touch = overlay_packages.shared_bsp('debian', component='touch-firmware')
             camera_archive, camera_record = camera.shared_package('debian')
             components, packages = overlay_packages.read_debian(Path(published), desktop)
             overlay_packages.check_topology_conflicts(rootfs, topology)
@@ -1064,6 +1081,7 @@ def execute(record):
             install_overlays(rootfs, run, {
                 **packages, bsp_archive.name: bsp, topology_archive.name: topology,
                 camera_archive.name: camera_record, power_archive.name: power,
+                keyboard_archive.name: keyboard, touch_archive.name: touch,
             }, desktop=desktop, extra=cfg['debian']['extra_packages'], published=True)
             archive = debian_archive(rootfs, desktop)
         else:
@@ -1110,11 +1128,7 @@ def execute(record):
                      '--kernel-build', record['kernel_build'], '--output', bundle, '--sysroot', sysroot,
                      '--cc', helper_cc])
             runtime.stage(bundle, rootfs)
-        from build_piano_fingerprint import debian_abi, desktop_service
-        if not published and debian_abi(rootfs) != components['fingerprint']['target_abi']:
-            raise ValueError('The image fingerprint ABI differs from the signed package build root')
-        desktop_service(rootfs)
-        from stage_piano_firmware import stage as stage_firmware, verify_display
+        from stage_piano_firmware import stage as stage_firmware, verify_firmware_packages
         firmware = stage_firmware(Path(record['firmware_source']), rootfs, 'debian',
                                   shared=bool(published), run=run)
         apply_policy(rootfs, out, cfg)
@@ -1122,7 +1136,9 @@ def execute(record):
         if desktop == 'denial':
             from build.denial import install_debian
 
-            install_debian(rootfs, run)
+            denial_packages = record.get('denial_packages')
+            denial_versions = install_debian(rootfs, run,
+                                             manifest=Path(denial_packages) if denial_packages else None)
             archive = debian_archive(rootfs, desktop)
         boot_request = native_boot_request(rootfs, out)
         sanitize(rootfs, out)
@@ -1141,7 +1157,7 @@ def execute(record):
         if installed.get(power['name']) != power['version']:
             raise ValueError('Installed Piano power profiles package version differs')
         overlay_packages.verify_bsp_files(rootfs, 'debian', component='power-profiles')
-        verify_display(rootfs, 'debian', firmware['display_package'])
+        verify_firmware_packages(rootfs, 'debian', firmware['packages'])
         if installed.get(camera_record['name']) != camera_record['version']:
             raise ValueError('Installed Piano camera package version differs')
         camera.verify_installed(rootfs, 'debian', camera_archive)
@@ -1171,7 +1187,7 @@ def execute(record):
                   'debian_commit': cfg['debian']['commit'],
                   'device_configuration': bsp, 'camera_package': camera_record,
                   'audio_topology_package': topology, 'power_profiles_package': power,
-                  'display_firmware_package': firmware['display_package'],
+                  'firmware_packages': firmware['packages'],
                   **components,
                   'boot_request': boot_request, 'firmware_components': cfg['firmware']['components'],
                   'clock_epoch': clock,
@@ -1180,6 +1196,10 @@ def execute(record):
                   'bit_reproducible': False, 'root_uid': rootfs.stat().st_uid, 'device_operation_performed': False}
         if published:
             result['overlay_manifest_sha256'] = digest(Path(published))
+        if desktop == 'denial':
+            result['denial'] = denial_versions
+            if denial_packages:
+                result['denial_manifest_sha256'] = digest(Path(denial_packages))
         (out / 'manifest.json').write_text(json.dumps(result, indent=2) + '\n')
         (out / 'FAILED.json').unlink(missing_ok=True)
         return result
@@ -1201,6 +1221,8 @@ def main():
                           help='Build and export overlay packages without assembling a product image')
     packages.add_argument('--published-packages', type=Path, metavar='MANIFEST',
                           help='Install exact overlay packages from the signed SunUEFI APT source')
+    parser.add_argument('--denial-packages', type=Path, metavar='MANIFEST',
+                        help='Install the published Denial package set for --desktop denial')
     parser.add_argument('--resume', action='store_true', help='Reuse the completed upstream base and refresh release assembly')
     parser.add_argument('--desktop', choices=DESKTOPS, default='gnome')
     parser.add_argument('--boot-task-snapshot', action='store_true',

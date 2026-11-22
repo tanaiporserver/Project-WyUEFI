@@ -48,7 +48,15 @@ EFI_STATUS PianoMemoryLayoutRead(PIANO_MEMORY_LAYOUT_READ Callback,VOID *Context
  UINT32 RegAt=0,RegBytes=0;
  while(At<=End&&End-At>=4){UINT32 Token;S=Word(&R,At,&Token);if(S!=EFI_SUCCESS)return S;At+=4;
   if(Token==1){CHAR8 Name[128];UINT32 Used;S=String(&R,At,End,Name,sizeof(Name),&Used);if(S!=EFI_SUCCESS)return S;if(!Depth&&Name[0])return EFI_COMPROMISED_DATA;
-   if(Depth==1){Memory=!AsciiStrCmp(Name,"memory")||(AsciiStrLen(Name)>=7&&!CompareMem(Name,"memory@",7));Reserved=!AsciiStrCmp(Name,"reserved-memory");Ddr=!AsciiStrCmp(Name,"ddr-regions");if((Reserved&&++ReservedNodes!=1)||(Ddr&&++DdrNodes!=1))return EFI_COMPROMISED_DATA;MemoryType=FALSE;RegAt=RegBytes=0;}
+   if(Depth==1){
+#ifdef SUNUEFI_NP05J
+    // บน NP05J โหนดหน่วยความจำหลักอยู่ก่อน /soc ทั้งหมด จึงหยุดเดินต้นไม้เมื่ออ่านครบแล้ว
+    if(!AsciiStrCmp(Name,"soc")&&RootAddress==2&&RootSize==2&&L->RamCount>0&&
+       ReservedNodes==1&&ReservedAddress==2&&ReservedSize==2&&DdrNodes==1){
+     Done=TRUE;break;
+    }
+#endif
+    Memory=!AsciiStrCmp(Name,"memory")||(AsciiStrLen(Name)>=7&&!CompareMem(Name,"memory@",7));Reserved=!AsciiStrCmp(Name,"reserved-memory");Ddr=!AsciiStrCmp(Name,"ddr-regions");if((Reserved&&++ReservedNodes!=1)||(Ddr&&++DdrNodes!=1))return EFI_COMPROMISED_DATA;MemoryType=FALSE;RegAt=RegBytes=0;}
    if(Reserved&&Depth==2){Reuse=NoMap=Pool=Dynamic=FALSE;Enabled=TRUE;RegAt=RegBytes=0;}
    if(++Depth>64)return EFI_COMPROMISED_DATA;At=ALIGN_VALUE(At+Used,4);
   }else if(Token==2){

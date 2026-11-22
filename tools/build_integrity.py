@@ -7,10 +7,12 @@ from pathlib import Path
 import uuid
 from firmware_workspace import active_root, validate_sources
 
-NAMES={'stage0':'piano','probe':'pianoProbe','linux':'pianoLinux','gui':'pianoGui','product':'pianoProduct'}
+NAMES={'stage0':'piano','probe':'pianoProbe','linux':'pianoLinux','gui':'pianoGui','product':'pianoProduct','product-np05j':'np05jProduct'}
 
 def output_names(profile):
-    return ('PianoUEFI-product.fd','BootShim.bin') if profile=='product' else ('piano-stage0.fd','BootShim.bin')
+    if profile=='product':return ('PianoUEFI-product.fd','BootShim.bin')
+    if profile=='product-np05j':return ('Np05jUEFI-product.fd','BootShim.bin')
+    return ('piano-stage0.fd','BootShim.bin')
 
 
 def sha(path):
@@ -19,21 +21,30 @@ def sha(path):
 
 def inputs(root,profile):
     original_root=root
-    if profile=='product':root=active_root(root)
+    is_product=profile in ('product','product-np05j')
+    is_np05j=profile=='product-np05j'
+    vendor_dir='ZTE' if is_np05j else 'Xiaomi'
+    pkg_dir='np05jProductPkg' if is_np05j else 'pianoProductPkg'
+    device='np05j' if is_np05j else 'piano'
+    if is_product:root=active_root(root)
     ws=root/'upstream/Mu-Silicium'
-    platform=ws/'Platforms/Xiaomi'/f'{NAMES[profile]}Pkg'
+    platform=ws/'Platforms'/vendor_dir/f'{NAMES[profile]}Pkg'
     if not platform.is_dir():
         raise ValueError('Prepared platform is missing')
     files=set(p for p in platform.rglob('*') if p.is_file() and '__pycache__' not in p.parts)
-    binaries=ws/'Binaries/piano'
+    binaries=ws/'Binaries'/device
     if binaries.exists():
         files.update(p for p in binaries.rglob('*') if p.is_file())
     shim=ws/'BootShim' if profile=='stage0' else root/'uefi/handoff/bootshim'
-    for p in (shim/'BootShim.S',shim/'Makefile',ws/'Resources/DTBs/piano.dtb',
+    dtb_name='np05j.dtb' if is_np05j else 'piano.dtb'
+    for p in (shim/'BootShim.S',shim/'Makefile',ws/'Resources/DTBs'/dtb_name,
               root/'tools/build_stage0.sh',root/'tools/build_integrity.py'):
         if p.is_file():files.add(p)
-    if profile=='product':
-        import piano_vendor_inputs as vendor_inputs
+    if is_product:
+        if is_np05j:
+            import np05j_vendor_inputs as vendor_inputs
+        else:
+            import piano_vendor_inputs as vendor_inputs
         vendor_record=vendor_inputs.record(root)
         files.update(vendor_inputs.source_files(root))
         files.update(path for path in (root/'patches/firmware').rglob('*') if path.is_file())
@@ -44,30 +55,34 @@ def inputs(root,profile):
         pump_record=pump(root,apply=False);ui_record=ui(root,apply=False)
         files.update(root/path for path in (*pump_record['files'],*ui_record['files']))
         files.update(root/path for path in nv_guard(root,apply=False)['files'])
-        from prepare_product import (SOURCE_NAMES, PRODUCT_COMPONENTS, os_boot_files,
+        from prepare_product import (SOURCE_NAMES, product_components, os_boot_files,
                                      verify_os_boot, observation_files,
                                      verify_observation_families, verify_display_mapping,
                                      early_dxe_files)
-        files.update(early_dxe_files(root))
+        files.update(early_dxe_files(root,device))
         canonical=root/'uefi/core'
         from core_source import core_source
         files.update(core_source(name, root) for name in SOURCE_NAMES)
         files.update(root/'uefi/components'/component/name
-                     for component,names in PRODUCT_COMPONENTS.items() for name in names)
+                     for component,names in product_components(device).items() for name in names)
         files.update(path for path in canonical.rglob('*') if path.is_file() and path.suffix in ('.h','.inc'))
         files.update(os_boot_files(root).values())
-        prepared=json.loads((root/'build/product/prepared-manifest.json').read_text());os_boot=prepared.get('os_boot',{})
+        build_dir='build/product-np05j' if is_np05j else 'build/product'
+        prepared=json.loads((root/build_dir/'prepared-manifest.json').read_text());os_boot=prepared.get('os_boot',{})
         if prepared.get('vendor_inputs')!=vendor_record:
             raise ValueError('Prepared vendor inputs differ from the fixed input bundle')
         for rows in observation_files(root).values():files.update(rows.values())
-        for app in (platform/'Applications/ProductCore',root/'uefi/platforms/pianoProductPkg/Applications/ProductCore'):
+        for app in (platform/'Applications/ProductCore',root/'uefi/platforms'/pkg_dir/'Applications/ProductCore'):
             verify_os_boot(root,app,os_boot)
             verify_observation_families(root,app,prepared.get('dxe_observation',{}))
         from prepare_product_early_memory import verify as verify_early_memory, EARLY_FILES
-        for target in (platform,root/'uefi/platforms/pianoProductPkg'):
+        for target in (platform,root/'uefi/platforms'/pkg_dir):
             verify_early_memory(root,target,prepared.get('early_memory',{}))
-            verify_display_mapping(root,target,prepared.get('display_mapping',{}))
-        from piano_display_mapping import source_files as display_sources
+            verify_display_mapping(root,target,prepared.get('display_mapping',{}),device=device)
+        if is_np05j:
+            from np05j_display_mapping import source_files as display_sources
+        else:
+            from piano_display_mapping import source_files as display_sources
         files.update(display_sources(root))
         files.update(root/path for path in ('tools/compose_piano_dtb.py','tools/analyze_capture.py'))
         files.update(root/'uefi/handoff/early-memory'/name for name in EARLY_FILES)
@@ -79,21 +94,27 @@ def inputs(root,profile):
             path=root/name
             if not path.is_file()or sha(path)!=digest:raise ValueError('Native late handoff compiled hook stale: '+name)
             files.add(path)
-        for target in (platform,root/'uefi/platforms/pianoProductPkg'):
+        for target in (platform,root/'uefi/platforms'/pkg_dir):
             verify_provider(root,target/'Applications/ProductCore',prepared.get('late_provider',{}))
-        for folder in ('uefi/components/product-pump','uefi/components/product-support','uefi/components/product-handoff','uefi/components/board-identity','uefi/components/ext4','uefi/components/simple-init','uefi/components/nv','uefi/components/reset','uefi/components/usb-host','uefi/components/pogo-product','uefi/components/touch-product'):
+        touch_folder='uefi/components/touch-np05j' if is_np05j else 'uefi/components/touch-product'
+        comp_folders=['uefi/components/product-pump','uefi/components/product-support','uefi/components/product-handoff','uefi/components/board-identity','uefi/components/ext4','uefi/components/simple-init','uefi/components/nv','uefi/components/reset','uefi/components/usb-host',touch_folder]
+        if not is_np05j:comp_folders.append('uefi/components/pogo-product')
+        for folder in comp_folders:
             files.update(path for path in (root/folder).rglob('*') if path.is_file())
-        for relative in ('config/piano-product.json','build/product/prepared-manifest.json',
+        contract_path='config/np05j-product.json' if is_np05j else 'config/piano-product.json'
+        si_dir='artifacts/simpleinit/product-np05j' if is_np05j else 'artifacts/simpleinit/product'
+        si_cfg='config/simpleinit.np05j.uefi.cfg' if is_np05j else 'config/simpleinit.static.uefi.cfg'
+        for relative in (contract_path,build_dir+'/prepared-manifest.json',
                          'tools/prepare_product.py','tools/build_product.sh','tools/firmware_workspace.py','tools/package_product.py',
                          'tools/prepare_product_pump.py','tools/prepare_product_ui.py','tools/prepare_product_console.py','tools/prepare_nv_runtime_guard.py','tools/prepare_product_early_memory.py','tools/prepare_product_handoff.py','tools/source_input_tail.py','tools/simpleinit_build_identity.py',
                           'tools/build_simpleinit.sh','tools/prepare_simpleinit.py','tools/firmware/prepare_ext4.py','tools/product_payload_digest.py',
-                          'config/uefi-ext4.json','config/simpleinit.static.uefi.cfg',
-                         'artifacts/simpleinit/product/SimpleInit.efi','artifacts/simpleinit/product/app-payload.bin',
-                         'artifacts/simpleinit/product/build-ok.json'):
+                          'config/uefi-ext4.json',si_cfg,
+                         si_dir+'/SimpleInit.efi',si_dir+'/app-payload.bin',
+                         si_dir+'/build-ok.json'):
             p=root/relative
             if not p.is_file():raise ValueError('Missing product build input: '+relative)
             files.add(p)
-    if profile=='product':
+    if is_product:
         validate_sources(original_root, [str(p.relative_to(root)) for p in files])
     hashes={str(p.relative_to(root)):sha(p) for p in sorted(files)}
     return {'sha256':hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest(),

@@ -13,6 +13,21 @@ STATIC CONST CHAR8 mBase64[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 STATIC VOID EFIAPI Capture (EFI_EVENT Event, VOID *Context) {
   EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
   unsigned char *Pixels, *Png=NULL; size_t PngBytes=0;
+#ifdef SUNUEFI_NP05J
+  UINTN Width=800, Height=501; EFI_STATUS Status;
+  gBS->CloseEvent (Event); mScreenshot=NULL;
+  Status=gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid,NULL,(VOID **)&Gop);
+  if (EFI_ERROR (Status) || Gop->Mode==NULL || Gop->Mode->Info==NULL) { return; }
+  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info=Gop->Mode->Info;
+  if (Gop->Mode->FrameBufferBase!=0xFC800000ULL || Info->HorizontalResolution!=2400 ||
+      Info->VerticalResolution!=1504 || Info->PixelsPerScanLine!=2400 ||
+      Info->PixelFormat!=PixelBlueGreenRedReserved8BitPerColor ||
+      Gop->Mode->FrameBufferSize<2400ULL*1504*4) { return; }
+  Pixels=malloc(Width*Height*4); if(Pixels==NULL) { return; }
+  CONST volatile UINT8 *Frame=(CONST volatile UINT8 *)(UINTN)Gop->Mode->FrameBufferBase;
+  for (UINTN Y=0;Y<Height;++Y) for (UINTN X=0;X<Width;++X) {
+    CONST volatile UINT8 *Source=Frame+((Y*3)*2400+X*3)*4;
+#else
   UINTN Width=800, Height=534; EFI_STATUS Status;
   gBS->CloseEvent (Event); mScreenshot=NULL;
   Status=gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid,NULL,(VOID **)&Gop);
@@ -26,6 +41,7 @@ STATIC VOID EFIAPI Capture (EFI_EVENT Event, VOID *Context) {
   CONST volatile UINT8 *Frame=(CONST volatile UINT8 *)(UINTN)Gop->Mode->FrameBufferBase;
   for (UINTN Y=0;Y<Height;++Y) for (UINTN X=0;X<Width;++X) {
     CONST volatile UINT8 *Source=Frame+((Y*4)*3200+X*4)*4;
+#endif
     UINT8 *Target=Pixels+(Y*Width+X)*4;
     Target[0]=Source[2];Target[1]=Source[1];Target[2]=Source[0];Target[3]=255;
   }

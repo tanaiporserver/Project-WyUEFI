@@ -109,12 +109,48 @@
     },
     {
       "file": "0011-libcamera-0.8-camera-location.patch",
-      "sha256": "710c09ac8fe9e08fd6f9651d5bbc94dae49d31227ca085a4830be2701cb07b77",
+      "sha256": "a35b4e9d829f974126e197395507dbaf10945bbd8cf0b17c80673202e330ebe2",
       "upstream": {
         "status": "merged",
         "url": "https://github.com/PipeWire/pipewire/commit/54f2f51f5233026e608f8235f5377b9b473918e3",
         "commit": "54f2f51f5233026e608f8235f5377b9b473918e3",
         "drop_when": "The selected PipeWire release uses the renamed libcamera 0.8 camera location enums or an equivalent upstream implementation."
+      }
+    },
+    {
+      "file": "0012-libcamera-apply-negotiated-framerate.patch",
+      "sha256": "f038abdf22fa9663b9fefdab75d45b81ca6e4d1eddb0983031e7f5a3869f3a6f",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/PipeWire/pipewire/blob/0e30a575c2e279bd7a8975e403168f8ac906cc7e/spa/plugins/libcamera/libcamera-source.cpp",
+        "drop_when": "The selected PipeWire release sets the negotiated frame rate on the configured camera, reports the active format to new subscribers, and advances its clock from capture timestamps when no fixed period is available."
+      }
+    },
+    {
+      "file": "0013-gst-report-incompatible-capture-format.patch",
+      "sha256": "7e564fb33afefdf90df251526342d717f101737df838d260ce8273a332db4c09",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/PipeWire/pipewire/blob/0e30a575c2e279bd7a8975e403168f8ac906cc7e/src/gst/gstpipewiresrc.c",
+        "drop_when": "The selected PipeWire release reports a stream error when the received capture format has no compatible downstream caps, without leaving GStreamer waiting for negotiation."
+      }
+    },
+    {
+      "file": "0014-libcamera-report-validated-format.patch",
+      "sha256": "889454a60dd38ddc65a7930bd64630217d6a8823fc05a983e58703a583c8341f",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/PipeWire/pipewire/blob/0e30a575c2e279bd7a8975e403168f8ac906cc7e/spa/plugins/libcamera/libcamera-source.cpp",
+        "drop_when": "The selected PipeWire release rejects unsupported exact camera sizes, pixel formats and DMA-BUF layouts and reports the accepted format, including explicit linear. Verify the source fixates supported modifier choices and clients without a modifier can still join a running linear stream."
+      }
+    },
+    {
+      "file": "0015-libcamera-enumerate-formats-by-index.patch",
+      "sha256": "e2c5851b1d0ab0921a24b55f9029735bdfe6f0e97246cad72ba2b21e96370952",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/PipeWire/pipewire/blob/6c3d3be2c2981874ac905c0967b706c73c177d7d/spa/plugins/libcamera/libcamera-source.cpp",
+        "drop_when": "The selected PipeWire release enumerates libcamera formats by the requested index without duplicates or dependence on earlier queries. Verify pagination and interleaved filters against the same camera."
       }
     }
   ]

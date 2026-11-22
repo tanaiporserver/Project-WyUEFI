@@ -5,12 +5,14 @@ sun_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 sun_ws="$sun_root/upstream/Mu-Silicium"
 sun_tools="${SUNUEFI_TOOLCHAIN_ROOT:-$sun_root/build/host-tools/usr}"
 sun_profile="${1:-stage0}"
+sun_vendor_dir=Xiaomi
 case "$sun_profile" in
   stage0) sun_name=piano; sun_bootshim="$sun_ws/BootShim" ;;
   probe) sun_name=pianoProbe; sun_bootshim="$sun_root/uefi/handoff/bootshim" ;;
   linux) sun_name=pianoLinux; sun_bootshim="$sun_root/uefi/handoff/bootshim" ;;
   gui) sun_name=pianoGui; sun_bootshim="$sun_root/uefi/handoff/bootshim" ;;
   product) sun_name=pianoProduct; sun_bootshim="$sun_root/uefi/handoff/bootshim" ;;
+  product-np05j) sun_name=np05jProduct; sun_vendor_dir=ZTE; sun_bootshim="$sun_root/uefi/handoff/bootshim" ;;
   *) printf 'Unknown build profile\n' >&2; exit 1 ;;
 esac
 sun_fd_name=piano-stage0.fd
@@ -18,6 +20,9 @@ sun_buildid=SunUEFI-piano-stage0
 if [[ "$sun_profile" == product ]]; then
   sun_fd_name=PianoUEFI-product.fd
   sun_buildid=SunUEFI-piano-product
+elif [[ "$sun_profile" == product-np05j ]]; then
+  sun_fd_name=Np05jUEFI-product.fd
+  sun_buildid=SunUEFI-np05j-product
 fi
 rm -f "$sun_root/artifacts/$sun_profile/build-ok.json"
 export PATH="$sun_root/.venv/bin:$sun_tools/bin:$PATH"
@@ -28,15 +33,15 @@ export NASM_PREFIX="$sun_tools/bin/"
 export PYTHON_COMMAND="$sun_root/.venv/bin/python"
 export WORKSPACE="$sun_ws"
 export EDK_TOOLS_PATH="$sun_ws/Mu_Basecore/BaseTools"
-export PACKAGES_PATH="$sun_ws/Platforms/Xiaomi:$sun_ws/Common/Mu:$sun_ws/Common/Mu_OEM_Sample:$sun_ws/Mu_Basecore:$sun_ws/Silicon/Qualcomm:$sun_ws/Silicon/Silicium:$sun_ws/Silicium-ACPI:$sun_ws/Silicium-ACPI/Silicon/Qualcomm"
-test -f "$sun_ws/Platforms/Xiaomi/${sun_name}Pkg/${sun_name}.dsc"
+export PACKAGES_PATH="$sun_ws/Platforms/$sun_vendor_dir:$sun_ws/Platforms/Xiaomi:$sun_ws/Common/Mu:$sun_ws/Common/Mu_OEM_Sample:$sun_ws/Mu_Basecore:$sun_ws/Silicon/Qualcomm:$sun_ws/Silicon/Silicium:$sun_ws/Silicium-ACPI:$sun_ws/Silicium-ACPI/Silicon/Qualcomm"
+test -f "$sun_ws/Platforms/$sun_vendor_dir/${sun_name}Pkg/${sun_name}.dsc"
 test -x "$sun_tools/bin/lld-link"
 cd "$sun_ws"
 
 # Apply the reference project's required patches to the isolated host checkout.
 for sun_patch in Auth-Service.patch Boot-Manager.patch Timer.patch Usb-Bus.patch; do
   # The product uses the upstream boot selector without extra power actions.
-  if [[ "$sun_profile" == product && "$sun_patch" == Boot-Manager.patch ]]; then
+  if [[ ( "$sun_profile" == product || "$sun_profile" == product-np05j ) && "$sun_patch" == Boot-Manager.patch ]]; then
     continue
   fi
   sun_file="$sun_ws/Resources/MuPatches/$sun_patch"

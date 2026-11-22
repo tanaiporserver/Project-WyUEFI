@@ -14,6 +14,21 @@ int main(void){
   PianoUsbControlStatusComplete(&s);assert(s.Address==17);
   addr[1]=9;addr[2]=1;assert(PianoUsbControlSetup(&s,addr,data,256,&n,&a)==EFI_SUCCESS && !s.Configuration);
   PianoUsbControlStatusComplete(&s);assert(s.Configuration==1);
+  // ทดสอบ CLEAR_FEATURE(ENDPOINT_HALT) บน EP0 (0x00, 0x80) และกรณีปฏิเสธบน EP bulk เมื่อปิด Fastboot หรือคำขอผิดรูปแบบ
+  UINT8 clr0[8]={2,1,0,0,0,0,0,0};
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_SUCCESS && a==PianoUsbStatusIn && !s.ClearHalt);
+  clr0[4]=0x80;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_SUCCESS && a==PianoUsbStatusIn && !s.ClearHalt);
+  clr0[4]=1;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);
+  clr0[4]=0x81;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);
+  clr0[4]=0;clr0[2]=1;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);
+  clr0[2]=0;clr0[6]=1;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);
+  clr0[6]=0;clr0[4]=2;
+  assert(PianoUsbControlSetup(&s,clr0,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);
   UINT8 debug[8]={0xc0,0x5a,0,0,0,0,64,0};
   assert(PianoUsbControlSetup(&s,debug,data,256,&n,&a)==EFI_SUCCESS && n==12 && !memcmp(data,"SUNUEFI1",8));
   addr[1]=5;addr[2]=128;assert(PianoUsbControlSetup(&s,addr,data,256,&n,&a)==EFI_UNSUPPORTED && a==PianoUsbStall);

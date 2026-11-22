@@ -18,6 +18,7 @@
   UefiBootServicesTableLib
   DebugLib
   BaseLib
+  BaseMemoryLib
   DxeServicesLib
   MemoryAllocationLib
   PianoProductPumpLib

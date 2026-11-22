@@ -1,0 +1,33 @@
+## @file
+#  Runtime ACPI Table Update & WoA Compatibility Library for nubia NP05J.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jAcpiUpdateLib
+  FILE_GUID                      = A1E45107-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = AcpiTableUpdateLib|DXE_DRIVER
+
+[Sources]
+  Np05jAcpiUpdate.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  AslUpdateLib
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  Np05jBiosConfigLib
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEfiAcpiTableProtocolGuid

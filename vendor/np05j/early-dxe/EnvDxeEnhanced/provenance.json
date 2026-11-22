@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "device": "np05j",
+  "source": "Captured slot_b uefi_b.img (Android 16 20260509.003614 / BOOT.MXF.2.5.1 / PakalaLA9)",
+  "uefi_image_sha256": "3675bf01da38a54c618df6f30adaa2a6f84bcd969acbc18a3d74592d2cab685a",
+  "file_guid": "90a49afd-422f-08ae-9611-e788d3804845",
+  "files": {
+    "EnvDxeEnhanced.efi": {
+      "bytes": 77824,
+      "sha256": "3d8d1b37cf45c3b003bc76928937551f6d23289ca8ad4ea7706dad05d1bbfa04"
+    },
+    "EnvDxeEnhanced.depex": {
+      "bytes": 2,
+      "sha256": "557c754d26e2667287367a856ea5fcd584f35ab796d24a6a875d1648a4637d23"
+    },
+    "EnvDxeEnhanced.inf": {
+      "bytes": 266,
+      "sha256": "add524291e47d08b77c902a0ea72c46d9599ed9ba553d2c3ebd9eedc22090edc"
+    }
+  }
+}

@@ -15,10 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 import build_ffmpeg_packages as ffmpeg
 from build import overlay_packages as overlays
+from desktop import build_fingerprint_packages as fingerprint
 from desktop import build_libcamera_packages as libcamera
 from desktop.build_pipewire_packages import DEBIAN_PACKAGES
 from desktop.build_plasma_camera_package import RUNTIME as PLASMA_PACKAGES
 from desktop.build_qt_multimedia_packages import DEBIAN_PACKAGES as QT_PACKAGES
+from package.download import download_debian
 
 
 @unittest.skipUnless(shutil.which('dpkg-deb'), 'Debian package tools required')
@@ -60,13 +62,18 @@ class OverlayPackageTests(unittest.TestCase):
         sources = {}
         policy = libcamera.policy()
         abi = libcamera.abi_version(policy)
-        for component in (*overlays.DEBIAN_SHARED, *overlays.DEBIAN_GNOME, 'fingerprint'):
+        from desktop.build_kwin_package import RUNTIME as KWIN_PACKAGES
+
+        for component in (*overlays.DEBIAN_SHARED, *overlays.DEBIAN_GNOME, 'fingerprint', 'kwin'):
             names = {'ffmpeg': dict.fromkeys(sorted(ffmpeg.RUNTIME), 'arm64'),
                      'libcamera': libcamera.runtime_packages(policy), 'pipewire': DEBIAN_PACKAGES,
-                     'qt_multimedia': QT_PACKAGES, 'plasma_camera': PLASMA_PACKAGES}.get(
+                     'qt_multimedia': QT_PACKAGES, 'plasma_camera': PLASMA_PACKAGES,
+                     'fingerprint': fingerprint.RUNTIME,
+                     'kwin': KWIN_PACKAGES}.get(
                          component, {'test-' + component.replace('_', '-'): 'arm64'})
             version = {'ffmpeg': ffmpeg.package_version(),
-                       'libcamera': libcamera.base_package_version(policy)}.get(component, '1')
+                       'libcamera': libcamera.base_package_version(policy),
+                       'fingerprint': fingerprint.base_package_version(fingerprint.policy())}.get(component, '1')
             records = {}
             for name, architecture in names.items():
                 archive = self.deb(name, version, architecture=architecture)
@@ -90,13 +97,25 @@ class OverlayPackageTests(unittest.TestCase):
         self.assertEqual(set(gnome), set(expected))
         self.assertNotIn(unlisted.name, gnome)
         self.assertEqual({row['component'] for row in kde.values()},
-                         {*overlays.DEBIAN_SHARED, 'fingerprint'})
+                         {*overlays.DEBIAN_SHARED, 'fingerprint', 'kwin'})
         self.assertIn(dependencies[f'libcamera-ipa-{abi}']['sha256'],
                       {row['sha256'] for row in kde.values()})
+        self.assertEqual({row['name'] for row in kde.values() if row['component'] == 'fingerprint'},
+                         fingerprint.RUNTIME.keys())
 
         # Matching versions are insufficient: an older dev archive can have
         # the same version string and different compiler inputs.
         record = json.loads(manifest.read_text())
+        incomplete_fingerprint = json.loads(manifest.read_text())
+        incomplete_fingerprint['components']['fingerprint']['packages'].pop('libfprint-2-doc')
+        manifest.write_text(json.dumps(incomplete_fingerprint))
+        with self.assertRaisesRegex(ValueError, 'libfprint needs all five native packages'):
+            overlays.read_debian(manifest, 'kde')
+        incomplete_kwin = json.loads(json.dumps(record))
+        incomplete_kwin['components']['kwin']['packages'].pop('kwin-data')
+        manifest.write_text(json.dumps(incomplete_kwin))
+        with self.assertRaisesRegex(ValueError, 'Invalid native KWin package set'):
+            overlays.read_debian(manifest, 'kde')
         record['components']['plasma_camera']['build_dependencies']['libcamera-dev']['sha256'] = 'a' * 64
         manifest.write_text(json.dumps(record))
         for desktop in ('gnome', 'kde'):
@@ -137,6 +156,24 @@ class OverlayPackageTests(unittest.TestCase):
         self.assertEqual(upgraded['qt_multimedia'], {'qt6-multimedia-private-dev'})
         denial = overlays.debian_package_selection('denial', set())
         self.assertEqual(denial['qt_multimedia'], set())
+
+    def test_fingerprint_images_preserve_optional_packages_without_installing_them_by_default(self):
+        for desktop in ('gnome', 'kde', 'denial'):
+            with self.subTest(desktop=desktop):
+                self.assertEqual(overlays.debian_package_selection(desktop, set())['fingerprint'],
+                                 {'libfprint-2-2'})
+                installed = {'libfprint-2-dev', 'gir1.2-fprint-2.0'}
+                self.assertEqual(overlays.debian_package_selection(desktop, installed)['fingerprint'],
+                                 installed | {'libfprint-2-2'})
+
+    def test_kwin_backport_updates_the_desktop_without_installing_dev_packages(self):
+        kwin = {'kwin-wayland', 'kwin-common', 'kwin-data', 'libkwin6'}
+        self.assertEqual(overlays.debian_package_selection('kde', set())['kwin'], kwin)
+        self.assertEqual(overlays.debian_package_selection('kde', {'kwin-dev'})['kwin'],
+                         kwin | {'kwin-dev'})
+        for desktop in ('gnome', 'denial'):
+            self.assertEqual(overlays.debian_package_selection(desktop, set())['kwin'], set())
+            self.assertEqual(overlays.debian_package_selection(desktop, kwin)['kwin'], kwin)
 
     @unittest.skipUnless(all(shutil.which(name) for name in
                             ('apt-get', 'apt-ftparchive', 'dpkg-scanpackages', 'gpg')),
@@ -190,12 +227,47 @@ class OverlayPackageTests(unittest.TestCase):
             return subprocess.run([*args[2:6], str(self.root / args[6].lstrip('/')), *args[7:]],
                                   env=env, check=True, capture_output=True)
 
-        paths = overlays.download_debian(self.root, download, packages, run)
+        paths = download_debian(self.root, download, packages, run)
         self.assertEqual(len(paths), 1)
         self.assertEqual(overlays.sha(self.root / paths[0].lstrip('/')), overlays.sha(archive))
         packages[archive.name]['sha256'] = '0' * 64
         with self.assertRaisesRegex(ValueError, 'differs from the published generation'):
-            overlays.download_debian(self.root, download, packages, run)
+            download_debian(self.root, download, packages, run)
+        download = self.root / 'downloads-from-debian'
+        download.mkdir()
+        packages[archive.name]['sha256'] = overlays.sha(self.root / 'debian' / archive.name)
+        paths = download_debian(self.root, download, packages, run,
+                                source='sources.list.d/debian.sources')
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(overlays.sha(self.root / paths[0].lstrip('/')),
+                         packages[archive.name]['sha256'])
+
+
+class PacmanImagePackageTests(unittest.TestCase):
+    def test_image_keeps_installed_splits_without_pulling_in_other_providers(self):
+        archives = {
+            name: {'name': name, 'component': component}
+            for component, names in {
+                'libcamera': ('libcamera', 'libcamera-ipa', 'gst-plugin-libcamera', 'libcamera-docs'),
+                'pipewire': ('pipewire', 'libpipewire', 'pipewire-audio', 'alsa-card-profiles',
+                             'pipewire-libcamera', 'gst-plugin-pipewire', 'pipewire-docs',
+                             'pipewire-jack', 'pipewire-jack-client', 'pipewire-netjack2'),
+                'plasma_camera': ('plasma-camera',),
+                'mesa': ('mesa', 'vulkan-freedreno'),
+            }.items() for name in names
+        }
+        all_jack = {'pipewire-jack', 'pipewire-jack-client'}
+        omitted = all_jack | {'libcamera-docs', 'pipewire-docs'}
+        for target in ('nyarch-gnome', 'arch-denial', 'steamos'):
+            defaults = set(archives) - omitted
+            if target != 'steamos':
+                defaults -= {'plasma-camera', 'pipewire-netjack2'}
+            with self.subTest(target=target):
+                self.assertEqual(set(overlays.pacman_image_packages(target, archives, set())), defaults)
+                for jack in all_jack:
+                    selected = overlays.pacman_image_packages(target, archives, {jack, 'plasma-camera'})
+                    self.assertEqual(set(selected), defaults | {jack, 'plasma-camera'})
+        self.assertEqual(set(archives) & all_jack, all_jack)
 
 
 @unittest.skipUnless(os.geteuid() == 0 and all(shutil.which(name) for name in
