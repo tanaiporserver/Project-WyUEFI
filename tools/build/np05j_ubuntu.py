@@ -282,6 +282,11 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
             devnode = rootfs / 'dev' / name
             if not devnode.exists():
                 run(['mknod', '-m', '666', devnode, 'c', str(major), str(minor)])
+        for name, target in (('fd', '/proc/self/fd'), ('stdin', '/proc/self/fd/0'),
+                             ('stdout', '/proc/self/fd/1'), ('stderr', '/proc/self/fd/2')):
+            sym = rootfs / 'dev' / name
+            if not sym.exists() and not sym.is_symlink():
+                sym.symlink_to(target)
 
         guest(['apt-get', 'update'])
         guest(['apt-get', 'install', '-y', '--no-install-recommends', *EXTRA_UBUNTU_PACKAGES])
@@ -291,7 +296,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
         guest(['sed', '-i', 's/^# *en_US.UTF-8/en_US.UTF-8/', '/etc/locale.gen'])
         guest(['locale-gen', 'en_US.UTF-8'])
         guest(['dconf', 'update'])
-        guest(['systemctl', 'enable', 'bluetooth', 'systemd-timesyncd', 'ssh'])
+        guest(['systemctl', 'enable', 'bluetooth.service', 'systemd-timesyncd.service'])
         guest(['depmod', '-a', release])
         guest(['update-initramfs', '-c', '-k', release])
         guest(['apt-get', 'clean'])
@@ -484,29 +489,55 @@ def main() -> int:
             if path.exists():
                 raise SystemExit(f'โฟลเดอร์ปลายทางมีอยู่แล้ว: {path} (ใช้ --rebuild เพื่อสร้างใหม่)')
 
-    # 1. สร้างฐาน Ubuntu 24.04 LTS + GNOME ผ่าน assemble_rootfs.py ของรีโป
-    run([
-        sys.executable, ROOT / 'tools/assemble_rootfs.py',
-        '--distro', 'ubuntu',
-        '--desktop', 'gnome',
-        '--scale-percent', '200',
-        '--keyring', keyring,
-        '--output', rootfs_out,
-        '--execute',
-    ])
+    # เตรียมพื้นที่ทำงานชั่วคราวแบบ tmpfs (dev,exec,suid) ใต้ build/distros/ เพื่อให้ debootstrap สร้าง device node ได้แม้โฮสต์เป็น nodev
+    stage_mount = ROOT / 'build/distros/np05j-stage-tmpfs'
+    stage_mount.mkdir(parents=True, exist_ok=True)
+    run(['mount', '-t', 'tmpfs', '-o', 'size=16G,dev,exec,suid', 'tmpfs', stage_mount])
+    stage_rootfs_out = stage_mount / 'ubuntu-gnome-np05j'
 
-    rootfs = rootfs_out / 'rootfs'
-    # 2. ติดตั้งโมดูล NP05J, firmware oneshot, udev rules, initramfs และเดสก์ท็อปเสริม
-    initrd = install_np05j_hardware_layer(rootfs, kernel_dir, kernel_meta)
+    try:
+        # 1. สร้างฐาน Ubuntu 24.04 LTS + GNOME ผ่าน assemble_rootfs.py ของรีโป
+        run([
+            sys.executable, ROOT / 'tools/assemble_rootfs.py',
+            '--distro', 'ubuntu',
+            '--desktop', 'gnome',
+            '--scale-percent', '200',
+            '--keyring', keyring,
+            '--output', stage_rootfs_out,
+            '--execute',
+        ])
 
-    # 3. สร้าง bundle (esp.img, root.ext4.img) + sparse images สำหรับ Fastboot
-    bundle_out.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=bundle_out) as work_str:
-        work = Path(work_str)
-        esp_img = bundle_out / 'esp.img'
-        root_img = bundle_out / 'root.ext4.img'
-        esp_files = build_esp_image(esp_img, args.esp_size_mib, kernel_dir, kernel_meta, initrd, work)
-        actual_root_mib = build_root_image(rootfs, root_img, args.root_size_mib)
+        rootfs = stage_rootfs_out / 'rootfs'
+        # 2. ติดตั้งโมดูล NP05J, firmware oneshot, udev rules, initramfs และเดสก์ท็อปเสริม
+        initrd = install_np05j_hardware_layer(rootfs, kernel_dir, kernel_meta)
+
+        # 3. สร้าง bundle (esp.img, root.ext4.img) + sparse images สำหรับ Fastboot
+        bundle_out.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=bundle_out) as work_str:
+            work = Path(work_str)
+            esp_img = bundle_out / 'esp.img'
+            root_img = bundle_out / 'root.ext4.img'
+            esp_files = build_esp_image(esp_img, args.esp_size_mib, kernel_dir, kernel_meta, initrd, work)
+            actual_root_mib = build_root_image(rootfs, root_img, args.root_size_mib)
+
+        # บันทึก manifest และรายการแพ็กเกจจาก stage rootfs ไว้ใน build/distros/ubuntu-gnome-np05j
+        rootfs_out.mkdir(parents=True, exist_ok=True)
+        for meta_name in ('manifest.json', 'packages.tsv', 'build.log'):
+            src_meta = stage_rootfs_out / meta_name
+            if src_meta.is_file():
+                shutil.copy2(src_meta, rootfs_out / meta_name)
+    finally:
+        # สำเนา log สำคัญออกมาก่อน unmount tmpfs แม้เกิดข้อผิดพลาด
+        rootfs_out.mkdir(parents=True, exist_ok=True)
+        for meta_name in ('manifest.json', 'packages.tsv', 'build.log', 'FAILED.json'):
+            src_meta = stage_rootfs_out / meta_name
+            if src_meta.is_file():
+                shutil.copy2(src_meta, rootfs_out / meta_name)
+        run(['umount', '--recursive', stage_mount])
+        try:
+            stage_mount.rmdir()
+        except OSError:
+            pass
 
     bundle_manifest = {
         'schema_version': 1,

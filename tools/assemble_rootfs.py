@@ -232,8 +232,10 @@ def execute(result, *, defer_denial=False):
         if profile['backend'] == 'debootstrap':
             key = Path(result['keyring']);
             if not key.is_file(): raise ValueError('Install the selected distro archive keyring first')
+            cache_dir = ROOT / 'build/source-cache' / ('debootstrap-' + result['target']['suite'])
+            cache_dir.mkdir(parents=True, exist_ok=True)
             run(['debootstrap', '--foreign', '--arch=' + arch, '--include=ca-certificates', '--components=' + ','.join(profile['components']),
-                 '--force-check-gpg', '--keyring=' + str(key), result['target']['suite'], root, profile['mirror']])
+                 '--cache-dir=' + str(cache_dir), '--force-check-gpg', '--keyring=' + str(key), result['target']['suite'], root, profile['mirror']])
         else:
             base = out / 'base.tar'
             if result.get('base_file'):
@@ -253,7 +255,11 @@ def execute(result, *, defer_denial=False):
             (root / 'usr/bin').mkdir(parents=True, exist_ok=True); shutil.copy2(qemu, root / 'usr/bin/qemu-aarch64-static')
         if profile['backend'] == 'debootstrap':
             proc = root / 'proc'
-            if proc.is_symlink(): raise ValueError('Guest virtual mountpoint is a symlink')
+            if proc.is_symlink():
+                # สคริปต์ debootstrap (gutsy/noble) สร้าง symlink proc -> /proc เมื่อรันใน Docker ระหว่าง --foreign
+                if proc.readlink() != Path('/proc'):
+                    raise ValueError('Guest virtual mountpoint is a symlink')
+                proc.unlink()
             proc.mkdir(exist_ok=True)
             guest(['/debootstrap/debootstrap', '--second-stage'])
         release = dict(re.findall(r'^([A-Z_]+)=(.*)$', guest_resolve(root, '/etc/os-release').read_text(), re.M))
@@ -360,7 +366,7 @@ def execute(result, *, defer_denial=False):
         for path in (root / name).iterdir():
             if path.is_dir() and not path.is_symlink(): shutil.rmtree(path)
             else: path.unlink()
-    (out / 'manifest.json').write_text(json.dumps(result, indent=2) + '\n'); return result
+    (out / 'manifest.json').write_text(json.dumps(result, indent=2, default=str) + '\n'); return result
 
 
 def parser():
