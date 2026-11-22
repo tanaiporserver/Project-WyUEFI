@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "component": "np05j-gpu",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "vendor",
+    "sha256": "9a8b82fc38eb3d9438f31d14e4d34f4bf78938d6f666b8af8a6be19f5a8dbbb0"
+  },
+  "source": "stock vendor.img /firmware (Adreno 830v2 AQE/GMU/SQE และ ZAP ที่เซ็นด้วยคีย์ nubia)",
+  "directory": "qcom",
+  "files": {
+    "gen80000_aqe.fw": {
+      "bytes": 25044,
+      "sha256": "67562ad5baae3a133c92a6e48a9d1b1a9a867fe2f85b49324e244e963f3b89c5",
+      "source": "/vendor/firmware/gen80000_aqe.fw"
+    },
+    "gen80000_gmu.bin": {
+      "bytes": 88896,
+      "sha256": "1ad8175e6cd01ea76c64d20b83600038c52dd29844b48d57b11b769b038863a5",
+      "source": "/vendor/firmware/gen80000_gmu.bin"
+    },
+    "gen80000_sqe.fw": {
+      "bytes": 111476,
+      "sha256": "30ee3301534f95799d4afaf73864f3c369baa5a5dea8481e7f0cb8cc941f396c",
+      "source": "/vendor/firmware/gen80000_sqe.fw"
+    },
+    "gen80000_zap.mbn": {
+      "bytes": 12088,
+      "sha256": "8a46a335ad78ab666687bd0f62a5653287e1d8c1a574ad5a155b0db508dd65fd",
+      "source": "/vendor/firmware/gen80000_zap.mbn"
+    }
+  }
+}

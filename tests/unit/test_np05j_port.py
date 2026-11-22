@@ -109,6 +109,20 @@ class Np05jPortTests(unittest.TestCase):
             self.assertTrue(p.is_file(), row['file'])
             self.assertEqual(np05j_vendor_inputs.sha(p.read_bytes()), row['sha256'])
 
+        # ตรวจสอบความสมบูรณ์และ SHA-256 ของเฟิร์มแวร์ Linux สต็อก NP05J (GPU, Audio, Touch)
+        np_fw_root = ROOT / 'vendor/np05j-firmware'
+        manifests = sorted(np_fw_root.glob('*/manifest.json'))
+        self.assertEqual([m.parent.name for m in manifests], ['np05j-audio', 'np05j-gpu', 'np05j-touch'])
+        for manifest_path in manifests:
+            meta = json.loads(manifest_path.read_text())
+            self.assertEqual(meta.get('schema_version'), 1)
+            for fname, finfo in meta['files'].items():
+                fp = manifest_path.parent / fname
+                self.assertTrue(fp.is_file(), str(fp))
+                raw = fp.read_bytes()
+                self.assertEqual(len(raw), finfo['bytes'], str(fp))
+                self.assertEqual(np05j_vendor_inputs.sha(raw), finfo['sha256'], str(fp))
+
     def test_product_packaging_and_np05j_guards(self):
         # ตรวจสอบว่า Phase 2 ใช้ Boot Header v3 เป็นค่าเริ่มต้นเพื่อให้ ABL โหลด initrd/app-payload.bin
         pkg_src = (ROOT / 'tools/package_product.py').read_text()

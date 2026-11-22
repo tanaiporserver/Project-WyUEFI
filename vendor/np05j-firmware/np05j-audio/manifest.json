@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "component": "np05j-audio",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "vendor",
+    "sha256": "9a8b82fc38eb3d9438f31d14e4d34f4bf78938d6f666b8af8a6be19f5a8dbbb0"
+  },
+  "source": "stock vendor.img /firmware/tfa98xx.cnt (NXP TFA9874 stereo smart amps) และ /etc/acdbdata/sun_qrd/QRD_acdb_cal.acdb",
+  "directory": ".",
+  "files": {
+    "tfa98xx.cnt": {
+      "bytes": 6196,
+      "sha256": "116e9accf5ccbdf4e4e66f0c8f32d847e53c99613a8557262d01ff5395952f24",
+      "source": "/vendor/firmware/tfa98xx.cnt"
+    },
+    "QRD_acdb_cal.acdb": {
+      "bytes": 3221466,
+      "sha256": "1a165dfb4290391c00872bc563f3db75e80798db7655d26e3acfd223e1a4d705",
+      "source": "/vendor/etc/acdbdata/sun_qrd/QRD_acdb_cal.acdb"
+    }
+  }
+}

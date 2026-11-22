@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "component": "np05j-touch",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "vendor",
+    "sha256": "9a8b82fc38eb3d9438f31d14e4d34f4bf78938d6f666b8af8a6be19f5a8dbbb0"
+  },
+  "source": "stock vendor.img /firmware (Synaptics S3930TB0A0 TCM v2 firmware.img และ Himax second-source Himax_firmware.bin)",
+  "directory": "nubia/np05j",
+  "files": {
+    "firmware.img": {
+      "bytes": 275800,
+      "sha256": "ace21bb370fa89ac76e16a4410a585e060515533ccecdd103d9fc5cc2d604834",
+      "source": "/vendor/firmware/firmware.img"
+    },
+    "Himax_firmware.bin": {
+      "bytes": 261120,
+      "sha256": "722b7b406fea748483e9eb44a5c4c2e3afde172199fff3167cce6f6047d07c91",
+      "source": "/vendor/firmware/Himax_firmware.bin"
+    }
+  }
+}

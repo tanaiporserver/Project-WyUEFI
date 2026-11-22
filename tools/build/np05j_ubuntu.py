@@ -24,6 +24,7 @@ from package.release import shared_stub
 
 MIB = 1024 * 1024
 DEFAULT_KERNEL = ROOT / 'artifacts/kernels/np05j'
+DEFAULT_FIRMWARE = ROOT / 'vendor/np05j-firmware'
 DEFAULT_ROOTFS_OUT = ROOT / 'build/distros/ubuntu-gnome-np05j'
 DEFAULT_BUNDLE_OUT = ROOT / 'artifacts/ubuntu-gnome-np05j'
 UBUNTU_KEYRING_URL = 'https://ports.ubuntu.com/ubuntu-ports/pool/main/u/ubuntu-keyring/ubuntu-keyring_2023.11.28.1build1_all.deb'
@@ -143,6 +144,20 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
     if mod_dst.exists():
         shutil.rmtree(mod_dst)
     shutil.copytree(mod_src, mod_dst, symlinks=True)
+
+    # 1.5 คัดลอกเฟิร์มแวร์สต็อก NP05J ที่ตรวจ SHA-256 แล้ว (GPU, Audio, Touch) เข้า /usr/lib/firmware
+    if DEFAULT_FIRMWARE.is_dir():
+        fw_root = guest_resolve(rootfs, 'usr/lib/firmware')
+        for manifest_file in sorted(DEFAULT_FIRMWARE.glob('*/manifest.json')):
+            meta = json.loads(manifest_file.read_text())
+            sub = meta.get('directory', '.')
+            dst_dir = fw_root if sub in ('', '.') else fw_root / sub
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for fname, finfo in meta['files'].items():
+                src_file = manifest_file.parent / fname
+                if sha(src_file) != finfo['sha256'] or src_file.stat().st_size != finfo['bytes']:
+                    raise ValueError(f'SHA-256 ของเฟิร์มแวร์ไม่ตรง manifest: {src_file}')
+                shutil.copyfile(src_file, dst_dir / fname)
 
     # 2. ติดตั้ง np05j-tool และ np05j-fw-load + systemd oneshot service
     bin_dir = guest_resolve(rootfs, 'usr/bin')
