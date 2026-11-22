@@ -106,7 +106,9 @@
 		};
 
 		ramoops_mem: ramoops@e4a00000 {
+			compatible = "ramoops";
 			reg = <0x0 0xe4a00000 0x0 0x200000>;
+			console-size = <0x200000>;
 			no-map;
 		};
 

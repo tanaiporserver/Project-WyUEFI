@@ -16,7 +16,7 @@ new file mode 100644
 index 000000000000..111111111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
-@@ -0,0 +1,758 @@
+@@ -0,0 +1,760 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
@@ -125,7 +125,9 @@ index 000000000000..111111111111
 +		};
 +
 +		ramoops_mem: ramoops@e4a00000 {
++			compatible = "ramoops";
 +			reg = <0x0 0xe4a00000 0x0 0x200000>;
++			console-size = <0x200000>;
 +			no-map;
 +		};
 +

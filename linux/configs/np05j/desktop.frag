@@ -7,6 +7,17 @@ CONFIG_FB_SIMPLE=n
 CONFIG_DRM_SIMPLEDRM=y
 CONFIG_DRM_FBDEV_EMULATION=y
 
+# แสดง kmsg ลงจอ OLED ทันทีเมื่อเกิด panic (ชดเชยที่ drm_fb_helper ข้ามการ flush ตอน oops_in_progress)
+# และบันทึก Linux console ลง ramoops@e4a00000 เพื่อให้ SunUEFI fastboot oem ramlog ดึง log ย้อนหลังได้
+CONFIG_DRM_PANIC=y
+CONFIG_DRM_PANIC_SCREEN="kmsg"
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+
+# ใช้ SHM Bridge สำหรับ Qualcomm TrustZone บน SM8750P (ตรงกับ Piano และ fallback อัตโนมัติหากไม่รองรับ)
+CONFIG_QCOM_TZMEM_MODE_GENERIC=n
+CONFIG_QCOM_TZMEM_MODE_SHMBRIDGE=y
+
 # ระบบเครือข่ายมาตรฐานสำหรับ Ubuntu systemd / NetworkManager / apt / snap / flatpak
 CONFIG_IPV6=y
 CONFIG_NETFILTER=y

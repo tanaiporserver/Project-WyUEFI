@@ -347,10 +347,22 @@ class Np05jPortTests(unittest.TestCase):
         for opt in ('CONFIG_TCP_CONG_BBR=y', 'CONFIG_DEFAULT_TCP_CONG="bbr"', 'CONFIG_DEFAULT_FQ=y'):
             self.assertIn(opt, phase2_frag)
         desktop_frag = (ROOT / 'linux/configs/np05j/desktop.frag').read_text()
-        for opt in ('CONFIG_DRM_SIMPLEDRM=y', 'CONFIG_SYSFB_SIMPLEFB=y', 'CONFIG_DRM_FBDEV_EMULATION=y', 'CONFIG_IPV6=y'):
+        for opt in (
+            'CONFIG_DRM_SIMPLEDRM=y',
+            'CONFIG_SYSFB_SIMPLEFB=y',
+            'CONFIG_DRM_FBDEV_EMULATION=y',
+            'CONFIG_DRM_PANIC=y',
+            'CONFIG_DRM_PANIC_SCREEN="kmsg"',
+            'CONFIG_PSTORE_RAM=y',
+            'CONFIG_PSTORE_CONSOLE=y',
+            'CONFIG_QCOM_TZMEM_MODE_SHMBRIDGE=y',
+            'CONFIG_IPV6=y',
+        ):
             self.assertIn(opt, desktop_frag)
         common_dtsi = (ROOT / 'linux/dts/np05j/sm8750-nubia-np05j-common.dtsi').read_text()
         self.assertIn('chosen { };', common_dtsi)
+        self.assertIn('compatible = "ramoops";', common_dtsi)
+        self.assertIn('console-size = <0x200000>;', common_dtsi)
         self.assertNotIn('gpu-microcode@9b09a000', common_dtsi)
         smmu_patch = (ROOT / 'patches/linux/7.3/np05j/0144-LOCAL-iommu-arm-smmu-cap-qcom-smr-groups.patch').read_text()
         self.assertIn('smmu->num_mapping_groups = QCOM_HANDOFF_MAX_SMR;', smmu_patch)

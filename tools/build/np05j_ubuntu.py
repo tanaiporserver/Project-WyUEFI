@@ -455,8 +455,9 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
     common_opts = (
         'console=tty0 loglevel=7 consoleblank=0 fbcon=font:TER16x32 '
         'root=LABEL=PIANOROOT rootfstype=ext4 rootwait ro '
-        'pd_ignore_unused clk_ignore_unused panic=0 iommu.passthrough=1 '
-        'systemd.show_status=true'
+        'pd_ignore_unused clk_ignore_unused panic=0 panic_on_oops=1 '
+        'iommu.passthrough=1 pcie_port_pm=off '
+        'systemd.show_status=true systemd.log_target=kmsg'
     )
     entries = {
         '/loader/entries/01-ubuntu-np05j-otg.conf': (
@@ -473,7 +474,7 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
             f'linux {base}/Image\n'
             f'initrd {base}/initrd.img\n'
             f'devicetree {base}/sm8750-nubia-np05j.dtb\n'
-            f'options {common_opts}\n'
+            f'options console=ttyGS0,115200 {common_opts}\n'
         ),
         '/loader/entries/03-ubuntu-np05j-gpu.conf': (
             'title Ubuntu 24.04 GNOME (REDMAGIC Astra - Adreno GPU)\n'
