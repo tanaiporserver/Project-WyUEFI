@@ -31,8 +31,10 @@ echo "Parts: modem=${MODEM_DEV:-none} bt=${BT_DEV:-none} dsp=${DSP_DEV:-none}" >
 
 mkdir -p /lib/firmware/qcom/sm8750 /lib/firmware/qca /lib/firmware/ath12k/PEACH/hw2.0 /lib/firmware/ath12k/QCC2072/hw1.0
 
-# 1. Mount modem_b (ADSP, CDSP, Wi-Fi 7 Peach/WCN7861)
-if [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
+# 1. Mount modem_b (ADSP, CDSP, Wi-Fi 7 Peach/WCN7861) เฉพาะเมื่อยังไม่มีเฟิร์มแวร์ฝังใน /lib/firmware
+if [ -f /lib/firmware/qcom/sm8750/adsp.mdt ] && [ -f /lib/firmware/qcom/sm8750/cdsp.mdt ] && [ -f /lib/firmware/ath12k/PEACH/hw2.0/amss.bin ]; then
+  echo "Using built-in /lib/firmware for ADSP/CDSP/Wi-Fi 7" >> "$LOG"
+elif [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
   for d in /mnt/modem/image /mnt/modem; do
     [ -d "$d" ] || continue
     for f in "$d"/*; do
@@ -74,8 +76,10 @@ if [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
   done
 fi
 
-# 2. Mount bluetooth_b (BRAHMA 2.0 / WCN7861 BT)
-if [ -n "$BT_DEV" ] && mount_ro_part "$BT_DEV" /mnt/bt_fw; then
+# 2. Mount bluetooth_b (BRAHMA 2.0 / WCN7861 BT) เฉพาะเมื่อยังไม่มีเฟิร์มแวร์ฝังใน /lib/firmware/qca
+if [ -e /lib/firmware/qca/hmtbtfw20.tlv ] && [ -e /lib/firmware/qca/brhperifw20.tlv ]; then
+  echo "Using built-in /lib/firmware/qca for Bluetooth" >> "$LOG"
+elif [ -n "$BT_DEV" ] && mount_ro_part "$BT_DEV" /mnt/bt_fw; then
   for d in /mnt/bt_fw/image /mnt/bt_fw; do
     [ -d "$d" ] || continue
     for f in "$d"/*; do
@@ -99,8 +103,10 @@ if [ -n "$DSP_DEV" ]; then
   mount_ro_part "$DSP_DEV" /mnt/dsp || true
 fi
 
-# 4. Mount vendor_b from Android super partition (EROFS ro) for GPU gen80000_* & Audio tfa98xx.cnt
-if /bin/np05j-tool mount-vendor /mnt/vendor >> "$LOG" 2>&1; then
+# 4. Mount vendor_b จาก Android super (EROFS ro) เฉพาะเมื่อยังไม่มี GPU/Audio firmware ฝังใน /lib/firmware
+if [ -f /lib/firmware/qcom/gen80000_zap.mbn ] && [ -f /lib/firmware/tfa98xx.cnt ]; then
+  echo "Using built-in /lib/firmware for GPU/Audio" >> "$LOG"
+elif /bin/np05j-tool mount-vendor /mnt/vendor >> "$LOG" 2>&1; then
   for d in /mnt/vendor/firmware /mnt/vendor/firmware_mnt/image; do
     [ -d "$d" ] || continue
     for f in "$d"/gen80000_*; do

@@ -130,8 +130,64 @@ def build_np05j_tool(dest: Path):
     dest.chmod(0o755)
 
 
+def install_np05j_firmware(rootfs: Path, fw_source: Path = DEFAULT_FIRMWARE) -> dict:
+    """ตรวจสอบ SHA-256 และติดตั้งเฟิร์มแวร์สต็อก NP05J ทุกชุดลง /usr/lib/firmware"""
+    if not fw_source.is_dir():
+        raise ValueError(f'ไม่พบโฟลเดอร์เฟิร์มแวร์ NP05J: {fw_source}')
+    fw_root = guest_resolve(rootfs, 'usr/lib/firmware')
+    installed = {}
+    for manifest_file in sorted(fw_source.glob('*/manifest.json')):
+        meta = json.loads(manifest_file.read_text())
+        sub = meta.get('directory', '.')
+        dst_dir = fw_root if sub in ('', '.') else fw_root / sub
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        count = 0
+        for fname, finfo in meta['files'].items():
+            src_file = manifest_file.parent / fname
+            if sha(src_file) != finfo['sha256'] or src_file.stat().st_size != finfo['bytes']:
+                raise ValueError(f'SHA-256 ของเฟิร์มแวร์ไม่ตรง manifest: {src_file}')
+            dst_file = dst_dir / fname
+            if dst_file.is_symlink():
+                dst_file.unlink()
+            shutil.copyfile(src_file, dst_file)
+            dst_file.chmod(0o644)
+            if sha(dst_file) != finfo['sha256']:
+                raise ValueError(f'ตรวจอ่านกลับเฟิร์มแวร์หลังคัดลอกไม่ตรง: {dst_file}')
+            count += 1
+        aliases = 0
+        for alias_name, target_name in meta.get('aliases', {}).items():
+            if target_name not in meta['files']:
+                raise ValueError(f'Alias เฟิร์มแวร์ชี้ไปไฟล์ที่ไม่มีใน manifest: {alias_name} -> {target_name}')
+            alias_path = dst_dir / alias_name
+            if alias_path.exists() or alias_path.is_symlink():
+                alias_path.unlink()
+            alias_path.symlink_to(target_name)
+            aliases += 1
+        installed[meta['component']] = {'directory': sub, 'files': count, 'aliases': aliases}
+    return installed
+
+
+def configure_ubuntu_gdm_autologin(rootfs: Path):
+    """ตั้งค่า autologin ผู้ใช้ piano บน /etc/gdm3/custom.conf สำหรับ Ubuntu GNOME"""
+    custom_conf = rootfs / 'etc/gdm3/custom.conf'
+    if custom_conf.parent.is_dir():
+        custom_conf.write_text(
+            '[daemon]\n'
+            'AutomaticLoginEnable=true\n'
+            'AutomaticLogin=piano\n'
+            '\n'
+            '[security]\n'
+            '\n'
+            '[xdmcp]\n'
+            '\n'
+            '[chooser]\n'
+            '\n'
+            '[debug]\n'
+        )
+
+
 def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: dict) -> Path:
-    """ติดตั้งโมดูลเคอร์เนล, ไดรเวอร์ firmware oneshot, udev rules, ภาษา EN และสร้าง initrd.img"""
+    """ติดตั้งโมดูลเคอร์เนล, เฟิร์มแวร์สต็อก NP05J, ไดรเวอร์ firmware oneshot, udev rules, ภาษา EN และสร้าง initrd.img"""
     release = kernel_meta['kernel_release']
     mod_src = kernel_dir / 'modules/lib/modules' / release
     if not mod_src.is_dir():
@@ -146,25 +202,8 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
     shutil.copytree(mod_src, mod_dst, symlinks=True)
 
     # 1.5 คัดลอกเฟิร์มแวร์สต็อก NP05J ที่ตรวจ SHA-256 แล้ว (ADSP, CDSP, Wi-Fi 7, BT, GPU, Audio, Touch) เข้า /usr/lib/firmware
-    if DEFAULT_FIRMWARE.is_dir():
-        fw_root = guest_resolve(rootfs, 'usr/lib/firmware')
-        for manifest_file in sorted(DEFAULT_FIRMWARE.glob('*/manifest.json')):
-            meta = json.loads(manifest_file.read_text())
-            sub = meta.get('directory', '.')
-            dst_dir = fw_root if sub in ('', '.') else fw_root / sub
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            for fname, finfo in meta['files'].items():
-                src_file = manifest_file.parent / fname
-                if sha(src_file) != finfo['sha256'] or src_file.stat().st_size != finfo['bytes']:
-                    raise ValueError(f'SHA-256 ของเฟิร์มแวร์ไม่ตรง manifest: {src_file}')
-                shutil.copyfile(src_file, dst_dir / fname)
-            for alias_name, target_name in meta.get('aliases', {}).items():
-                if target_name not in meta['files']:
-                    raise ValueError(f'Alias เฟิร์มแวร์ชี้ไปไฟล์ที่ไม่มีใน manifest: {alias_name} -> {target_name}')
-                alias_path = dst_dir / alias_name
-                if alias_path.exists() or alias_path.is_symlink():
-                    alias_path.unlink()
-                alias_path.symlink_to(target_name)
+    install_np05j_firmware(rootfs, DEFAULT_FIRMWARE)
+    configure_ubuntu_gdm_autologin(rootfs)
 
     # 2. ติดตั้ง np05j-tool และ np05j-fw-load + systemd oneshot service
     bin_dir = guest_resolve(rootfs, 'usr/bin')
@@ -359,9 +398,10 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
 
     base = f'/linux/{release}'
     common_opts = (
-        'console=tty0 loglevel=4 consoleblank=0 fbcon=font:TER16x32 '
+        'console=tty0 loglevel=7 consoleblank=0 fbcon=font:TER16x32 '
         'root=LABEL=PIANOROOT rootfstype=ext4 rootwait ro '
-        'pd_ignore_unused clk_ignore_unused'
+        'pd_ignore_unused clk_ignore_unused panic=0 iommu.passthrough=1 '
+        'systemd.show_status=true'
     )
     entries = {
         '/loader/entries/01-ubuntu-np05j-otg.conf': (
@@ -467,6 +507,8 @@ def main() -> int:
     ap.add_argument('--root-size-mib', type=int)
     ap.add_argument('--esp-only', action='store_true',
                     help='สร้างใหม่เฉพาะ esp.img และ sparse/esp.img โดยคง root.ext4.img เดิมไว้')
+    ap.add_argument('--update-rootfs-firmware', action='store_true',
+                    help='ติดตั้งเฟิร์มแวร์ NP05J (vendor/np05j-firmware) + np05j-fw-load ลง root.ext4.img เดิมแล้วสร้าง sparse ใหม่')
     ap.add_argument('--initrd', type=Path,
                     help='พาธไฟล์ initrd.img สำหรับ --esp-only (ถ้าไม่ระบุจะดึงจาก esp.img เดิม)')
     ap.add_argument('--rebuild', action='store_true')
@@ -562,6 +604,74 @@ def main() -> int:
             'status': bundle_manifest['status'],
             'mode': 'esp-only',
             'kernel_release': bundle_manifest['kernel_release'],
+            'raw': bundle_manifest['files'],
+            'sparse': sparse_meta['files'],
+            'sparse_dir': str(sparse_out),
+        }, indent=2))
+        return 0
+
+    if args.update_rootfs_firmware:
+        if os.geteuid() != 0:
+            raise SystemExit('--update-rootfs-firmware ต้องรันด้วยสิทธิ์ root ภายใน container sunuefi-builder (--privileged)')
+        bundle_manifest_path = bundle_out / 'manifest.json'
+        esp_img = bundle_out / 'esp.img'
+        root_img = bundle_out / 'root.ext4.img'
+        if not bundle_manifest_path.is_file() or not esp_img.is_file() or not root_img.is_file():
+            raise SystemExit(f'--update-rootfs-firmware ต้องมี bundle เดิมครบอยู่ใน {bundle_out}')
+        bundle_manifest = json.loads(bundle_manifest_path.read_text())
+        with tempfile.TemporaryDirectory(prefix='np05j-fw-mnt-') as mnt_str:
+            mnt = Path(mnt_str)
+            run(['mount', '-o', 'loop', root_img, mnt])
+            try:
+                fw_installed = install_np05j_firmware(mnt, DEFAULT_FIRMWARE)
+                configure_ubuntu_gdm_autologin(mnt)
+                fw_script = guest_resolve(mnt, 'usr/libexec') / 'np05j-fw-load'
+                shutil.copyfile(ROOT / 'linux/userspace/np05j/np05j-fw-load', fw_script)
+                fw_script.chmod(0o755)
+            finally:
+                run(['sync'])
+                run(['umount', mnt])
+        run(['e2fsck', '-fn', root_img])
+
+        bundle_manifest['firmware_components'] = fw_installed
+        bundle_manifest['files']['root.ext4.img'] = {
+            'bytes': root_img.stat().st_size,
+            'sha256': sha(root_img),
+            'format': 'raw-ext4',
+        }
+        bundle_manifest_path.write_text(json.dumps(bundle_manifest, indent=2) + '\n')
+        (bundle_out / 'SHA256SUMS').write_text(
+            f"{bundle_manifest['files']['esp.img']['sha256']}  esp.img\n"
+            f"{bundle_manifest['files']['root.ext4.img']['sha256']}  root.ext4.img\n"
+        )
+
+        # แปลงเฉพาะ sparse/root.ext4.img ใหม่ โดยคง sparse/esp.img เดิมไว้
+        sparse_out = bundle_out / 'sparse'
+        sparse_manifest_path = sparse_out / 'manifest.json'
+        if sparse_manifest_path.is_file() and (sparse_out / 'esp.img').is_file():
+            sparse_meta = json.loads(sparse_manifest_path.read_text())
+            new_sparse_root = sparse_out / 'root.ext4.img.new'
+            new_sparse_root.unlink(missing_ok=True)
+            row = package_sparse_images.convert(root_img, new_sparse_root)
+            if (row['expanded_sha256'] != bundle_manifest['files']['root.ext4.img']['sha256'] or
+                    row['expanded_bytes'] != bundle_manifest['files']['root.ext4.img']['bytes']):
+                raise ValueError('sparse root.ext4.img ไม่ตรงกับ raw root.ext4.img')
+            os.replace(new_sparse_root, sparse_out / 'root.ext4.img')
+            sparse_meta['source_manifest_sha256'] = package_sparse_images.digest(bundle_manifest_path)
+            sparse_meta['files']['root.ext4.img'] = row
+            sparse_manifest_path.write_text(json.dumps(sparse_meta, indent=2) + '\n')
+            (sparse_out / 'SHA256SUMS').write_text(''.join(
+                info['sha256'] + '  ' + name + '\n' for name, info in sparse_meta['files'].items()
+            ))
+        else:
+            if sparse_out.exists():
+                shutil.rmtree(sparse_out)
+            sparse_meta = package_sparse_images.package(bundle_out, sparse_out)
+
+        print(json.dumps({
+            'status': bundle_manifest['status'],
+            'mode': 'update-rootfs-firmware',
+            'firmware_components': fw_installed,
             'raw': bundle_manifest['files'],
             'sparse': sparse_meta['files'],
             'sparse_dir': str(sparse_out),
