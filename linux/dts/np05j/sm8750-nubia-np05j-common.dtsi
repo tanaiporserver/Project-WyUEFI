@@ -28,6 +28,9 @@
 		serial1 = &uart14;
 	};
 
+	/* โหนด /chosen สำหรับ EFI_DT_FIXUP_PROTOCOL ของ SunUEFI และ bootargs ของ systemd-boot */
+	chosen { };
+
 	clocks {
 		xo_board: xo-board {
 			compatible = "fixed-clock";

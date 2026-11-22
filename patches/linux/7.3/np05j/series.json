@@ -15,7 +15,7 @@
     },
     {
       "file": "0142-LOCAL-arm64-dts-qcom-sm8750-nubia-np05j.patch",
-      "sha256": "ea4ee80468185fbebe176dfc47aefac3f1f4e8e57748f6e060e8d39a7812fc23",
+      "sha256": "5c49d03099917cda4831ce9d0374d5f22f634747812e669299d0feeecc909277",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",

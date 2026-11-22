@@ -16,7 +16,7 @@ new file mode 100644
 index 000000000000..111111111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
-@@ -0,0 +1,760 @@
+@@ -0,0 +1,763 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
@@ -46,6 +46,9 @@ index 000000000000..111111111111
 +	aliases {
 +		serial1 = &uart14;
 +	};
++
++	/* โหนด /chosen สำหรับ EFI_DT_FIXUP_PROTOCOL ของ SunUEFI และ bootargs ของ systemd-boot */
++	chosen { };
 +
 +	clocks {
 +		xo_board: xo-board {

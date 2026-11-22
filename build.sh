@@ -29,6 +29,7 @@ case "$command" in
   ffmpeg) python3 tools/build_ffmpeg_packages.py "$@" ;;
   steamos-rootfs) python3 tools/build_steamos_rootfs.py "$@" ;;
   nyarch-rootfs|nyarch-gnome-rootfs) python3 tools/build_nyarch_rootfs.py "$@" ;;
+  np05j-ubuntu-rootfs) python3 tools/build/np05j_ubuntu.py "$@" ;;
   arch-denial-rootfs) python3 tools/build_nyarch_rootfs.py --desktop denial "$@" ;;
   gsd) python3 tools/build_gsd_packages.py "$@" ;;
   gdm) python3 tools/desktop/build_gdm_packages.py "$@" ;;

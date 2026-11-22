@@ -30,6 +30,7 @@ FRAGMENTS = (
     ROOT / 'linux/configs/np05j/gpi_dma.frag',
     ROOT / 'linux/configs/np05j/fan_i2c.frag',
     ROOT / 'linux/configs/np05j/fix_psci_pd.frag',
+    ROOT / 'linux/configs/np05j/desktop.frag',
 )
 DTB_TARGETS = (
     'qcom/sm8750-nubia-np05j.dtb',
@@ -45,6 +46,10 @@ REQUIRED = {
     'BT_HCIUART_QCA': 'y',
     'EFI_STUB': 'y',
     'DRM_MSM': 'y',
+    'DRM_SIMPLEDRM': 'y',
+    'SYSFB_SIMPLEFB': 'y',
+    'DRM_FBDEV_EMULATION': 'y',
+    'IPV6': 'y',
     'CMDLINE': '""',
     'CMDLINE_FORCE': 'n',
 }
@@ -233,12 +238,26 @@ def main():
         print(json.dumps(state, indent=2))
         return 0
 
-    run(make_cmd + [f'-j{args.jobs}', 'Image', *DTB_TARGETS], env=env)
+    run(make_cmd + [f'-j{args.jobs}', 'Image', 'modules', *DTB_TARGETS], env=env)
 
     built_image = out / 'arch/arm64/boot/Image'
     img_meta = image_info(built_image, kernel=True, simpleinit_limit=False)
     shutil.copyfile(built_image, artifacts / 'Image')
     shutil.copyfile(out / 'System.map', artifacts / 'System.map')
+
+    # ติดตั้งโมดูลเคอร์เนลลง artifacts/kernels/np05j/modules เพื่อคัดลอกเข้า rootfs ของ Ubuntu
+    modules_dir = artifacts / 'modules'
+    if modules_dir.exists():
+        shutil.rmtree(modules_dir)
+    modules_dir.mkdir(parents=True, exist_ok=True)
+    run(make_cmd + [f'-j{args.jobs}', f'INSTALL_MOD_PATH={modules_dir}', 'INSTALL_MOD_STRIP=1', 'modules_install'], env=env)
+    kernel_release = (out / 'include/config/kernel.release').read_text().strip()
+    mod_rel = modules_dir / 'lib/modules' / kernel_release
+    for link_name in ('build', 'source'):
+        link_path = mod_rel / link_name
+        if link_path.is_symlink() or link_path.exists():
+            link_path.unlink()
+    module_count = sum(1 for _ in mod_rel.rglob('*.ko*')) if mod_rel.is_dir() else 0
 
     dtb_meta = {}
     for rel_dtb in DTB_TARGETS:
@@ -254,9 +273,11 @@ def main():
 
     state.update({
         'status': 'HOST_BUILT_NP05J_CANDIDATE_NOT_HARDWARE_VERIFIED',
-        'kernel_release': (out / 'include/config/kernel.release').read_text().strip(),
+        'kernel_release': kernel_release,
         'image': img_meta,
         'dtbs': dtb_meta,
+        'modules_dir': str(modules_dir),
+        'module_count': module_count,
     })
     tmp = marker.with_suffix('.json.tmp')
     tmp.write_text(json.dumps(state, indent=2) + '\n')

@@ -319,6 +319,12 @@ class Np05jPortTests(unittest.TestCase):
         phase2_frag = (ROOT / 'linux/configs/np05j/phase2.frag').read_text()
         for opt in ('CONFIG_TCP_CONG_BBR=y', 'CONFIG_DEFAULT_TCP_CONG="bbr"', 'CONFIG_DEFAULT_FQ=y'):
             self.assertIn(opt, phase2_frag)
+        desktop_frag = (ROOT / 'linux/configs/np05j/desktop.frag').read_text()
+        for opt in ('CONFIG_DRM_SIMPLEDRM=y', 'CONFIG_SYSFB_SIMPLEFB=y', 'CONFIG_DRM_FBDEV_EMULATION=y', 'CONFIG_IPV6=y'):
+            self.assertIn(opt, desktop_frag)
+        common_dtsi = (ROOT / 'linux/dts/np05j/sm8750-nubia-np05j-common.dtsi').read_text()
+        self.assertIn('chosen { };', common_dtsi)
+        self.assertTrue((ROOT / 'tools/build/np05j_ubuntu.py').is_file())
 
     def test_native_np05j_port_c_suite(self):
         res = subprocess.run(
