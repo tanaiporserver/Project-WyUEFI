@@ -27,6 +27,8 @@ DEFAULT_KERNEL = ROOT / 'artifacts/kernels/np05j'
 DEFAULT_FIRMWARE = ROOT / 'vendor/np05j-firmware'
 DEFAULT_ROOTFS_OUT = ROOT / 'build/distros/ubuntu-gnome-np05j'
 DEFAULT_BUNDLE_OUT = ROOT / 'artifacts/ubuntu-gnome-np05j'
+DEFAULT_USER = 'porserver'
+DEFAULT_PASSWORD = ''
 UBUNTU_KEYRING_URL = 'https://ports.ubuntu.com/ubuntu-ports/pool/main/u/ubuntu-keyring/ubuntu-keyring_2023.11.28.1build1_all.deb'
 UBUNTU_KEYRING_MEMBER = './usr/share/keyrings/ubuntu-archive-keyring.gpg'
 QEMU_AARCH64_BINFMT = (
@@ -167,14 +169,14 @@ def install_np05j_firmware(rootfs: Path, fw_source: Path = DEFAULT_FIRMWARE) -> 
     return installed
 
 
-def configure_ubuntu_gdm_autologin(rootfs: Path):
-    """ตั้งค่า autologin ผู้ใช้ piano บน /etc/gdm3/custom.conf สำหรับ Ubuntu GNOME"""
+def configure_ubuntu_gdm_autologin(rootfs: Path, username: str = DEFAULT_USER):
+    """ตั้งค่า autologin ผู้ใช้บน /etc/gdm3/custom.conf และ daemon.conf สำหรับ Ubuntu GNOME"""
     custom_conf = rootfs / 'etc/gdm3/custom.conf'
     if custom_conf.parent.is_dir():
         custom_conf.write_text(
             '[daemon]\n'
             'AutomaticLoginEnable=true\n'
-            'AutomaticLogin=piano\n'
+            f'AutomaticLogin={username}\n'
             '\n'
             '[security]\n'
             '\n'
@@ -184,9 +186,69 @@ def configure_ubuntu_gdm_autologin(rootfs: Path):
             '\n'
             '[debug]\n'
         )
+        daemon_conf = rootfs / 'etc/gdm3/daemon.conf'
+        daemon_conf.write_text(
+            '[daemon]\n'
+            'AutomaticLoginEnable=true\n'
+            f'AutomaticLogin={username}\n'
+        )
 
 
-def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: dict) -> Path:
+def configure_np05j_user(rootfs: Path, username: str, password: str | None, guest):
+    """เปลี่ยนชื่อบัญชีเริ่มต้น (จาก piano เป็น username) ตั้งรหัสผ่าน sudoers และ autologin"""
+    if not username or any(c in username for c in ':/ \t\n'):
+        raise ValueError(f'ชื่อผู้ใช้ไม่ถูกต้อง: {username!r}')
+    has_piano = subprocess.run(
+        guest_command(rootfs, ['/usr/bin/getent', 'passwd', 'piano']),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+    has_target = subprocess.run(
+        guest_command(rootfs, ['/usr/bin/getent', 'passwd', username]),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+    if username != 'piano' and has_piano and not has_target:
+        guest(['usermod', '-l', username, '-d', f'/home/{username}', '-m', 'piano'])
+        guest(['groupmod', '-n', username, 'piano'])
+        for sub_name in ('etc/subuid', 'etc/subgid'):
+            sub_path = rootfs / sub_name
+            if sub_path.is_file():
+                lines = [
+                    (f'{username}:' + line.split(':', 1)[1]) if line.startswith('piano:') else line
+                    for line in sub_path.read_text().splitlines(keepends=True)
+                ]
+                sub_path.write_text(''.join(lines))
+    elif not has_target:
+        guest(['useradd', '-m', '-s', '/bin/bash', username])
+
+    if password:
+        argv = guest_command(rootfs, [
+            '/usr/bin/env', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', '/usr/sbin/chpasswd',
+        ])
+        subprocess.run(argv, input=f'{username}:{password}\n', text=True, check=True)
+
+    # อัปเดต sudoers และลบไฟล์เก่าของ piano
+    sudoers_dir = rootfs / 'etc/sudoers.d'
+    sudoers_dir.mkdir(parents=True, exist_ok=True)
+    if username != 'piano':
+        (sudoers_dir / '10-piano').unlink(missing_ok=True)
+    sudoers = sudoers_dir / f'10-{username}'
+    sudoers.write_text(f'{username} ALL=(ALL:ALL) ALL\n')
+    sudoers.chmod(0o440)
+
+    # อัปเดต autologin และบันทึกคู่มือเบื้องต้นในโฮมของผู้ใช้
+    configure_ubuntu_gdm_autologin(rootfs, username)
+    setup_note = rootfs / 'home' / username / 'FIRST-SETUP.txt'
+    setup_note.parent.mkdir(parents=True, exist_ok=True)
+    setup_note.write_text(
+        'REDMAGIC Astra (NP05J) — Ubuntu 24.04 LTS GNOME\n'
+        f'Default user: {username}\n'
+        'Change your password in Settings -> System -> Users.\n'
+    )
+    guest(['chown', f'{username}:{username}', f'/home/{username}/FIRST-SETUP.txt'])
+
+
+def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: dict,
+                                 username: str = DEFAULT_USER, password: str | None = None) -> Path:
     """ติดตั้งโมดูลเคอร์เนล, เฟิร์มแวร์สต็อก NP05J, ไดรเวอร์ firmware oneshot, udev rules, ภาษา EN และสร้าง initrd.img"""
     release = kernel_meta['kernel_release']
     mod_src = kernel_dir / 'modules/lib/modules' / release
@@ -203,7 +265,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
 
     # 1.5 คัดลอกเฟิร์มแวร์สต็อก NP05J ที่ตรวจ SHA-256 แล้ว (ADSP, CDSP, Wi-Fi 7, BT, GPU, Audio, Touch) เข้า /usr/lib/firmware
     install_np05j_firmware(rootfs, DEFAULT_FIRMWARE)
-    configure_ubuntu_gdm_autologin(rootfs)
+    configure_ubuntu_gdm_autologin(rootfs, username)
 
     # 2. ติดตั้ง np05j-tool และ np05j-fw-load + systemd oneshot service
     bin_dir = guest_resolve(rootfs, 'usr/bin')
@@ -304,16 +366,8 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
         'text/html=org.gnome.Epiphany.desktop\n'
         'application/xhtml+xml=org.gnome.Epiphany.desktop\n'
     )
-    setup_note = rootfs / 'home/piano/FIRST-SETUP.txt'
-    setup_note.parent.mkdir(parents=True, exist_ok=True)
-    setup_note.write_text(
-        'REDMAGIC Astra (NP05J) — Ubuntu 24.04 LTS GNOME\n'
-        'Default user: piano\n'
-        'Default password: piano123456\n'
-        'Change your password in Settings -> System -> Users.\n'
-    )
 
-    # 5. รัน chroot เพื่อติดตั้งแพ็กเกจเสริม, gen locale, depmod และสร้าง initrd.img
+    # 5. รัน chroot เพื่อติดตั้งแพ็กเกจเสริม, ตั้งค่าบัญชีผู้ใช้, gen locale, depmod และสร้าง initrd.img
     cross = platform.machine() not in ('aarch64', 'arm64')
     qemu_dst = rootfs / 'usr/bin/qemu-aarch64-static'
     if cross:
@@ -351,6 +405,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
 
         guest(['apt-get', 'update'])
         guest(['apt-get', 'install', '-y', '--no-install-recommends', *EXTRA_UBUNTU_PACKAGES])
+        configure_np05j_user(rootfs, username, password, guest)
 
         # ตั้งค่า zram 8 GiB (zstd) และเปิดบริการหลัก
         (rootfs / 'etc/default/zramswap').write_text('ALGO=zstd\nPERCENT=33\nPRIORITY=100\n')
@@ -505,6 +560,8 @@ def main() -> int:
     ap.add_argument('--output-bundle', type=Path, default=DEFAULT_BUNDLE_OUT)
     ap.add_argument('--esp-size-mib', type=int, default=512)
     ap.add_argument('--root-size-mib', type=int)
+    ap.add_argument('--user', default=DEFAULT_USER, help='ชื่อบัญชีผู้ใช้เริ่มต้นใน Ubuntu')
+    ap.add_argument('--password', default=None, help='รหัสผ่านสำหรับบัญชีผู้ใช้เริ่มต้น')
     ap.add_argument('--esp-only', action='store_true',
                     help='สร้างใหม่เฉพาะ esp.img และ sparse/esp.img โดยคง root.ext4.img เดิมไว้')
     ap.add_argument('--update-rootfs-firmware', action='store_true',
@@ -613,27 +670,49 @@ def main() -> int:
     if args.update_rootfs_firmware:
         if os.geteuid() != 0:
             raise SystemExit('--update-rootfs-firmware ต้องรันด้วยสิทธิ์ root ภายใน container sunuefi-builder (--privileged)')
+        ensure_qemu_binfmt()
         bundle_manifest_path = bundle_out / 'manifest.json'
         esp_img = bundle_out / 'esp.img'
         root_img = bundle_out / 'root.ext4.img'
         if not bundle_manifest_path.is_file() or not esp_img.is_file() or not root_img.is_file():
             raise SystemExit(f'--update-rootfs-firmware ต้องมี bundle เดิมครบอยู่ใน {bundle_out}')
         bundle_manifest = json.loads(bundle_manifest_path.read_text())
+        cross = platform.machine() not in ('aarch64', 'arm64')
         with tempfile.TemporaryDirectory(prefix='np05j-fw-mnt-') as mnt_str:
             mnt = Path(mnt_str)
             run(['mount', '-o', 'loop', root_img, mnt])
+            qemu_dst = mnt / 'usr/bin/qemu-aarch64-static'
+            bound = []
             try:
                 fw_installed = install_np05j_firmware(mnt, DEFAULT_FIRMWARE)
-                configure_ubuntu_gdm_autologin(mnt)
                 fw_script = guest_resolve(mnt, 'usr/libexec') / 'np05j-fw-load'
                 shutil.copyfile(ROOT / 'linux/userspace/np05j/np05j-fw-load', fw_script)
                 fw_script.chmod(0o755)
+                if cross:
+                    shutil.copy2('/usr/bin/qemu-aarch64-static', qemu_dst)
+                for name, kind in (('proc', 'proc'), ('dev', 'tmpfs')):
+                    target = mnt / name
+                    target.mkdir(exist_ok=True)
+                    run(['mount', '-t', kind, kind, target])
+                    bound.append(target)
+                for dname, maj, mino in (('null', 1, 3), ('zero', 1, 5), ('random', 1, 8), ('urandom', 1, 9)):
+                    run(['mknod', '-m', '666', mnt / 'dev' / dname, 'c', str(maj), str(mino)])
+                def guest(cmd):
+                    run(guest_command(mnt, [
+                        '/usr/bin/env', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', *cmd,
+                    ]))
+                configure_np05j_user(mnt, args.user, args.password, guest)
             finally:
+                for target in reversed(bound):
+                    run(['umount', '--recursive', target])
+                if cross:
+                    qemu_dst.unlink(missing_ok=True)
                 run(['sync'])
                 run(['umount', mnt])
         run(['e2fsck', '-fn', root_img])
 
         bundle_manifest['firmware_components'] = fw_installed
+        bundle_manifest['default_user'] = args.user
         bundle_manifest['files']['root.ext4.img'] = {
             'bytes': root_img.stat().st_size,
             'sha256': sha(root_img),
@@ -712,8 +791,8 @@ def main() -> int:
         ])
 
         rootfs = stage_rootfs_out / 'rootfs'
-        # 2. ติดตั้งโมดูล NP05J, firmware oneshot, udev rules, initramfs และเดสก์ท็อปเสริม
-        initrd = install_np05j_hardware_layer(rootfs, kernel_dir, kernel_meta)
+        # 2. ติดตั้งโมดูล NP05J, เฟิร์มแวร์, บัญชีผู้ใช้, firmware oneshot, udev rules, initramfs และเดสก์ท็อปเสริม
+        initrd = install_np05j_hardware_layer(rootfs, kernel_dir, kernel_meta, args.user, args.password)
 
         # 3. สร้าง bundle (esp.img, root.ext4.img) + sparse images สำหรับ Fastboot
         bundle_out.mkdir(parents=True, exist_ok=True)
