@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "component": "np05j-bluetooth",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "bluetooth",
+    "sha256": "f0233b0f8a27e7cb8d8e1ae3330d901fe9d03394d0ccaf619bf1c1487fda2cf5"
+  },
+  "source": "stock bluetooth.img /image/brh*20* (BRAHMA 2.0 rampatch, PERI firmware และ board NVMs พร้อม alias hmt* สำหรับ qcom,wcn7850-bt)",
+  "directory": "qca",
+  "files": {
+    "brhbtfw20.tlv": {
+      "bytes": 219520,
+      "sha256": "b798eb3b20c9a2f0877f274334e47d4bed43c06a3cfe264773eb5a5b5e0a92be",
+      "source": "/image/brhbtfw20.tlv"
+    },
+    "brhperifw20.tlv": {
+      "bytes": 19884,
+      "sha256": "3ae14a12137b46ade2d57d83569e0aa33e864a2e8530154c0b919eb426b7b53c",
+      "source": "/image/brhperifw20.tlv"
+    },
+    "brhperinv20.bin": {
+      "bytes": 741,
+      "sha256": "975dc445a8826a24aff93b57f36548229eafd96bbc83b39cf74ace89525485ca",
+      "source": "/image/brhperinv20.bin"
+    },
+    "brhbtnv20.bin": {
+      "bytes": 13399,
+      "sha256": "fed389532d90dd9a63829d63c63e2928d448274735c9d45567dfd33453ac3daf",
+      "source": "/image/brhbtnv20.bin"
+    },
+    "brhbtnv20.b2e": {
+      "bytes": 13291,
+      "sha256": "2658cf6a13eb8308ce0749638e17f94a432526737a5546199104bb7e1fc256bb",
+      "source": "/image/brhbtnv20.b2e"
+    },
+    "brhbtnv20.b34": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b34"
+    },
+    "brhbtnv20.b35": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b35"
+    },
+    "brhbtnv20.b36": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b36"
+    },
+    "brhbtnv20.b37": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b37"
+    },
+    "brhbtnv20.b38": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b38"
+    },
+    "brhbtnv20.b39": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b39"
+    },
+    "brhbtnv20.b3e": {
+      "bytes": 13291,
+      "sha256": "bbfe15de14efd1db97227d397738e41299967a804d359a41f39f5ee9feac21ae",
+      "source": "/image/brhbtnv20.b3e"
+    },
+    "brhbtnv20.b41": {
+      "bytes": 13399,
+      "sha256": "fb22e50d758957d4f8dbaee566e1a9a854ded7c878245ae4bcddb2beb1cabdc6",
+      "source": "/image/brhbtnv20.b41"
+    }
+  },
+  "aliases": {
+    "hmtbtfw20.tlv": "brhbtfw20.tlv",
+    "hmtnv20.bin": "brhbtnv20.bin",
+    "hmtnv20.b2e": "brhbtnv20.b2e",
+    "hmtnv20.b34": "brhbtnv20.b34",
+    "hmtnv20.b35": "brhbtnv20.b35",
+    "hmtnv20.b36": "brhbtnv20.b36",
+    "hmtnv20.b37": "brhbtnv20.b37",
+    "hmtnv20.b38": "brhbtnv20.b38",
+    "hmtnv20.b39": "brhbtnv20.b39",
+    "hmtnv20.b3e": "brhbtnv20.b3e",
+    "hmtnv20.b41": "brhbtnv20.b41"
+  }
+}

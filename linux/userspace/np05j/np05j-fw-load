@@ -29,7 +29,7 @@ BT_DEV=$(find_part bluetooth_b bluetooth_a || true)
 DSP_DEV=$(find_part dsp_b dsp_a || true)
 echo "Parts: modem=${MODEM_DEV:-none} bt=${BT_DEV:-none} dsp=${DSP_DEV:-none}" >> "$LOG"
 
-mkdir -p /lib/firmware/qcom/sm8750 /lib/firmware/qca /lib/firmware/ath12k/QCC2072/hw1.0
+mkdir -p /lib/firmware/qcom/sm8750 /lib/firmware/qca /lib/firmware/ath12k/PEACH/hw2.0 /lib/firmware/ath12k/QCC2072/hw1.0
 
 # 1. Mount modem_b (ADSP, CDSP, Wi-Fi 7 Peach/WCN7861)
 if [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
@@ -53,22 +53,25 @@ if [ -n "$MODEM_DEV" ] && mount_ro_part "$MODEM_DEV" /mnt/modem; then
     fi
   done
 
-  # Map FastConnect 7900 / WCN7861 ("Peach" 0x110e) firmware -> ath12k/QCC2072/hw1.0/
+  # Map FastConnect 7900 / WCN7861 ("Peach" 0x110e) firmware -> ath12k/PEACH/hw2.0/ (Linux 7.3) และ QCC2072/hw1.0/
   PEACH_DIR=/mnt/modem/image/peach
-  ATH_DIR=/lib/firmware/ath12k/QCC2072/hw1.0
-  if [ -d "$PEACH_DIR" ]; then
-    [ -f "$PEACH_DIR/amss20.bin" ]      && ln -sf "$PEACH_DIR/amss20.bin"      "$ATH_DIR/amss.bin"
-    [ -f "$PEACH_DIR/phy_ucode20.elf" ] && ln -sf "$PEACH_DIR/phy_ucode20.elf" "$ATH_DIR/m3.bin"
-    [ -f "$PEACH_DIR/aux_ucode20.elf" ] && ln -sf "$PEACH_DIR/aux_ucode20.elf" "$ATH_DIR/aux_ucode.bin"
-    [ -f "$PEACH_DIR/bdwlan.elf" ]      && ln -sf "$PEACH_DIR/bdwlan.elf"      "$ATH_DIR/board.bin"
-    [ -f "$PEACH_DIR/regdb.bin" ]       && ln -sf "$PEACH_DIR/regdb.bin"       "$ATH_DIR/regdb.bin"
-    [ -f "$PEACH_DIR/Data20.msc" ]      && ln -sf "$PEACH_DIR/Data20.msc"      "$ATH_DIR/Data.msc"
-    for bf in "$PEACH_DIR"/bdwlan.e*; do
-      [ -f "$bf" ] || continue
-      ln -sf "$bf" "$ATH_DIR/$(basename "$bf")" 2>/dev/null || true
-    done
-    echo "Mapped Peach Wi-Fi 7 fw -> $ATH_DIR ($(ls "$ATH_DIR" | wc -l) files)" >> "$LOG"
-  fi
+  for ATH_DIR in /lib/firmware/ath12k/PEACH/hw2.0 /lib/firmware/ath12k/QCC2072/hw1.0; do
+    if [ -d "$PEACH_DIR" ]; then
+      [ -f "$PEACH_DIR/amss20.bin" ]              && ln -sf "$PEACH_DIR/amss20.bin"              "$ATH_DIR/amss.bin"
+      [ -f "$PEACH_DIR/phy_ucode20.elf" ]         && ln -sf "$PEACH_DIR/phy_ucode20.elf"         "$ATH_DIR/m3.bin"
+      [ -f "$PEACH_DIR/aux_ucode20.elf" ]         && ln -sf "$PEACH_DIR/aux_ucode20.elf"         "$ATH_DIR/aux_ucode.bin"
+      [ -f "$PEACH_DIR/bdwlan.elf" ]              && ln -sf "$PEACH_DIR/bdwlan.elf"              "$ATH_DIR/board.bin"
+      [ -f "$PEACH_DIR/regdb.bin" ]               && ln -sf "$PEACH_DIR/regdb.bin"               "$ATH_DIR/regdb.bin"
+      [ -f "$PEACH_DIR/Data20.msc" ]              && ln -sf "$PEACH_DIR/Data20.msc"              "$ATH_DIR/Data.msc"
+      [ -f "$PEACH_DIR/qdss_trace_config_v2.cfg" ] && ln -sf "$PEACH_DIR/qdss_trace_config_v2.cfg" "$ATH_DIR/qdss_trace_config.bin"
+      [ -f /mnt/modem/image/tmel_peach_20.elf ]   && ln -sf /mnt/modem/image/tmel_peach_20.elf   "$ATH_DIR/tmel.bin"
+      for bf in "$PEACH_DIR"/bdwlan.e*; do
+        [ -f "$bf" ] || continue
+        ln -sf "$bf" "$ATH_DIR/$(basename "$bf")" 2>/dev/null || true
+      done
+      echo "Mapped Peach Wi-Fi 7 fw -> $ATH_DIR ($(ls "$ATH_DIR" | wc -l) files)" >> "$LOG"
+    fi
+  done
 fi
 
 # 2. Mount bluetooth_b (BRAHMA 2.0 / WCN7861 BT)
@@ -131,8 +134,8 @@ if [ -d /sys/class/bluetooth/hci0 ]; then
   /bin/np05j-tool bt-up 0 >> "$LOG" 2>&1 || true
 fi
 
-# 7. Re-probe Wi-Fi 7 (0000:01:00.0) now that /lib/firmware/ath12k/QCC2072/hw1.0/* is ready
-if [ -d /sys/bus/pci/devices/0000:01:00.0 ] && [ -e /lib/firmware/ath12k/QCC2072/hw1.0/amss.bin ]; then
+# 7. Re-probe Wi-Fi 7 (0000:01:00.0) now that /lib/firmware/ath12k/PEACH/hw2.0/* is ready
+if [ -d /sys/bus/pci/devices/0000:01:00.0 ] && [ -e /lib/firmware/ath12k/PEACH/hw2.0/amss.bin ]; then
   if [ ! -e /sys/bus/pci/devices/0000:01:00.0/driver ]; then
     echo "Probing ath12k_wifi7_pci on 0000:01:00.0..." >> "$LOG"
     echo 0000:01:00.0 > /sys/bus/pci/drivers_probe 2>>"$LOG" || true

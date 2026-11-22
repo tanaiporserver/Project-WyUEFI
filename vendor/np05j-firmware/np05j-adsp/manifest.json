@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "component": "np05j-adsp",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "modem",
+    "sha256": "ec4dddd1c046b95c1bcfce3e12ed33fa11b4471791f8021ee2d6d5fe21382d92"
+  },
+  "source": "stock modem.img /image/adsp* (ADSP + ADSP DTB + PD-Mapper JSON)",
+  "directory": "qcom/sm8750",
+  "files": {
+    "adsp.b00": {
+      "bytes": 1652,
+      "sha256": "61b7b20ea3c9e9f12423ffca6aef4a7a5f5e18846c09975845d058cee538c3ca",
+      "source": "/image/adsp.b00"
+    },
+    "adsp.b01": {
+      "bytes": 20888,
+      "sha256": "e3dabcb9fd86dc6749fe8cf77d865531b240f9c00c4eaa50221abc4d0757f469",
+      "source": "/image/adsp.b01"
+    },
+    "adsp.b02": {
+      "bytes": 24780,
+      "sha256": "ed48970094561cc7382e51eec11b02d629436165f008f795224ca9e4da6a7957",
+      "source": "/image/adsp.b02"
+    },
+    "adsp.b03": {
+      "bytes": 110659,
+      "sha256": "60dec2f32b8863be208422281f22742b121e75662aa8812f3ec7f128047b1472",
+      "source": "/image/adsp.b03"
+    },
+    "adsp.b04": {
+      "bytes": 32692,
+      "sha256": "5b3ecbe97844103f58f254096f586bd16d5caedb72a669c47eac4c8122089c35",
+      "source": "/image/adsp.b04"
+    },
+    "adsp.b05": {
+      "bytes": 84180,
+      "sha256": "e039bb84c1e87f919b137f64aa6db07955a8d61c66b7706fe016dd198c4a233b",
+      "source": "/image/adsp.b05"
+    },
+    "adsp.b06": {
+      "bytes": 208896,
+      "sha256": "ea62c8fa572a24c61e5f0408da78438cd9d30c5698988975c94c9adbef32f862",
+      "source": "/image/adsp.b06"
+    },
+    "adsp.b07": {
+      "bytes": 368,
+      "sha256": "f669b9978990c9346aab8a45f4c8c91690f02e612817616a24e4252c28651472",
+      "source": "/image/adsp.b07"
+    },
+    "adsp.b08": {
+      "bytes": 9236,
+      "sha256": "a0d5229cb894e316816c6c296300f1339f78b4e8dd6fccb5ca6a2b2aa44d2e11",
+      "source": "/image/adsp.b08"
+    },
+    "adsp.b09": {
+      "bytes": 3119796,
+      "sha256": "fb1596fb8f2eebc3a3ddb269a14f1ce49b6bf9d6cf8da4e4ab83dc87e6863a39",
+      "source": "/image/adsp.b09"
+    },
+    "adsp.b10": {
+      "bytes": 263844,
+      "sha256": "9ee376ff9263d7d1f01304c31667865726f7c8dba953fd7e97e0063f88e012f5",
+      "source": "/image/adsp.b10"
+    },
+    "adsp.b11": {
+      "bytes": 2584,
+      "sha256": "8ee9dfd25ff4b8f25038a7f1cb3102cbef0508105ec980b88c45aaae0a5af8d9",
+      "source": "/image/adsp.b11"
+    },
+    "adsp.b12": {
+      "bytes": 32344,
+      "sha256": "4d93f785bda2f1e7c239846467c0a0e684a2fe4c86977fc7209ddd86837679ac",
+      "source": "/image/adsp.b12"
+    },
+    "adsp.b13": {
+      "bytes": 7068,
+      "sha256": "8471a2229bf3325c39eded333bb3909f5b0790ca4ac57d689890e2af058a3095",
+      "source": "/image/adsp.b13"
+    },
+    "adsp.b14": {
+      "bytes": 246600,
+      "sha256": "863227fd0dbddf9fb281c23d13821a4822241a7cc46840dbe21bc15f15f2a194",
+      "source": "/image/adsp.b14"
+    },
+    "adsp.b15": {
+      "bytes": 161488,
+      "sha256": "618b8d9c48c8a2eb1c1635a30d0232d4d4d86f49b75f54cf5ef0c983e1f14a71",
+      "source": "/image/adsp.b15"
+    },
+    "adsp.b16": {
+      "bytes": 507904,
+      "sha256": "c6f7a2eb9633d571cffab3b9d1d18207cb52283822303f6743f9c0b24ade6ee9",
+      "source": "/image/adsp.b16"
+    },
+    "adsp.b17": {
+      "bytes": 2707876,
+      "sha256": "46ff00943b30acc191b6869c515cf4452cb8ef6cd1086841399767bf37acc4f4",
+      "source": "/image/adsp.b17"
+    },
+    "adsp.b18": {
+      "bytes": 25360,
+      "sha256": "cfe9afab0d0d6b68db64589f22b4534b384057b452834e7b8c1618c919113816",
+      "source": "/image/adsp.b18"
+    },
+    "adsp.b19": {
+      "bytes": 272,
+      "sha256": "b96727ee434f6ab7e1191f4a0a9527fa1e25958cc80b245b8efdc124766097a1",
+      "source": "/image/adsp.b19"
+    },
+    "adsp.b20": {
+      "bytes": 402945,
+      "sha256": "a071910075d61bc1afb702914859403b4b45bd1ee0a3ce7e720c6266fa02968b",
+      "source": "/image/adsp.b20"
+    },
+    "adsp.b21": {
+      "bytes": 82,
+      "sha256": "5d46f5fd6b2af62f1042498698ee2ab8b10b537074ec3756196d34bad44d9f2b",
+      "source": "/image/adsp.b21"
+    },
+    "adsp.b22": {
+      "bytes": 45056,
+      "sha256": "4e727a2d6826028abee742071f614a604691bcfaa44b86c6cf37587bc64bf684",
+      "source": "/image/adsp.b22"
+    },
+    "adsp.b23": {
+      "bytes": 2185496,
+      "sha256": "441e8dd1efc7ff1448a6dca4348f18dbeba2f024c62ac04e18d56433d10d4a1d",
+      "source": "/image/adsp.b23"
+    },
+    "adsp.b24": {
+      "bytes": 413700,
+      "sha256": "800fb60da5b3b03d8179efe4962ffda1a1b386392024da11595fc488c96378d0",
+      "source": "/image/adsp.b24"
+    },
+    "adsp.b26": {
+      "bytes": 412,
+      "sha256": "93fafea778e4bc561033de890478c749286e733ab16207dae064f1f85426ee77",
+      "source": "/image/adsp.b26"
+    },
+    "adsp.b27": {
+      "bytes": 1735,
+      "sha256": "1092635e037c2c96b3b69645561f4fa8b98dd1e5da5b91cb078bc076877760d6",
+      "source": "/image/adsp.b27"
+    },
+    "adsp.b28": {
+      "bytes": 36176,
+      "sha256": "1913989cafc366456a69b38a75cd2cc875b3a02645eedee1b3c7b68ddbac13a1",
+      "source": "/image/adsp.b28"
+    },
+    "adsp.b29": {
+      "bytes": 408796,
+      "sha256": "4e15115e6c3b95a6fb225b7904e77cdd0a10124c71de65beace5db171499e763",
+      "source": "/image/adsp.b29"
+    },
+    "adsp.b30": {
+      "bytes": 160540,
+      "sha256": "04210f2c1b9b3b38bba954d8911f8af5046f31e6fd28fad8006cdbd6efa6d90b",
+      "source": "/image/adsp.b30"
+    },
+    "adsp.b31": {
+      "bytes": 146968,
+      "sha256": "3ba94e84842a19b7fb8a34c47a2b8eec40cd4574cdee8b00c0973cf0ad609ec6",
+      "source": "/image/adsp.b31"
+    },
+    "adsp.b32": {
+      "bytes": 16732,
+      "sha256": "ab5dad549df0b7ba9980bb7209f7fed46f90aad4841336f81fd302de4aaaa432",
+      "source": "/image/adsp.b32"
+    },
+    "adsp.b33": {
+      "bytes": 13568,
+      "sha256": "53f98ae32f612550da45ca8a7ab4b5c969c1fab356ea69987d2e2247ea4e097c",
+      "source": "/image/adsp.b33"
+    },
+    "adsp.b34": {
+      "bytes": 56488,
+      "sha256": "1e0ae0ec059faa898821abe0eaa562ded8ca09fd194fcc1155ba4ae6e22b0594",
+      "source": "/image/adsp.b34"
+    },
+    "adsp.b35": {
+      "bytes": 63512,
+      "sha256": "343fa4ecf2b47fc292fb6ace970c00b830c3e026e7d55834e53887f23333c161",
+      "source": "/image/adsp.b35"
+    },
+    "adsp.b36": {
+      "bytes": 482632,
+      "sha256": "2759e7e0e363c28017e302592b1bc7909e90260b5ab3295629a76f85f4a739be",
+      "source": "/image/adsp.b36"
+    },
+    "adsp.b37": {
+      "bytes": 6363392,
+      "sha256": "ef989c46f12e84f7ef7ee0366fb57cffffecffd1721a0f28faf8dbd27ca59e3a",
+      "source": "/image/adsp.b37"
+    },
+    "adsp.b38": {
+      "bytes": 258056,
+      "sha256": "7313a658716fe2e1a055ed5cc0a4ab9fe70b8f3bf2a657697f71bb6d0193105f",
+      "source": "/image/adsp.b38"
+    },
+    "adsp.b39": {
+      "bytes": 20,
+      "sha256": "271c5783def587733c57edd67523fd9890a97b12fd2ee0ad4237226454bb6b85",
+      "source": "/image/adsp.b39"
+    },
+    "adsp.b40": {
+      "bytes": 7616,
+      "sha256": "dace9260e702c711974be7ecd7a156f95de8aa689c8ca75f96b19489a2db9ba4",
+      "source": "/image/adsp.b40"
+    },
+    "adsp.b41": {
+      "bytes": 1140,
+      "sha256": "e49b569e73218088fecfa8b71673bff0f39660b92773194ff69a114e9bf3f869",
+      "source": "/image/adsp.b41"
+    },
+    "adsp.b42": {
+      "bytes": 30320,
+      "sha256": "bdb750200a27563312e59a2e6df0e8877d9de22526a11a811dd76738faa8f7cb",
+      "source": "/image/adsp.b42"
+    },
+    "adsp.b43": {
+      "bytes": 384596,
+      "sha256": "e0b2461d6e3a08d83ddaa28d1b10cb94bd25f668859f7595521b38e7f9cd2d01",
+      "source": "/image/adsp.b43"
+    },
+    "adsp.b44": {
+      "bytes": 9988,
+      "sha256": "eaf4106025612a5f41d5ca8f8fa73328f8531a2737b07ce5a4cd9640a412dcf9",
+      "source": "/image/adsp.b44"
+    },
+    "adsp.b45": {
+      "bytes": 19600,
+      "sha256": "a9585be86dcd6ceef87c6ab488f316e6db29d5a1d83ca90e516ebc3b1dab2996",
+      "source": "/image/adsp.b45"
+    },
+    "adsp.b46": {
+      "bytes": 84311,
+      "sha256": "f07d7e52b9549edf2b61ab40f94c3ee1b50a0a1a6eb11a69fc35bca9e370399e",
+      "source": "/image/adsp.b46"
+    },
+    "adsp.b47": {
+      "bytes": 53248,
+      "sha256": "25fe903b4c1051b322b4a81f5598b30f75b27095b4ce57d93f39e548b14839ce",
+      "source": "/image/adsp.b47"
+    },
+    "adsp.b49": {
+      "bytes": 6152,
+      "sha256": "cb179284fa30b172fe4b39f852727d8b707838506c3d4e070a0c901be70d7866",
+      "source": "/image/adsp.b49"
+    },
+    "adsp.mdt": {
+      "bytes": 7804,
+      "sha256": "7ff56d7404dd61e41f98c96f55dfa336c34cf9966964d0464379add7226fcc75",
+      "source": "/image/adsp.mdt"
+    },
+    "adsp_dtb.b00": {
+      "bytes": 148,
+      "sha256": "f47576ac34dfe6d3f928702f76acc7351400b2464e24eb00da54c92a0c0492d3",
+      "source": "/image/adsp_dtb.b00"
+    },
+    "adsp_dtb.b01": {
+      "bytes": 157396,
+      "sha256": "334ae5958c156cc5a5627fa078cde743c2ad40995b62c3483dd0daa5e4a6c769",
+      "source": "/image/adsp_dtb.b01"
+    },
+    "adsp_dtb.b02": {
+      "bytes": 3896,
+      "sha256": "f24e53f5c18718fd8cc976724624658c77729a820ea6571a762d6de91aa0b327",
+      "source": "/image/adsp_dtb.b02"
+    },
+    "adsp_dtb.mdt": {
+      "bytes": 4044,
+      "sha256": "8e4976b4e4d54187c85fa6fba1a3e1b8983c4ad90f5fac7b709da2d8878cac07",
+      "source": "/image/adsp_dtb.mdt"
+    },
+    "adspr.jsn": {
+      "bytes": 513,
+      "sha256": "66ce8531efb7979d234e0f0eabbe18d038ac97da771a8a194f613df8f0724e81",
+      "source": "/image/adspr.jsn"
+    },
+    "adsps.jsn": {
+      "bytes": 515,
+      "sha256": "12ac2f3ae8ced12aa4b06b3ab3a01bc4d8efe1c92ebea503c002f209a6ec176f",
+      "source": "/image/adsps.jsn"
+    },
+    "adspua.jsn": {
+      "bytes": 703,
+      "sha256": "982a99853495e34726b8e44697fdfad303334de0a67cbf6cde306c8f1731000b",
+      "source": "/image/adspua.jsn"
+    }
+  }
+}

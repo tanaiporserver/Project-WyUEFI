@@ -109,10 +109,21 @@ class Np05jPortTests(unittest.TestCase):
             self.assertTrue(p.is_file(), row['file'])
             self.assertEqual(np05j_vendor_inputs.sha(p.read_bytes()), row['sha256'])
 
-        # ตรวจสอบความสมบูรณ์และ SHA-256 ของเฟิร์มแวร์ Linux สต็อก NP05J (GPU, Audio, Touch)
+        # ตรวจสอบความสมบูรณ์และ SHA-256 ของเฟิร์มแวร์ Linux สต็อก NP05J ครบทุกองค์ประกอบ
         np_fw_root = ROOT / 'vendor/np05j-firmware'
         manifests = sorted(np_fw_root.glob('*/manifest.json'))
-        self.assertEqual([m.parent.name for m in manifests], ['np05j-audio', 'np05j-gpu', 'np05j-touch'])
+        self.assertEqual(
+            [m.parent.name for m in manifests],
+            [
+                'np05j-adsp',
+                'np05j-ath12k',
+                'np05j-audio',
+                'np05j-bluetooth',
+                'np05j-cdsp',
+                'np05j-gpu',
+                'np05j-touch',
+            ],
+        )
         for manifest_path in manifests:
             meta = json.loads(manifest_path.read_text())
             self.assertEqual(meta.get('schema_version'), 1)
@@ -122,6 +133,8 @@ class Np05jPortTests(unittest.TestCase):
                 raw = fp.read_bytes()
                 self.assertEqual(len(raw), finfo['bytes'], str(fp))
                 self.assertEqual(np05j_vendor_inputs.sha(raw), finfo['sha256'], str(fp))
+            for alias_name, target_name in meta.get('aliases', {}).items():
+                self.assertIn(target_name, meta['files'], f'{manifest_path}: {alias_name}')
 
     def test_product_packaging_and_np05j_guards(self):
         # ตรวจสอบว่า Phase 2 ใช้ Boot Header v3 เป็นค่าเริ่มต้นเพื่อให้ ABL โหลด initrd/app-payload.bin

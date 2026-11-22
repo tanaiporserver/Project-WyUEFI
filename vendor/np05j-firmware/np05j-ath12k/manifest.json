@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "component": "np05j-ath12k",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "modem",
+    "sha256": "ec4dddd1c046b95c1bcfce3e12ed33fa11b4471791f8021ee2d6d5fe21382d92"
+  },
+  "source": "stock modem.img /image/peach/* และ /image/tmel_peach_20.elf (FastConnect 7900 / Peach v2.0 PCI 17cb:110e)",
+  "directory": "ath12k/PEACH/hw2.0",
+  "files": {
+    "amss.bin": {
+      "bytes": 6869056,
+      "sha256": "4ad502d0d35ab0d2e79ae34d733f2c2e666eb2332cb67a65b2ed727e9554c54c",
+      "source": "/image/peach/amss20.bin"
+    },
+    "aux_ucode.bin": {
+      "bytes": 61440,
+      "sha256": "076352b63e857c5e64bc0f9d077af19ca26d8baceb5f7e87950b9cde2343697a",
+      "source": "/image/peach/aux_ucode20.elf"
+    },
+    "board.bin": {
+      "bytes": 125396,
+      "sha256": "4bc758cd8f1e98b5de941bb6e7d434784090e3be0a23a490e14ab33c6cd5e196",
+      "source": "/image/peach/bdwlan.elf"
+    },
+    "m3.bin": {
+      "bytes": 290816,
+      "sha256": "5707d9d4a0eb098ffcd46cb583d4372b5c33adf7f95a59216b9f653fea874ef5",
+      "source": "/image/peach/phy_ucode20.elf"
+    },
+    "qdss_trace_config.bin": {
+      "bytes": 6241,
+      "sha256": "17a855ff76656f3f8ea2571e2523a52a20d0ce036f42bd5728dcae49425ad889",
+      "source": "/image/peach/qdss_trace_config_v2.cfg"
+    },
+    "regdb.bin": {
+      "bytes": 24278,
+      "sha256": "c774af903051e7af845435352fdb2ec6158835c4c95fd9323be22658971ffc6f",
+      "source": "/image/peach/regdb.bin"
+    },
+    "tmel.bin": {
+      "bytes": 55016,
+      "sha256": "978cb036e8cc81fd2d4adef1e3415ed3917ac220e136ef5c3ba45d2fda22bbbe",
+      "source": "/image/tmel_peach_20.elf"
+    },
+    "bdwlan.e01": {
+      "bytes": 125288,
+      "sha256": "7c3e278e879b08446bd401059ccb03d3d5c319d938bb43672955eefca0ec765f",
+      "source": "/image/peach/bdwlan.e01"
+    },
+    "bdwlan.e02": {
+      "bytes": 125288,
+      "sha256": "c6eb01e6918266088f20596268774bc788018546f3c50f56bef6a0494f40f5ba",
+      "source": "/image/peach/bdwlan.e02"
+    },
+    "bdwlan.e03": {
+      "bytes": 125288,
+      "sha256": "4ea5a292df08ccb15bbb5803a03b674da8bfd46f5b6c7a27e6931ffbcb874a5a",
+      "source": "/image/peach/bdwlan.e03"
+    },
+    "bdwlan.e04": {
+      "bytes": 125288,
+      "sha256": "9ae5380135756b2030ab0ef5f11865fbd62718a9d82ac7d432d7d7c54b3e9d40",
+      "source": "/image/peach/bdwlan.e04"
+    },
+    "bdwlan.e05": {
+      "bytes": 125288,
+      "sha256": "37d1ce79055bf87c55f175fed4967d1176ee98a8e111b0a771e79e1ff5d31943",
+      "source": "/image/peach/bdwlan.e05"
+    },
+    "bdwlan.e06": {
+      "bytes": 125288,
+      "sha256": "ceddd82b9bfaf8021142d064d7ad4d0a72db4e4bf0e739148e4265aa0bfbe5c3",
+      "source": "/image/peach/bdwlan.e06"
+    },
+    "bdwlan.e07": {
+      "bytes": 125288,
+      "sha256": "f0af1f45d5c4163133627be6502944e09e38228fdd09c4ad07b8ed17e4764222",
+      "source": "/image/peach/bdwlan.e07"
+    },
+    "bdwlan.e09": {
+      "bytes": 125288,
+      "sha256": "09d5a8e4108d1217baa28375a9ad0b8fb05202826ecb9b0e3885b54ff127aa0f",
+      "source": "/image/peach/bdwlan.e09"
+    },
+    "bdwlan.e0a": {
+      "bytes": 125288,
+      "sha256": "a48151f23131f86b710bd672bc8105e4e13d8aff6ea329b6aab646d4dd13a550",
+      "source": "/image/peach/bdwlan.e0a"
+    },
+    "bdwlan.e0b": {
+      "bytes": 125288,
+      "sha256": "384f6a5d24e5561328dc652874fb598312a6f9c8dcac7826fea0c6f24da5e394",
+      "source": "/image/peach/bdwlan.e0b"
+    },
+    "bdwlan.e0c": {
+      "bytes": 125288,
+      "sha256": "ad887e409bfaa5b8ca18baff32049184b4722cb909272453217066d094bfd153",
+      "source": "/image/peach/bdwlan.e0c"
+    },
+    "bdwlan.e0d": {
+      "bytes": 125288,
+      "sha256": "bf95e6120a8e2f81fbf748532ec45ad5af443e7025e9942fe3ef3ca9ade8c395",
+      "source": "/image/peach/bdwlan.e0d"
+    },
+    "bdwlan.e0e": {
+      "bytes": 125288,
+      "sha256": "4c3cc4a7dcf2cd10746b0f65d8d9501567f418cd378c7c734326bffd89cc3462",
+      "source": "/image/peach/bdwlan.e0e"
+    },
+    "bdwlan.e0f": {
+      "bytes": 125288,
+      "sha256": "144d0592cf481391dc0b63d066e6b33bf0ed38856127c0b7c54a1af9645bf187",
+      "source": "/image/peach/bdwlan.e0f"
+    },
+    "bdwlan.e10": {
+      "bytes": 125288,
+      "sha256": "3a99ffa74d70f3576ecd90f0f9e7869a36a61d4cb791fbc738c3a58451d7ef22",
+      "source": "/image/peach/bdwlan.e10"
+    },
+    "bdwlan.e11": {
+      "bytes": 125288,
+      "sha256": "dd5925ce56aafbb83ec32fe20ec347b7e7f40da11443f54989f0aeb890e27d5d",
+      "source": "/image/peach/bdwlan.e11"
+    },
+    "bdwlan.e12": {
+      "bytes": 125288,
+      "sha256": "5ca674aa135b98e3303e36faaa49d0183da26132e9a7f5ba8953ffbe3d29dcf7",
+      "source": "/image/peach/bdwlan.e12"
+    },
+    "bdwlan.e13": {
+      "bytes": 125288,
+      "sha256": "5fed55a4a5ba5c03c8734151177a93bfb8707897d9ccbe39503307a20d911ef7",
+      "source": "/image/peach/bdwlan.e13"
+    },
+    "bdwlan.e14": {
+      "bytes": 125288,
+      "sha256": "9a4ca4263e25c5b793b3afdfcb6c10dcc4b004eff8e134a1939933364c22d5fd",
+      "source": "/image/peach/bdwlan.e14"
+    },
+    "bdwlan.e15": {
+      "bytes": 125288,
+      "sha256": "e983cef3e23ad248256927d22b21a532f88cea3e194453355cae794dd0873f4d",
+      "source": "/image/peach/bdwlan.e15"
+    },
+    "bdwlan.e16": {
+      "bytes": 125288,
+      "sha256": "f0953c9c0f7f996e8c67a8b6bc0869408ae8ca219c194baaf9df6002eb8bdce2",
+      "source": "/image/peach/bdwlan.e16"
+    },
+    "bdwlan.e17": {
+      "bytes": 125288,
+      "sha256": "207a370968ff6b14910189fc46356471ed379558fb2b5b7079bb2308a7c10acc",
+      "source": "/image/peach/bdwlan.e17"
+    },
+    "bdwlan.e18": {
+      "bytes": 125288,
+      "sha256": "14e664157b2e5ae3548279908e5b2ff5d1ef973ae65119783df427fc8ac72eab",
+      "source": "/image/peach/bdwlan.e18"
+    },
+    "bdwlan.e19": {
+      "bytes": 125288,
+      "sha256": "c4d0dfcdff18e9d9726e76d8eaeea28370f362ef5d147e23dfcec2acdd0f3345",
+      "source": "/image/peach/bdwlan.e19"
+    },
+    "bdwlan.e1a": {
+      "bytes": 125288,
+      "sha256": "7953c40314af2f36d609490e438dcd5a37723dc226046ca328acdad6f95563b2",
+      "source": "/image/peach/bdwlan.e1a"
+    },
+    "bdwlan.e1b": {
+      "bytes": 125288,
+      "sha256": "2dce0a7ad51a3557fddc18c3f3d6cbda757d96155d66b90b6af4a2f4e600b71c",
+      "source": "/image/peach/bdwlan.e1b"
+    },
+    "bdwlan.e1c": {
+      "bytes": 125288,
+      "sha256": "c1113227f80b395bcb6336ce455d0e2e81843bad2a9275e99ed06b1bbc64ec01",
+      "source": "/image/peach/bdwlan.e1c"
+    },
+    "bdwlan.e1d": {
+      "bytes": 125288,
+      "sha256": "6ac728e1c5fc8f7fd15b3b1444fba6347e8563c22ec8c917e9a18ed4d05fcea9",
+      "source": "/image/peach/bdwlan.e1d"
+    },
+    "bdwlan.e1e": {
+      "bytes": 125288,
+      "sha256": "0f6883a5630864a8ba76a55407e835e6e64524734051627b2b03c0d1d699eef7",
+      "source": "/image/peach/bdwlan.e1e"
+    },
+    "bdwlan.e1f": {
+      "bytes": 125288,
+      "sha256": "54b1c941caca84df4ef383ad38c799def4d4e943d3f4aed5dade35b3ebc0976e",
+      "source": "/image/peach/bdwlan.e1f"
+    },
+    "bdwlan.e20": {
+      "bytes": 125288,
+      "sha256": "10041b422f9f42bec42fc589d21b993ce8a459e463e3739246a3a27d99494aa2",
+      "source": "/image/peach/bdwlan.e20"
+    },
+    "bdwlan.e21": {
+      "bytes": 125288,
+      "sha256": "3f97839db8c38bca9a0ace0f02cdc1bf3465dc8d2347ddbbb60916fcd4006bbd",
+      "source": "/image/peach/bdwlan.e21"
+    },
+    "bdwlan.e22": {
+      "bytes": 125288,
+      "sha256": "0e4018d061055fce113ed550231d96abef0372fc2bdc7dd09815256e2f37cd0d",
+      "source": "/image/peach/bdwlan.e22"
+    },
+    "bdwlan.e23": {
+      "bytes": 125288,
+      "sha256": "b9c608c002d2bd9590867e120e6cb375ba65c199b6ef19e579992c954dc41889",
+      "source": "/image/peach/bdwlan.e23"
+    },
+    "bdwlan.e24": {
+      "bytes": 125288,
+      "sha256": "fd3f21d2a6fd1724e505d339e5c1ca768a108d9c6ca1f86d8a8cd85a587e7d97",
+      "source": "/image/peach/bdwlan.e24"
+    },
+    "bdwlan.e25": {
+      "bytes": 125288,
+      "sha256": "39e67312f385c6561413590c0ff4c7c9bd195eb6ea37cc76ac02a6eeaf02ddeb",
+      "source": "/image/peach/bdwlan.e25"
+    },
+    "bdwlan.e26": {
+      "bytes": 125288,
+      "sha256": "416ab974f9dba9e783c501c48f03b06bbf87f4ffd9b02724af723f31185a6b5d",
+      "source": "/image/peach/bdwlan.e26"
+    },
+    "bdwlan.e27": {
+      "bytes": 125288,
+      "sha256": "9950285e39e87edb00f405bf567c33cd76d174b0be97e4e0cc6d9500bacc6fae",
+      "source": "/image/peach/bdwlan.e27"
+    },
+    "bdwlan.e29": {
+      "bytes": 125288,
+      "sha256": "ec7ddccc5c0b24b0ecb905ba9a2a1734af99286a319061d857134c31cc3df1e5",
+      "source": "/image/peach/bdwlan.e29"
+    },
+    "bdwlan.e2a": {
+      "bytes": 125288,
+      "sha256": "20ddb3a7874e27ecadf601b9dac2235662aedc18ec93eac020c0820c77d9b566",
+      "source": "/image/peach/bdwlan.e2a"
+    },
+    "bdwlan.e2b": {
+      "bytes": 125288,
+      "sha256": "afbddfcfeb3b489607a53bee293241f184fb8050878c88e128e2395da83a87a6",
+      "source": "/image/peach/bdwlan.e2b"
+    },
+    "bdwlan.e2c": {
+      "bytes": 125288,
+      "sha256": "79a43c4adf4babafcc8626037bb1acea1828539ab57dd2538a87b96f5afe4744",
+      "source": "/image/peach/bdwlan.e2c"
+    },
+    "bdwlan.e2d": {
+      "bytes": 125288,
+      "sha256": "be6d32362f8ddd61cede92a689e3cd8b71848ea550d3c1bf08b181b32afecdaa",
+      "source": "/image/peach/bdwlan.e2d"
+    },
+    "bdwlan.e2e": {
+      "bytes": 125288,
+      "sha256": "76f3f0cc0f44aa7cfde778e006161b073fb5cedbe57144f9c51f02bf3801cbd0",
+      "source": "/image/peach/bdwlan.e2e"
+    },
+    "bdwlan.e2f": {
+      "bytes": 125288,
+      "sha256": "be8c54db8eea10db5887b23c354c4f527017ec119322d0fbbe5684dd86342388",
+      "source": "/image/peach/bdwlan.e2f"
+    },
+    "bdwlan.e30": {
+      "bytes": 125288,
+      "sha256": "192aa5d9d6076eb5855bf27ed95829a54df102c26b73e90f3de239b08857ed6b",
+      "source": "/image/peach/bdwlan.e30"
+    },
+    "bdwlan.e31": {
+      "bytes": 125288,
+      "sha256": "450b20cd82ea22a08ea7c6e79407b031ca9eec5866682c6018996d7b6b1eb292",
+      "source": "/image/peach/bdwlan.e31"
+    },
+    "bdwlan.e32": {
+      "bytes": 125288,
+      "sha256": "f3fa759103484762f3f91411102fba395dc558240f81d63708d9ab14d41beebc",
+      "source": "/image/peach/bdwlan.e32"
+    },
+    "bdwlan.e33": {
+      "bytes": 125288,
+      "sha256": "02763971fba5b6badd90e6fbf54e3520561ef499ace829f9be007d6274aecae2",
+      "source": "/image/peach/bdwlan.e33"
+    },
+    "bdwlan.e34": {
+      "bytes": 125288,
+      "sha256": "d2641830d4a444d51275e7d61086917608af4a2a2a2bbdee0a4d8b0aa82c1fcb",
+      "source": "/image/peach/bdwlan.e34"
+    },
+    "bdwlan.e35": {
+      "bytes": 125288,
+      "sha256": "fbac4a908ed9e265999ca2cc82de47e08a3633967bc774d33199fabbaf5cc314",
+      "source": "/image/peach/bdwlan.e35"
+    },
+    "bdwlan.e36": {
+      "bytes": 125288,
+      "sha256": "4ecd438dd83ec8a4f9d0a11cf088d4a246173735ef31f2895e757d37ee381ec3",
+      "source": "/image/peach/bdwlan.e36"
+    },
+    "bdwlan.e37": {
+      "bytes": 125288,
+      "sha256": "60351f9861aba850f216107493efae5febcca2c172d0ca46f3e67209856b254d",
+      "source": "/image/peach/bdwlan.e37"
+    },
+    "bdwlan.e38": {
+      "bytes": 125288,
+      "sha256": "e9a14300ea21329091209183e848822e250953fbd3d65211168fef954ede299a",
+      "source": "/image/peach/bdwlan.e38"
+    },
+    "bdwlan.e39": {
+      "bytes": 125288,
+      "sha256": "a0d6b35400ca6b94dc03f2fba9bc0d91846977e67c26e4a77e43cf345d333ed6",
+      "source": "/image/peach/bdwlan.e39"
+    },
+    "bdwlan.e3a": {
+      "bytes": 125288,
+      "sha256": "effd3a9e1eba2fed900a8f55868876db22facdf3b35deee825c1475ce94e2c3a",
+      "source": "/image/peach/bdwlan.e3a"
+    },
+    "bdwlan.e3b": {
+      "bytes": 125288,
+      "sha256": "e18603fc91cfcfd66be8a9495625c81fa797ea6a9b54998deda004852cae267a",
+      "source": "/image/peach/bdwlan.e3b"
+    },
+    "bdwlan.e3c": {
+      "bytes": 125288,
+      "sha256": "00b4634e8daf48d698860e75e803596a2f25c3d6c2708940ec8bbdadced44908",
+      "source": "/image/peach/bdwlan.e3c"
+    },
+    "bdwlan.e3d": {
+      "bytes": 125288,
+      "sha256": "0e62c13461761124d10a796eee615b7e586aeb0ccac98057c7975ff3ac3f277f",
+      "source": "/image/peach/bdwlan.e3d"
+    },
+    "bdwlan.e3e": {
+      "bytes": 125288,
+      "sha256": "3585c3457fa8aa95c943111858e7d1b23b6716206044406cbe38329799aa5ce7",
+      "source": "/image/peach/bdwlan.e3e"
+    },
+    "bdwlan.e3f": {
+      "bytes": 125288,
+      "sha256": "ad147e63fb7118b1c87f89d7ff1ed040d2176034cbe22a0d006161d88f56b05c",
+      "source": "/image/peach/bdwlan.e3f"
+    },
+    "bdwlan.e40": {
+      "bytes": 125288,
+      "sha256": "18132df040970ab66c8935926e988e9dd68c90742a3421557f353264d05f19ec",
+      "source": "/image/peach/bdwlan.e40"
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "component": "np05j-cdsp",
+  "rom": "REDMAGICOS10.5.14_NP05J_EU",
+  "post_build": "nubia/PQ84P01-EEA/PQ84P01:15/AQ3A.240812.002/20251205.092946:user/release-keys",
+  "ota_url": "https://rom.download.nubia.com/Europe/PQ84P01%28NP05J%29/REDMAGICOS10.5.14_NP05J_EU/update.zip",
+  "partition": {
+    "name": "modem",
+    "sha256": "ec4dddd1c046b95c1bcfce3e12ed33fa11b4471791f8021ee2d6d5fe21382d92"
+  },
+  "source": "stock modem.img /image/cdsp* (Hexagon CDSP + CDSP DTB + PD-Mapper JSON)",
+  "directory": "qcom/sm8750",
+  "files": {
+    "cdsp.b00": {
+      "bytes": 564,
+      "sha256": "1286bcafa96b524e9b1c81b4f8414f690dcac86a597f57d92811befa181fc6e9",
+      "source": "/image/cdsp.b00"
+    },
+    "cdsp.b01": {
+      "bytes": 27572,
+      "sha256": "73b0226163f5c9a0b11d84c5fa859780e9dad7fbc72ae49500fedce1de99413b",
+      "source": "/image/cdsp.b01"
+    },
+    "cdsp.b02": {
+      "bytes": 79076,
+      "sha256": "7febce49f77af981c27109ac908252b0060628f8c1540ae68e38b1d39f0eec24",
+      "source": "/image/cdsp.b02"
+    },
+    "cdsp.b03": {
+      "bytes": 140271,
+      "sha256": "bbcedf029587799bed38dbd6d94a9da1e1e5b69ec32b11650f4826811fa55810",
+      "source": "/image/cdsp.b03"
+    },
+    "cdsp.b04": {
+      "bytes": 1376,
+      "sha256": "fb4ad56d859ec9dcacc1bfbba02db2b81125c5d22d4dbe0e3bf0ede184925103",
+      "source": "/image/cdsp.b04"
+    },
+    "cdsp.b05": {
+      "bytes": 2402820,
+      "sha256": "47b5c3c3f89f41edcb49c5b2a9e1e2e4832e53a3e511053a21ff284a23407912",
+      "source": "/image/cdsp.b05"
+    },
+    "cdsp.b06": {
+      "bytes": 114696,
+      "sha256": "f4fb0b4f7a5effe74ae88469986d8be23e87b55d5537324067df9b8105e8767c",
+      "source": "/image/cdsp.b06"
+    },
+    "cdsp.b07": {
+      "bytes": 2840,
+      "sha256": "7bfdac400e22f8cc9a9b1b46cec8518d5c7f5c3a9ddb3dd015cf572da3e4bb7c",
+      "source": "/image/cdsp.b07"
+    },
+    "cdsp.b08": {
+      "bytes": 123894,
+      "sha256": "fe3a4c6035eb02462535d01e85322828605abcb05f2cf8ac5576bf7bf2adc217",
+      "source": "/image/cdsp.b08"
+    },
+    "cdsp.b09": {
+      "bytes": 786012,
+      "sha256": "4380e712c0e5f8d69685bb0a8a4b8750db10ec373a6abdc424ebb708a37aa9d0",
+      "source": "/image/cdsp.b09"
+    },
+    "cdsp.b10": {
+      "bytes": 14016,
+      "sha256": "58507953a157ac0100508d50452e1de57e3f0ae5503c29715079c847e9cb92ef",
+      "source": "/image/cdsp.b10"
+    },
+    "cdsp.b11": {
+      "bytes": 3184,
+      "sha256": "d6508d374fc2ed69b503a27e8139d29234c71a5556b602e4d4adf8da29bf959a",
+      "source": "/image/cdsp.b11"
+    },
+    "cdsp.b12": {
+      "bytes": 114256,
+      "sha256": "758763b81b55995dd9efb16a676a8e23e8b3ad5a6395f01269faf491f57e8683",
+      "source": "/image/cdsp.b12"
+    },
+    "cdsp.b13": {
+      "bytes": 5600,
+      "sha256": "477c8bc6696ebb016e87b7b2369c759cb145e49440b3042b80339a5be7165f18",
+      "source": "/image/cdsp.b13"
+    },
+    "cdsp.b15": {
+      "bytes": 4520,
+      "sha256": "1c6dfadcf97d984f10baea49f21f1ecce2c6eb5b229f18f7a05eabd7ba6e121c",
+      "source": "/image/cdsp.b15"
+    },
+    "cdsp.mdt": {
+      "bytes": 5084,
+      "sha256": "9b976c647b57c58dc8bf7d1d6bea111354b0a57da3f73c132ef593c4eec59a78",
+      "source": "/image/cdsp.mdt"
+    },
+    "cdsp_dtb.b00": {
+      "bytes": 148,
+      "sha256": "31747c7001fa4a31aaac7e8c41d6dea16659a8cd33e51e90ecb6469509e7e216",
+      "source": "/image/cdsp_dtb.b00"
+    },
+    "cdsp_dtb.b01": {
+      "bytes": 29812,
+      "sha256": "73fccf195764b6ad7dbaf023609295b64279ff558fdc14538dd879848382046d",
+      "source": "/image/cdsp_dtb.b01"
+    },
+    "cdsp_dtb.b02": {
+      "bytes": 3896,
+      "sha256": "40bfaad5e492e5622cd591bc1dec9c9e1ec974396754de9d4f92286a74ecd928",
+      "source": "/image/cdsp_dtb.b02"
+    },
+    "cdsp_dtb.mdt": {
+      "bytes": 4044,
+      "sha256": "2ca1f4650f4b7e6c93294082f8adc5fb1b478711cfab88b747bf2cc43345fcb7",
+      "source": "/image/cdsp_dtb.mdt"
+    },
+    "cdspr.jsn": {
+      "bytes": 513,
+      "sha256": "6d01cd7dce745204d5de20efe57e2511149ca2a5b48ee562fbedefda573ca465",
+      "source": "/image/cdspr.jsn"
+    }
+  }
+}
