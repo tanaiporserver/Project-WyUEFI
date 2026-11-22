@@ -324,6 +324,9 @@ class Np05jPortTests(unittest.TestCase):
             self.assertIn(opt, desktop_frag)
         common_dtsi = (ROOT / 'linux/dts/np05j/sm8750-nubia-np05j-common.dtsi').read_text()
         self.assertIn('chosen { };', common_dtsi)
+        self.assertNotIn('gpu-microcode@9b09a000', common_dtsi)
+        smmu_patch = (ROOT / 'patches/linux/7.3/np05j/0144-LOCAL-iommu-arm-smmu-cap-qcom-smr-groups.patch').read_text()
+        self.assertIn('smmu->num_mapping_groups = QCOM_HANDOFF_MAX_SMR;', smmu_patch)
         self.assertTrue((ROOT / 'tools/build/np05j_ubuntu.py').is_file())
 
     def test_native_np05j_port_c_suite(self):

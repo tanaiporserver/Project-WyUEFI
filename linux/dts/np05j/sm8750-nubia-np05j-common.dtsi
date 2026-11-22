@@ -100,11 +100,6 @@
 	};
 
 	reserved-memory {
-		gpu_microcode_mem: gpu-microcode@9b09a000 {
-			reg = <0x0 0x9b09a000 0x0 0x2000>;
-			no-map;
-		};
-
 		display_demura_mem: display-demura@a3500000 {
 			reg = <0x0 0xa3500000 0x0 0x2c80000>;
 			no-map;

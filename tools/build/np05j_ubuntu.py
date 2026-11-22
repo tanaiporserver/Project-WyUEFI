@@ -443,6 +443,10 @@ def main() -> int:
     ap.add_argument('--output-bundle', type=Path, default=DEFAULT_BUNDLE_OUT)
     ap.add_argument('--esp-size-mib', type=int, default=512)
     ap.add_argument('--root-size-mib', type=int)
+    ap.add_argument('--esp-only', action='store_true',
+                    help='สร้างใหม่เฉพาะ esp.img และ sparse/esp.img โดยคง root.ext4.img เดิมไว้')
+    ap.add_argument('--initrd', type=Path,
+                    help='พาธไฟล์ initrd.img สำหรับ --esp-only (ถ้าไม่ระบุจะดึงจาก esp.img เดิม)')
     ap.add_argument('--rebuild', action='store_true')
     ap.add_argument('--plan', action='store_true')
     ap.add_argument('--execute', action='store_true')
@@ -468,10 +472,78 @@ def main() -> int:
         'bundle_output': str(bundle_out),
         'esp_size_mib': args.esp_size_mib,
         'root_size_mib': args.root_size_mib,
+        'esp_only': args.esp_only,
         'status': 'PLAN_ONLY',
     }
     if args.plan:
         print(json.dumps(summary, indent=2))
+        return 0
+
+    if args.esp_only:
+        bundle_manifest_path = bundle_out / 'manifest.json'
+        esp_img = bundle_out / 'esp.img'
+        root_img = bundle_out / 'root.ext4.img'
+        if not bundle_manifest_path.is_file() or not esp_img.is_file() or not root_img.is_file():
+            raise SystemExit(f'--esp-only ต้องมี bundle เดิมครบอยู่ใน {bundle_out}')
+        bundle_manifest = json.loads(bundle_manifest_path.read_text())
+        release = kernel_meta['kernel_release']
+        with tempfile.TemporaryDirectory(dir=bundle_out) as work_str:
+            work = Path(work_str)
+            if args.initrd:
+                initrd = args.initrd.resolve()
+            else:
+                initrd = work / f'initrd.img-{release}'
+                run(['mcopy', '-i', esp_img, f'::/linux/{release}/initrd.img', initrd])
+            new_esp = work / 'esp.img.new'
+            esp_files = build_esp_image(new_esp, args.esp_size_mib, kernel_dir, kernel_meta, initrd, work)
+            os.replace(new_esp, esp_img)
+
+        bundle_manifest['kernel_release'] = release
+        bundle_manifest['esp_files'] = esp_files
+        bundle_manifest['partitions']['esp']['capacity_bytes'] = esp_img.stat().st_size
+        bundle_manifest['files']['esp.img'] = {
+            'bytes': esp_img.stat().st_size,
+            'sha256': sha(esp_img),
+            'format': 'raw-fat32',
+        }
+        bundle_manifest_path.write_text(json.dumps(bundle_manifest, indent=2) + '\n')
+        (bundle_out / 'SHA256SUMS').write_text(
+            f"{bundle_manifest['files']['esp.img']['sha256']}  esp.img\n"
+            f"{bundle_manifest['files']['root.ext4.img']['sha256']}  root.ext4.img\n"
+        )
+
+        # แปลงเฉพาะ sparse/esp.img ใหม่ โดยคง sparse/root.ext4.img เดิมไว้เพื่อลดเวลา
+        sparse_out = bundle_out / 'sparse'
+        sparse_manifest_path = sparse_out / 'manifest.json'
+        if sparse_manifest_path.is_file() and (sparse_out / 'root.ext4.img').is_file():
+            sparse_meta = json.loads(sparse_manifest_path.read_text())
+            new_sparse_esp = sparse_out / 'esp.img.new'
+            new_sparse_esp.unlink(missing_ok=True)
+            row = package_sparse_images.convert(esp_img, new_sparse_esp)
+            if (row['expanded_sha256'] != bundle_manifest['files']['esp.img']['sha256'] or
+                    row['expanded_bytes'] != bundle_manifest['files']['esp.img']['bytes']):
+                raise ValueError('sparse esp.img ไม่ตรงกับ raw esp.img')
+            os.replace(new_sparse_esp, sparse_out / 'esp.img')
+            sparse_meta['kernel_release'] = release
+            sparse_meta['source_manifest_sha256'] = package_sparse_images.digest(bundle_manifest_path)
+            sparse_meta['files']['esp.img'] = row
+            sparse_manifest_path.write_text(json.dumps(sparse_meta, indent=2) + '\n')
+            (sparse_out / 'SHA256SUMS').write_text(''.join(
+                info['sha256'] + '  ' + name + '\n' for name, info in sparse_meta['files'].items()
+            ))
+        else:
+            if sparse_out.exists():
+                shutil.rmtree(sparse_out)
+            sparse_meta = package_sparse_images.package(bundle_out, sparse_out)
+
+        print(json.dumps({
+            'status': bundle_manifest['status'],
+            'mode': 'esp-only',
+            'kernel_release': bundle_manifest['kernel_release'],
+            'raw': bundle_manifest['files'],
+            'sparse': sparse_meta['files'],
+            'sparse_dir': str(sparse_out),
+        }, indent=2))
         return 0
 
     if os.geteuid() != 0:

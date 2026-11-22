@@ -16,7 +16,7 @@ new file mode 100644
 index 000000000000..111111111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
-@@ -0,0 +1,763 @@
+@@ -0,0 +1,758 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
@@ -119,11 +119,6 @@ index 000000000000..111111111111
 +	};
 +
 +	reserved-memory {
-+		gpu_microcode_mem: gpu-microcode@9b09a000 {
-+			reg = <0x0 0x9b09a000 0x0 0x2000>;
-+			no-map;
-+		};
-+
 +		display_demura_mem: display-demura@a3500000 {
 +			reg = <0x0 0xa3500000 0x0 0x2c80000>;
 +			no-map;
@@ -947,7 +942,7 @@ index 000000000000..111111111111
 +		interconnect-names = "gfx-mem";
 +
 +		zap-shader {
-+			memory-region = <&gpu_microcode_mem>;
++			memory-region = <&gpu_micro_code_mem>;
 +			firmware-name = "qcom/gen80000_zap.mbn";
 +		};
 +

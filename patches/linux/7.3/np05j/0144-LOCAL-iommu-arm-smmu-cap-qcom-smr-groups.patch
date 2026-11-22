@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: sunuefi-np05j <sunuefi-np05j@local>
+Date: Sun, 22 Nov 2026 17:00:00 +0000
+Subject: iommu/arm-smmu-qcom: cap stream matching groups to QCOM_HANDOFF_MAX_SMR
+
+Problem:
+On nubia NP05J (REDMAGIC Astra, SM8750P), apps_smmu@15000000 reports
+ID0=0x4c017e84 (NUMSMRG=132) and ID1=0x60000053 (NUMCB=83). The Piano
+firmware DMA handoff patch bounds qcom_smmu_handoff_snapshot to
+QCOM_HANDOFF_MAX_SMR (128) and removed mainline's >128 SMR group clamp.
+As a result, qcom_smmu_handoff_geometry() rejects num_smr=132 with
+-EOPNOTSUPP ("unsupported bounded firmware route geometry"), causing
+arm-smmu probe failure (-95) and preventing UFS and all apps_smmu
+consumers from probing.
+
+Rationale:
+Mainline arm-smmu-qcom already documents that Qualcomm hypervisor
+firmware does not reliably trap and emulate stream matching groups
+beyond the Arm SMMU architected maximum of 128, and previously clamped
+smmu->num_mapping_groups to 128. Applying the same cap to
+QCOM_HANDOFF_MAX_SMR (128) before reading live firmware routes keeps
+bounded handoff snapshot validation intact and prevents accessing
+unemulated SMR/S2CR slots 128..131 during probe or reset.
+
+Verification:
+Rebuilt Linux 7.3.3-np05j kernel image for nubia NP05J and verified
+clean patch application, build, and on-device boot handoff into UFS
+rootfs.
+---
+ drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+index 0ae8efe89985..5f7a2c81b9e4 100644
+--- a/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
++++ b/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c
+@@ -481,6 +481,19 @@ static int qcom_smmu_cfg_probe(struct arm_smmu_device *smmu)
+ 			smmu->num_context_banks = 13;
+ 	}
+ 
++	/*
++	 * แพลตฟอร์ม SM8750P (เช่น nubia NP05J) รายงาน NUMSMRG=132 ซึ่งเกิน
++	 * ขีดจำกัดสถาปัตยกรรม ARM SMMU (128) และเกิน QCOM_HANDOFF_MAX_SMR
++	 * ไฮเปอร์ไวเซอร์ของ Qualcomm ไม่ได้จำลองรีจิสเตอร์เกิน 128 อย่างเสถียร
++	 * จึงจำกัดจำนวน SMR ไว้ที่ QCOM_HANDOFF_MAX_SMR ก่อนอ่านเส้นทางเฟิร์มแวร์
++	 */
++	if (smmu->num_mapping_groups > QCOM_HANDOFF_MAX_SMR) {
++		dev_notice(smmu->dev,
++			   "\tLimiting the stream matching groups from %u to %u\n",
++			   smmu->num_mapping_groups, QCOM_HANDOFF_MAX_SMR);
++		smmu->num_mapping_groups = QCOM_HANDOFF_MAX_SMR;
++	}
++
+ 	/* Read and reserve every live route before probing firmware behaviour.
+ 	 * A last-slot probe is not safe when firmware occupies that slot, and
+ 	 * the last CB is not necessarily free even with translation disabled.
+-- 
+2.47.3

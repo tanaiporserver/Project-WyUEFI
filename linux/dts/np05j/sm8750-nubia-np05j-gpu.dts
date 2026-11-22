@@ -56,7 +56,7 @@
 		interconnect-names = "gfx-mem";
 
 		zap-shader {
-			memory-region = <&gpu_microcode_mem>;
+			memory-region = <&gpu_micro_code_mem>;
 			firmware-name = "qcom/gen80000_zap.mbn";
 		};
 

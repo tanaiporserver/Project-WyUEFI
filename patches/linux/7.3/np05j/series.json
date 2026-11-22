@@ -15,7 +15,7 @@
     },
     {
       "file": "0142-LOCAL-arm64-dts-qcom-sm8750-nubia-np05j.patch",
-      "sha256": "5c49d03099917cda4831ce9d0374d5f22f634747812e669299d0feeecc909277",
+      "sha256": "056f32515ebe741ab957d4f5ab98b33fce9e26e4f1b5c5dcb2804cb98ea360e0",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
@@ -29,6 +29,15 @@
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
         "drop_when": "Drop if NP05J packages its board calibration directly as ath12k/WCN7850/hw2.0/board.bin or upstream ath12k Peach board_api1 lookup supports bdwlan.eXX."
+      }
+    },
+    {
+      "file": "0144-LOCAL-iommu-arm-smmu-cap-qcom-smr-groups.patch",
+      "sha256": "a4b31546331e44a952f961d26f7256cb39a857eaf03f15386f68efcdaaaa55c8",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once the shared arm-smmu Qualcomm handoff patch caps smmu->num_mapping_groups to QCOM_HANDOFF_MAX_SMR on platforms reporting >128 SMR groups."
       }
     }
   ]

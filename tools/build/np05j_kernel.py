@@ -126,7 +126,7 @@ def prepare_worktree(base_manifest, worktree, epoch):
         applied.append({'file': row['file'], 'sha256': row['sha256']})
 
     run(['git', '-C', str(worktree), '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null',
-         'commit', '--no-verify', '-m', 'NP05J: apply Linux 7.3 patches 0141..0143'], env=git_env)
+         'commit', '--no-verify', '-m', f'NP05J: apply {len(applied)} Linux 7.3 patches'], env=git_env)
     if run(['git', '-C', str(worktree), 'status', '--porcelain=v1', '--untracked-files=all'], capture=True):
         raise ValueError('Prepared NP05J kernel worktree is not clean after patch commit')
 
