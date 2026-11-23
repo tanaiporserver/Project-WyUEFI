@@ -1,10 +1,22 @@
-From: sunuefi-np05j <sunuefi-np05j@local>
-Subject: [PATCH] arm64: dts: qcom: add nubia REDMAGIC Astra (NP05J) device trees
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Project SunUEFI <sunuefi@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 23:50:00 +0000
+Subject: [PATCH] arm64: dts: qcom: add nubia NP05J (REDMAGIC Astra) device trees
 
-Add SM8750 nubia NP05J common dtsi and board variants (minimal, otg, gpu,
-and native OLED display).
+Add Device Tree sources for the nubia REDMAGIC Astra (NP05J, SM8750P),
+including common hardware, GPU-only SimpleDRM fallback, and native Dual-DSI
+Himax HX8874 OLED display.
 
+Signed-off-by: Project SunUEFI <sunuefi@users.noreply.github.com>
 ---
+ arch/arm64/boot/dts/qcom/Makefile                  |   4 +
+ .../boot/dts/qcom/sm8750-nubia-np05j-common.dtsi   | 907 +++++++++++++++++++++
+ .../boot/dts/qcom/sm8750-nubia-np05j-display.dts   | 191 +++++
+ .../arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts |  71 ++
+ .../arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts |  63 ++
+ arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts    |  28 +
+ 6 files changed, 1264 insertions(+)
+
 diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
 index 622341b32..c60501762 100644
 --- a/arch/arm64/boot/dts/qcom/Makefile
@@ -935,7 +947,7 @@ index 000000000..53c1fb59a
 +};
 diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts
 new file mode 100644
-index 000000000..0bacfc3ad
+index 000000000..f36af29d0
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts
 @@ -0,0 +1,191 @@
@@ -1038,7 +1050,7 @@ index 000000000..0bacfc3ad
 +	status = "okay";
 +};
 +
-+/* DSI1 เป็น slave ใช้ PLL เดียวกับ DSI0 */
++/* DSI1 เป็น slave (บน SM8750 คง clocks เดิมจาก sm8750.dtsi เพื่อเปิด divider/mux ของ PHY1 ครบ 2 ฝั่ง) */
 +&mdss_dsi1 {
 +	assigned-clocks = <&dispcc DISP_CC_MDSS_BYTE1_CLK_SRC>,
 +			  <&dispcc DISP_CC_MDSS_PCLK1_CLK_SRC>;

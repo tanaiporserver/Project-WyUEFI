@@ -97,7 +97,7 @@
 	status = "okay";
 };
 
-/* DSI1 เป็น slave ใช้ PLL เดียวกับ DSI0 */
+/* DSI1 เป็น slave (บน SM8750 คง clocks เดิมจาก sm8750.dtsi เพื่อเปิด divider/mux ของ PHY1 ครบ 2 ฝั่ง) */
 &mdss_dsi1 {
 	assigned-clocks = <&dispcc DISP_CC_MDSS_BYTE1_CLK_SRC>,
 			  <&dispcc DISP_CC_MDSS_PCLK1_CLK_SRC>;

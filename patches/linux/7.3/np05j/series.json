@@ -15,7 +15,7 @@
     },
     {
       "file": "0142-LOCAL-arm64-dts-qcom-sm8750-nubia-np05j.patch",
-      "sha256": "3f761b913f53c999bd11747cf02f2c47825ecc0bcd4d7c01c585c78f8fbca1a4",
+      "sha256": "c368e49ea4d4a08a76380fcaf5bdbbf22956671ca5e354927a80f320476f1fe9",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
@@ -42,7 +42,7 @@
     },
     {
       "file": "0145-LOCAL-asoc-tfa9874-and-np05j-sndcard.patch",
-      "sha256": "0899967a2accbbf72093a13cfa8142f240d3393e152d1bf0132ee8fc73e22b82",
+      "sha256": "c2387ab0a03de31d2ef92d7adeb855bafe935a526993fb71966ed13175642a5d",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
@@ -51,11 +51,20 @@
     },
     {
       "file": "0146-LOCAL-drm-panel-himax-hx8874.patch",
-      "sha256": "62baa8c7bfe35fbc5d25a92ae236c193141bc40743fe870f87b061df71973ad1",
+      "sha256": "def260197ae7f58ae8d3bd19bc6a02a1d147b1c4fc85828eac911bff721475e5",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
         "drop_when": "Drop once upstream Linux drivers/gpu/drm/panel/ includes Himax HX8874 Dual-DSI DSC OLED panel support."
+      }
+    },
+    {
+      "file": "0147-LOCAL-drm-msm-dpu-disable-idle-pc-np05j.patch",
+      "sha256": "3d25cfb71bbab901ecef27c3e01151594bedcb36da354d2c2d4b3290f67add72",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once DPU bonded Dual-DSI command-mode idle_pc wakeup preserves external TE lock without glitches on HX8874."
       }
     }
   ]

@@ -1,0 +1,29 @@
+From: sunuefi-np05j <sunuefi-np05j@local>
+Subject: [PATCH] drm/msm/dpu: disable command-mode idle_pc on nubia NP05J
+
+Stock nubia NP05J HX8874 OLED DT disables display HW sleep
+(qcom,mdss-disable-cesta-hw-sleep). Leaving DPU idle_pc enabled on the
+bonded Dual-DSI command-mode path disconnects external TE during short
+idle intervals and causes brief horizontal white-line glitches when rapid
+UI motion wakes the link. Disable idle_pc_supported on nubia,np05j.
+
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index 000000000..111111111 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -2724,8 +2724,10 @@ struct drm_encoder *dpu_encoder_init(struct drm_device *dev,
+ 
+ 	DPU_DEBUG("dsi_info->num_of_h_tiles %d\n", disp_info->num_of_h_tiles);
+ 
+-	if (disp_info->intf_type != INTF_WB)
++	if (disp_info->intf_type != INTF_WB &&
++	    !(disp_info->is_cmd_mode && of_machine_is_compatible("nubia,np05j"))) {
+ 		dpu_enc->idle_pc_supported =
+ 				dpu_kms->catalog->caps->has_idle_pc;
++	}
+ 
+ 	mutex_lock(&dpu_enc->enc_lock);
