@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """สร้าง Ubuntu 24.04 LTS (noble) ARM64 GNOME rootfs, ESP และ sparse images สำหรับ nubia NP05J"""
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -8,10 +9,12 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -67,6 +70,8 @@ EXTRA_UBUNTU_PACKAGES = [
     'pciutils',
     'i2c-tools',
     'evtest',
+    'alsa-utils',
+    'alsa-ucm-conf',
 ]
 
 
@@ -169,6 +174,39 @@ def install_np05j_firmware(rootfs: Path, fw_source: Path = DEFAULT_FIRMWARE) -> 
     return installed
 
 
+def install_np05j_audio_userspace(rootfs: Path):
+    """คอมไพล์ AudioReach topology และติดตั้ง ALSA UCM2 สำหรับลำโพงคู่ NXP TFA9874 ของ NP05J"""
+    audio_src = ROOT / 'linux/userspace/np05j/audio'
+    tplg_m4 = audio_src / 'nubia-REDMAGIC-Astra.m4'
+    ar_macros = ROOT / 'upstream/audioreach-topology'
+    if tplg_m4.is_file() and ar_macros.is_dir() and shutil.which('m4') and shutil.which('alsatplg'):
+        fw_dst = guest_resolve(rootfs, 'usr/lib/firmware/qcom/sm8750')
+        fw_dst.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='np05j-tplg-') as tmpdir:
+            conf = Path(tmpdir) / 'nubia-REDMAGIC-Astra.conf'
+            raw = subprocess.check_output(
+                ['m4', '-I', str(audio_src), '-I', str(ar_macros), str(tplg_m4)]
+            ).replace(b'stream0.vol_ctrl0', b'stream0.vol0')
+            conf.write_bytes(raw)
+            run(['alsatplg', '-c', conf, '-o', fw_dst / 'nubia-REDMAGIC-Astra-tplg.bin'])
+
+    ucm_src = audio_src / 'ucm2/Qualcomm/sm8750/nubia-REDMAGIC-Astra'
+    if ucm_src.is_dir():
+        ucm_dst = rootfs / 'usr/share/alsa/ucm2/Qualcomm/sm8750/nubia-REDMAGIC-Astra'
+        ucm_dst.mkdir(parents=True, exist_ok=True)
+        for name in ('nubia-REDMAGIC-Astra.conf', 'HiFi.conf'):
+            src_f = ucm_src / name
+            if src_f.is_file():
+                shutil.copyfile(src_f, ucm_dst / name)
+                (ucm_dst / name).chmod(0o644)
+        confd = rootfs / 'usr/share/alsa/ucm2/conf.d/sm8750'
+        confd.mkdir(parents=True, exist_ok=True)
+        link = confd / 'nubia-REDMAGIC-Astra.conf'
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        link.symlink_to('../../Qualcomm/sm8750/nubia-REDMAGIC-Astra/nubia-REDMAGIC-Astra.conf')
+
+
 def configure_ubuntu_gdm_autologin(rootfs: Path, username: str = DEFAULT_USER):
     """ตั้งค่า autologin ผู้ใช้บน /etc/gdm3/custom.conf และ daemon.conf สำหรับ Ubuntu GNOME"""
     custom_conf = rootfs / 'etc/gdm3/custom.conf'
@@ -220,6 +258,9 @@ def configure_np05j_user(rootfs: Path, username: str, password: str | None, gues
     elif not has_target:
         guest(['useradd', '-m', '-s', '/bin/bash', username])
 
+    # ให้บัญชีหลักมีสิทธิ์ใช้งาน GPU (/dev/dri/renderD128), เสียง และ Bluetooth โดยตรง
+    guest(['usermod', '-aG', 'video,render,audio,bluetooth', username])
+
     if password:
         argv = guest_command(rootfs, [
             '/usr/bin/env', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', '/usr/sbin/chpasswd',
@@ -247,6 +288,124 @@ def configure_np05j_user(rootfs: Path, username: str, password: str | None, gues
     guest(['chown', f'{username}:{username}', f'/home/{username}/FIRST-SETUP.txt'])
 
 
+def write_np05j_firmware_service(rootfs: Path):
+    """ติดตั้ง systemd unit np05j-firmware.service (TimeoutStartSec=15s) และเปิดใช้งาน"""
+    unit_dir = rootfs / 'etc/systemd/system'
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    (unit_dir / 'np05j-firmware.service').write_text(
+        '[Unit]\n'
+        'Description=Load stock read-only firmware for REDMAGIC Astra (NP05J)\n'
+        'DefaultDependencies=no\n'
+        'After=local-fs.target systemd-remount-fs.service systemd-udevd.service\n'
+        'Before=NetworkManager.service bluetooth.service multi-user.target\n'
+        '\n'
+        '[Service]\n'
+        'Type=oneshot\n'
+        'RemainAfterExit=yes\n'
+        'TimeoutStartSec=15s\n'
+        'ExecStart=/usr/libexec/np05j-fw-load\n'
+        '\n'
+        '[Install]\n'
+        'WantedBy=multi-user.target\n'
+    )
+    wants = unit_dir / 'multi-user.target.wants'
+    wants.mkdir(parents=True, exist_ok=True)
+    link = wants / 'np05j-firmware.service'
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    link.symlink_to('/etc/systemd/system/np05j-firmware.service')
+
+
+KISAK_MESA_FPR = 'EB8B81E14DA65431D7504EA8F63F0F2B90935439'
+KISAK_MESA_KEY_URL = f'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{KISAK_MESA_FPR}'
+
+
+def ensure_kisak_mesa_keyring() -> Path:
+    """จัดหาและตรวจ fingerprint ของ GPG key สำหรับ ppa:kisak/kisak-mesa ผ่าน HTTPS"""
+    cache_dir = ROOT / 'build/source-cache/kisak-mesa'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    keyring = cache_dir / 'kisak-mesa.gpg'
+    if keyring.is_file() and keyring.stat().st_size > 256:
+        return keyring
+    armored = subprocess.check_output(['curl', '-fsSL', '--proto', '=https', KISAK_MESA_KEY_URL])
+    info = subprocess.check_output(['gpg', '--show-keys', '--with-colons'], input=armored).decode('utf-8', 'replace')
+    if KISAK_MESA_FPR not in info:
+        raise ValueError(f'GPG fingerprint ของ kisak-mesa ไม่ตรงกับ {KISAK_MESA_FPR}')
+    dearmored = subprocess.check_output(['gpg', '--dearmor'], input=armored)
+    tmp = keyring.with_suffix('.gpg.tmp')
+    tmp.write_bytes(dearmored)
+    tmp.replace(keyring)
+    return keyring
+
+
+def upgrade_mesa_a830_and_ssh(rootfs: Path, guest) -> str:
+    """อัปเกรด Mesa จาก ppa:kisak/kisak-mesa ให้รองรับ Adreno 830 และสร้าง SSH host keys"""
+    keyring_src = ensure_kisak_mesa_keyring()
+    keyring_dst = rootfs / 'usr/share/keyrings/kisak-mesa.gpg'
+    keyring_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(keyring_src, keyring_dst)
+    keyring_dst.chmod(0o644)
+
+    sources_dst = rootfs / 'etc/apt/sources.list.d/kisak-mesa.sources'
+    sources_dst.parent.mkdir(parents=True, exist_ok=True)
+    sources_dst.write_text(
+        'Types: deb\n'
+        'URIs: https://ppa.launchpadcontent.net/kisak/kisak-mesa/ubuntu\n'
+        'Suites: noble\n'
+        'Components: main\n'
+        'Signed-By: /usr/share/keyrings/kisak-mesa.gpg\n'
+    )
+
+    guest(['apt-get', 'update'])
+    guest(['apt-get', 'upgrade', '-y'])
+    guest([
+        'apt-get', 'install', '-y', '--no-install-recommends',
+        'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'mesa-utils', 'vulkan-tools', 'alsa-utils',
+    ])
+
+    # หากมีแพ็กเกจ Mesa 27.0 (รองรับ Adreno 830v1 / speedbin wildcard 0xffff44050001) ให้ติดตั้งทับ kisak-mesa
+    mesa27_dir = ROOT / 'artifacts/mesa-np05j-noble'
+    mesa27_debs = sorted(mesa27_dir.glob('*.deb')) if mesa27_dir.is_dir() else []
+    if mesa27_debs:
+        stage_dir = rootfs / 'tmp/mesa-27-np05j'
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            deb_args = []
+            for deb in mesa27_debs:
+                shutil.copyfile(deb, stage_dir / deb.name)
+                deb_args.append(f'/tmp/mesa-27-np05j/{deb.name}')
+            guest(['apt-get', 'install', '-y', '--no-install-recommends', *deb_args])
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+
+    # ยืนยันว่าไลบรารี Gallium หลังอัปเกรดรองรับ Adreno (TM) 830 จริง
+    gallium_libs = sorted((rootfs / 'usr/lib/aarch64-linux-gnu').glob('libgallium-*.so'))
+    if not gallium_libs or not any(b'Adreno (TM) 830' in lib.read_bytes() for lib in gallium_libs):
+        raise RuntimeError('อัปเกรด Mesa ไม่พบการรองรับ Adreno (TM) 830 ใน libgallium')
+    mesa_ver = subprocess.check_output(
+        guest_command(rootfs, ['/usr/bin/dpkg-query', '-W', '-f=${Version}', 'mesa-libgallium']),
+        text=True,
+    ).strip()
+
+    # สร้าง SSH host keys, เปิด PasswordAuthentication และ enable ssh.service ให้พร้อมใช้งานทันที
+    if (rootfs / 'usr/sbin/sshd').is_file():
+        if not (rootfs / 'etc/ssh/ssh_host_ed25519_key').is_file():
+            guest(['ssh-keygen', '-A'])
+        sshd_dropin = rootfs / 'etc/ssh/sshd_config.d/60-np05j-password-auth.conf'
+        sshd_dropin.parent.mkdir(parents=True, exist_ok=True)
+        sshd_dropin.write_text(
+            '# เปิดให้เข้าสู่ระบบผ่าน SSH ด้วยรหัสผ่านสำหรับ REDMAGIC Astra (NP05J)\n'
+            'PasswordAuthentication yes\n'
+            'KbdInteractiveAuthentication yes\n'
+        )
+        (rootfs / 'run/sshd').mkdir(parents=True, exist_ok=True)
+        guest(['/usr/sbin/sshd', '-t'])
+        guest(['systemctl', 'enable', 'ssh.service'])
+
+    guest(['apt-get', 'clean'])
+    return mesa_ver
+
+
 def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: dict,
                                  username: str = DEFAULT_USER, password: str | None = None) -> Path:
     """ติดตั้งโมดูลเคอร์เนล, เฟิร์มแวร์สต็อก NP05J, ไดรเวอร์ firmware oneshot, udev rules, ภาษา EN และสร้าง initrd.img"""
@@ -265,6 +424,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
 
     # 1.5 คัดลอกเฟิร์มแวร์สต็อก NP05J ที่ตรวจ SHA-256 แล้ว (ADSP, CDSP, Wi-Fi 7, BT, GPU, Audio, Touch) เข้า /usr/lib/firmware
     install_np05j_firmware(rootfs, DEFAULT_FIRMWARE)
+    install_np05j_audio_userspace(rootfs)
     configure_ubuntu_gdm_autologin(rootfs, username)
 
     # 2. ติดตั้ง np05j-tool และ np05j-fw-load + systemd oneshot service
@@ -276,30 +436,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
     fw_script = libexec_dir / 'np05j-fw-load'
     shutil.copyfile(ROOT / 'linux/userspace/np05j/np05j-fw-load', fw_script)
     fw_script.chmod(0o755)
-
-    unit_dir = rootfs / 'etc/systemd/system'
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    (unit_dir / 'np05j-firmware.service').write_text(
-        '[Unit]\n'
-        'Description=Load stock read-only firmware for REDMAGIC Astra (NP05J)\n'
-        'DefaultDependencies=no\n'
-        'After=local-fs.target systemd-remount-fs.service systemd-udevd.service\n'
-        'Before=NetworkManager.service bluetooth.service multi-user.target\n'
-        '\n'
-        '[Service]\n'
-        'Type=oneshot\n'
-        'RemainAfterExit=yes\n'
-        'ExecStart=/usr/libexec/np05j-fw-load\n'
-        '\n'
-        '[Install]\n'
-        'WantedBy=multi-user.target\n'
-    )
-    wants = unit_dir / 'multi-user.target.wants'
-    wants.mkdir(parents=True, exist_ok=True)
-    link = wants / 'np05j-firmware.service'
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    link.symlink_to('/etc/systemd/system/np05j-firmware.service')
+    write_np05j_firmware_service(rootfs)
 
     # 3. ติดตั้ง udev rules: แมทริกซ์ทัชแนวนอน 2400x1504 และล็อกพาร์ติชันสต็อก Android แบบ read-only
     udev_dir = rootfs / 'etc/udev/rules.d'
@@ -377,7 +514,12 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
     policy = rootfs / 'usr/sbin/policy-rc.d'
     policy.write_text('#!/bin/sh\nexit 101\n')
     policy.chmod(0o755)
-    shutil.copyfile('/etc/resolv.conf', rootfs / 'etc/resolv.conf')
+    resolv_dst = rootfs / 'etc/resolv.conf'
+    resolv_was_symlink = resolv_dst.is_symlink()
+    resolv_link_target = os.readlink(resolv_dst) if resolv_was_symlink else '../run/systemd/resolve/stub-resolv.conf'
+    if resolv_was_symlink or resolv_dst.exists():
+        resolv_dst.unlink()
+    shutil.copyfile('/etc/resolv.conf', resolv_dst)
 
     def guest(cmd):
         argv = guest_command(rootfs, [
@@ -405,6 +547,7 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
 
         guest(['apt-get', 'update'])
         guest(['apt-get', 'install', '-y', '--no-install-recommends', *EXTRA_UBUNTU_PACKAGES])
+        upgrade_mesa_a830_and_ssh(rootfs, guest)
         configure_np05j_user(rootfs, username, password, guest)
 
         # ตั้งค่า zram 8 GiB (zstd) และเปิดบริการหลัก
@@ -421,6 +564,10 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
         for path in reversed(mounted):
             run(['umount', '--recursive', path])
         policy.unlink(missing_ok=True)
+        # คืนค่า symlink /etc/resolv.conf -> ../run/systemd/resolve/stub-resolv.conf เพื่อไม่ให้ค้าง DNS ของ Docker (127.0.0.11)
+        if resolv_dst.exists() or resolv_dst.is_symlink():
+            resolv_dst.unlink()
+        resolv_dst.symlink_to(resolv_link_target)
         if cross:
             qemu_dst.unlink(missing_ok=True)
         for name in ('dev', 'proc', 'sys', 'run'):
@@ -438,51 +585,189 @@ def install_np05j_hardware_layer(rootfs: Path, kernel_dir: Path, kernel_meta: di
     return initrd
 
 
+EARLY_FIRMWARE_COMPONENTS = ('np05j-ath12k', 'np05j-bluetooth', 'np05j-gpu')
+EARLY_FIRMWARE_MARKER = 'usr/lib/firmware/.np05j-early-fw'
+
+
+def _cpio_newc_entry(ino: int, mode: int, name: str, payload: bytes) -> bytes:
+    """สร้าง 1 รายการในฟอร์แมต cpio newc (070701) พร้อม 4-byte NUL alignment"""
+    name_bytes = name.encode('utf-8') + b'\x00'
+    header = (
+        f'070701'
+        f'{ino:08x}'
+        f'{mode:08x}'
+        f'{0:08x}{0:08x}'
+        f'{1:08x}{0:08x}'
+        f'{len(payload):08x}'
+        f'{0:08x}{0:08x}{0:08x}{0:08x}'
+        f'{len(name_bytes):08x}'
+        f'{0:08x}'
+    ).encode('ascii')
+    head_pad = (-((len(header) + len(name_bytes)) % 4)) % 4
+    body_pad = (-(len(payload) % 4)) % 4
+    return header + name_bytes + (b'\x00' * head_pad) + payload + (b'\x00' * body_pad)
+
+
+def strip_trailing_early_fw(initrd_bytes: bytes) -> bytes:
+    """ตัด gzip cpio stream ที่ฝังเฟิร์มแวร์ต่อท้ายเดิมออก เพื่อให้รัน --esp-only ซ้ำได้โดยไฟล์ไม่บวม"""
+    pos = 0
+    streams = []
+    marker_bytes = EARLY_FIRMWARE_MARKER.encode('ascii')
+    while pos < len(initrd_bytes):
+        while pos < len(initrd_bytes) and initrd_bytes[pos] == 0:
+            pos += 1
+        if pos >= len(initrd_bytes):
+            break
+        if initrd_bytes[pos:pos + 2] != b'\x1f\x8b':
+            return initrd_bytes
+        dec = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        data = dec.decompress(initrd_bytes[pos:])
+        consumed = len(initrd_bytes) - pos - len(dec.unused_data)
+        streams.append((pos, pos + consumed, data))
+        pos += consumed
+    if len(streams) >= 2 and marker_bytes in streams[-1][2]:
+        return initrd_bytes[:streams[-1][0]]
+    return initrd_bytes
+
+
+def build_early_firmware_cpio_gz(dest: Path, fw_source: Path = DEFAULT_FIRMWARE,
+                                 components: tuple[str, ...] = EARLY_FIRMWARE_COMPONENTS) -> dict:
+    """สร้าง gzip-compressed cpio overlay ฝังเฟิร์มแวร์ Wi-Fi 7, Bluetooth และ Adreno 830 GPU ลง usr/lib/firmware"""
+    if not fw_source.is_dir():
+        raise ValueError(f'ไม่พบโฟลเดอร์เฟิร์มแวร์ NP05J: {fw_source}')
+
+    entries: list[bytes] = []
+    seen_dirs: set[str] = set()
+    ino = 900000
+
+    def ensure_dir(rel_dir: str):
+        nonlocal ino
+        parts = [p for p in rel_dir.strip('/').split('/') if p]
+        cur = ''
+        for part in parts:
+            cur = f'{cur}/{part}' if cur else part
+            # ห้ามสร้างไดเรกทอรี lib ทับ symlink lib -> usr/lib ใน initramfs ของ Ubuntu
+            if cur == 'lib':
+                raise ValueError('ห้ามสร้างไดเรกทอรี lib ใน early initramfs; ต้องใช้ usr/lib เสมอ')
+            if cur not in seen_dirs:
+                seen_dirs.add(cur)
+                ino += 1
+                entries.append(_cpio_newc_entry(ino, stat.S_IFDIR | 0o755, cur, b''))
+
+    ensure_dir('usr/lib/firmware')
+    summary = {}
+    for comp in components:
+        manifest_file = fw_source / comp / 'manifest.json'
+        if not manifest_file.is_file():
+            raise ValueError(f'ไม่พบ manifest ของเฟิร์มแวร์ early initramfs: {manifest_file}')
+        meta = json.loads(manifest_file.read_text())
+        sub = meta.get('directory', '.').strip('/')
+        target_dir = 'usr/lib/firmware' if sub in ('', '.') else f'usr/lib/firmware/{sub}'
+        ensure_dir(target_dir)
+
+        fcount = 0
+        for fname in sorted(meta['files'].keys()):
+            finfo = meta['files'][fname]
+            src_file = manifest_file.parent / fname
+            raw = src_file.read_bytes()
+            if len(raw) != finfo['bytes'] or hashlib.sha256(raw).hexdigest() != finfo['sha256']:
+                raise ValueError(f'SHA-256 ของเฟิร์มแวร์ไม่ตรง manifest: {src_file}')
+            ino += 1
+            entries.append(_cpio_newc_entry(ino, stat.S_IFREG | 0o644, f'{target_dir}/{fname}', raw))
+            fcount += 1
+
+        acount = 0
+        for alias_name in sorted(meta.get('aliases', {}).keys()):
+            target_name = meta['aliases'][alias_name]
+            if target_name not in meta['files']:
+                raise ValueError(f'Alias เฟิร์มแวร์ชี้ไปไฟล์ที่ไม่มีใน manifest: {alias_name} -> {target_name}')
+            ino += 1
+            entries.append(_cpio_newc_entry(ino, stat.S_IFLNK | 0o777, f'{target_dir}/{alias_name}',
+                                           target_name.encode('utf-8')))
+            acount += 1
+
+        summary[comp] = {'directory': target_dir, 'files': fcount, 'aliases': acount}
+
+    ino += 1
+    entries.append(_cpio_newc_entry(ino, stat.S_IFREG | 0o644, EARLY_FIRMWARE_MARKER, b'np05j-early-fw\n'))
+    entries.append(_cpio_newc_entry(0, 0, 'TRAILER!!!', b''))
+
+    raw_cpio = b''.join(entries)
+    with dest.open('wb') as raw_out:
+        with gzip.GzipFile(filename='', mode='wb', compresslevel=6, fileobj=raw_out, mtime=0) as gz:
+            gz.write(raw_cpio)
+    return summary
+
+
 def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_meta: dict, initrd: Path, work: Path):
-    """สร้าง esp.img (FAT32 4 KiB sector, LABEL=SUNUEFI_ESP) พร้อม systemd-boot และรายการบูต NP05J ทั้ง 3 โหมด"""
+    """สร้าง esp.img (FAT32 4 KiB sector, LABEL=SUNUEFI_ESP) พร้อม systemd-boot, early firmware และรายการบูต NP05J"""
     release = kernel_meta['kernel_release']
     record = json.loads((ROOT / 'config/release.json').read_text())
     systemd_boot = shared_stub(record['efi_stub'], boot=True)
 
+    # รวมเฟิร์มแวร์ built-in drivers (Wi-Fi 7 ath12k, Bluetooth BRAHMA 2.0, Adreno 830v2 GPU)
+    # ต่อท้าย initrd.img เพื่อให้ไดรเวอร์โหลดได้ทันทีตั้งแต่ช่วง boot โดยไม่ fail -2 ก่อน mount rootfs
+    early_fw_gz = work / 'np05j-early-fw.cpio.gz'
+    build_early_firmware_cpio_gz(early_fw_gz, DEFAULT_FIRMWARE)
+    combined_initrd = work / f'initrd-np05j-{release}.img'
+    base_bytes = strip_trailing_early_fw(initrd.read_bytes())
+    pad_len = (-(len(base_bytes) % 4)) % 4
+    combined_initrd.write_bytes(base_bytes + (b'\x00' * pad_len) + early_fw_gz.read_bytes())
+
     loader_conf = work / 'loader.conf'
     loader_conf.write_text(
-        'default 01-ubuntu-np05j-otg.conf\n'
-        'timeout 3\n'
+        'default 01-ubuntu-np05j-gpu.conf\n'
+        'timeout 5\n'
         'console-mode keep\n'
     )
 
     base = f'/linux/{release}'
+    # คง boot-up votes ของ rpmhpd (MMCX/CX/MX) และ sm8750 interconnect (mmss_noc/mc_virt)
+    # ไว้ระหว่างใช้ UEFI GOP / simpledrm เพื่อไม่ให้ of_platform_sync_state_init ตัดไฟ/แบนด์วิดท์จอ OLED
+    bl_keep_sync_state = ','.join((
+        '__initstub__kmod_core__802_1299_sync_state_resume_initcall7',
+        '__initstub__kmod_platform__675_611_of_platform_sync_state_init7s',
+    ))
     common_opts = (
         'console=tty0 loglevel=7 consoleblank=0 fbcon=font:TER16x32 '
         'root=LABEL=PIANOROOT rootfstype=ext4 rootwait ro '
-        'pd_ignore_unused clk_ignore_unused panic=0 panic_on_oops=1 '
-        'iommu.passthrough=1 pcie_port_pm=off '
-        'systemd.show_status=true systemd.log_target=kmsg'
+        'cma=128M pd_ignore_unused clk_ignore_unused cpuidle.off=1 '
+        'panic=0 iommu.passthrough=1 pcie_port_pm=off '
+        'hci_uart.piano_retries=0 hci_uart.piano_peri=106 '
+        'efi=noruntime systemd.show_status=true systemd.log_target=kmsg'
     )
     entries = {
-        '/loader/entries/01-ubuntu-np05j-otg.conf': (
-            'title Ubuntu 24.04 GNOME (REDMAGIC Astra - OTG)\n'
-            f'version {release}\n'
-            f'linux {base}/Image\n'
-            f'initrd {base}/initrd.img\n'
-            f'devicetree {base}/sm8750-nubia-np05j-otg.dtb\n'
-            f'options {common_opts}\n'
-        ),
-        '/loader/entries/02-ubuntu-np05j-serial.conf': (
-            'title Ubuntu 24.04 GNOME (REDMAGIC Astra - USB Serial)\n'
-            f'version {release}\n'
-            f'linux {base}/Image\n'
-            f'initrd {base}/initrd.img\n'
-            f'devicetree {base}/sm8750-nubia-np05j.dtb\n'
-            f'options console=ttyGS0,115200 {common_opts}\n'
-        ),
-        '/loader/entries/03-ubuntu-np05j-gpu.conf': (
-            'title Ubuntu 24.04 GNOME (REDMAGIC Astra - Adreno GPU)\n'
+        '/loader/entries/01-ubuntu-np05j-gpu.conf': (
+            'title Boot Linux\n'
             f'version {release}\n'
             f'linux {base}/Image\n'
             f'initrd {base}/initrd.img\n'
             f'devicetree {base}/sm8750-nubia-np05j-gpu.dtb\n'
+            f'options {common_opts} msm.separate_gpu_kms=1 initcall_blacklist={bl_keep_sync_state}\n'
+        ),
+        '/loader/entries/02-ubuntu-np05j-oled.conf': (
+            'title Boot Linux (OLED 144Hz/165Hz)\n'
+            f'version {release}\n'
+            f'linux {base}/Image\n'
+            f'initrd {base}/initrd.img\n'
+            f'devicetree {base}/sm8750-nubia-np05j-display.dtb\n'
             f'options {common_opts}\n'
+        ),
+        '/loader/entries/03-ubuntu-np05j-safe.conf': (
+            'title Boot Linux (Safe - No GPU)\n'
+            f'version {release}\n'
+            f'linux {base}/Image\n'
+            f'initrd {base}/initrd.img\n'
+            f'devicetree {base}/sm8750-nubia-np05j-otg.dtb\n'
+            f'options {common_opts} initcall_blacklist={bl_keep_sync_state}\n'
+        ),
+        '/loader/entries/04-ubuntu-np05j-serial.conf': (
+            'title Boot Linux (USB Serial)\n'
+            f'version {release}\n'
+            f'linux {base}/Image\n'
+            f'initrd {base}/initrd.img\n'
+            f'devicetree {base}/sm8750-nubia-np05j.dtb\n'
+            f'options console=ttyGS0,115200 {common_opts} initcall_blacklist={bl_keep_sync_state}\n'
         ),
     }
 
@@ -491,10 +776,11 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
         '/EFI/systemd/systemd-bootaa64.efi': systemd_boot,
         '/loader/loader.conf': loader_conf,
         f'{base}/Image': kernel_dir / 'Image',
-        f'{base}/initrd.img': initrd,
+        f'{base}/initrd.img': combined_initrd,
         f'{base}/sm8750-nubia-np05j-otg.dtb': kernel_dir / 'sm8750-nubia-np05j-otg.dtb',
         f'{base}/sm8750-nubia-np05j.dtb': kernel_dir / 'sm8750-nubia-np05j.dtb',
         f'{base}/sm8750-nubia-np05j-gpu.dtb': kernel_dir / 'sm8750-nubia-np05j-gpu.dtb',
+        f'{base}/sm8750-nubia-np05j-display.dtb': kernel_dir / 'sm8750-nubia-np05j-display.dtb',
     }
     for dest, body in entries.items():
         tmp = work / Path(dest).name
@@ -683,36 +969,75 @@ def main() -> int:
             mnt = Path(mnt_str)
             run(['mount', '-o', 'loop', root_img, mnt])
             qemu_dst = mnt / 'usr/bin/qemu-aarch64-static'
+            policy = mnt / 'usr/sbin/policy-rc.d'
+            resolv_dst = mnt / 'etc/resolv.conf'
+            resolv_was_symlink = False
+            resolv_link_target = None
             bound = []
             try:
                 fw_installed = install_np05j_firmware(mnt, DEFAULT_FIRMWARE)
                 fw_script = guest_resolve(mnt, 'usr/libexec') / 'np05j-fw-load'
                 shutil.copyfile(ROOT / 'linux/userspace/np05j/np05j-fw-load', fw_script)
                 fw_script.chmod(0o755)
+                write_np05j_firmware_service(mnt)
                 if cross:
                     shutil.copy2('/usr/bin/qemu-aarch64-static', qemu_dst)
-                for name, kind in (('proc', 'proc'), ('dev', 'tmpfs')):
+                policy.write_text('#!/bin/sh\nexit 101\n')
+                policy.chmod(0o755)
+                resolv_was_symlink = resolv_dst.is_symlink()
+                resolv_link_target = os.readlink(resolv_dst) if resolv_was_symlink else None
+                if resolv_was_symlink:
+                    resolv_dst.unlink()
+                shutil.copyfile('/etc/resolv.conf', resolv_dst)
+                for name, kind, opts in (('proc', 'proc', ''), ('sys', 'sysfs', 'ro'), ('dev', 'tmpfs', ''), ('run', 'tmpfs', '')):
                     target = mnt / name
                     target.mkdir(exist_ok=True)
-                    run(['mount', '-t', kind, kind, target])
+                    run(['mount', '-t', kind, *(['-o', opts] if opts else []), kind, target])
                     bound.append(target)
-                for dname, maj, mino in (('null', 1, 3), ('zero', 1, 5), ('random', 1, 8), ('urandom', 1, 9)):
+                for dname, maj, mino in (('null', 1, 3), ('zero', 1, 5), ('random', 1, 8), ('urandom', 1, 9), ('tty', 5, 0)):
                     run(['mknod', '-m', '666', mnt / 'dev' / dname, 'c', str(maj), str(mino)])
+                for sym_name, sym_target in (('fd', '/proc/self/fd'), ('stdin', '/proc/self/fd/0'),
+                                             ('stdout', '/proc/self/fd/1'), ('stderr', '/proc/self/fd/2')):
+                    sym = mnt / 'dev' / sym_name
+                    if not sym.exists() and not sym.is_symlink():
+                        sym.symlink_to(sym_target)
                 def guest(cmd):
                     run(guest_command(mnt, [
-                        '/usr/bin/env', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', *cmd,
+                        '/usr/bin/env', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin',
+                        'SYSTEMD_OFFLINE=1', 'SYSTEMD_IN_CHROOT=1',
+                        'DEBIAN_FRONTEND=noninteractive', *cmd,
                     ]))
+                mesa_ver = upgrade_mesa_a830_and_ssh(mnt, guest)
                 configure_np05j_user(mnt, args.user, args.password, guest)
             finally:
+                stop_helpers(mnt)
                 for target in reversed(bound):
                     run(['umount', '--recursive', target])
+                policy.unlink(missing_ok=True)
+                if resolv_was_symlink and resolv_link_target:
+                    resolv_dst.unlink(missing_ok=True)
+                    resolv_dst.symlink_to(resolv_link_target)
                 if cross:
                     qemu_dst.unlink(missing_ok=True)
+                for name in ('dev', 'proc', 'sys', 'run'):
+                    for child in (mnt / name).iterdir():
+                        if child.is_dir() and not child.is_symlink():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
+                # ล้างบล็อกว่างให้เป็นศูนย์เพื่อให้ sparse root.ext4.img มีขนาดเล็กที่สุด
+                zero_file = mnt / '.np05j-zero-fill'
+                subprocess.run(
+                    ['dd', 'if=/dev/zero', f'of={zero_file}', 'bs=4M'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                )
+                zero_file.unlink(missing_ok=True)
                 run(['sync'])
                 run(['umount', mnt])
         run(['e2fsck', '-fn', root_img])
 
         bundle_manifest['firmware_components'] = fw_installed
+        bundle_manifest['mesa_version'] = mesa_ver
         bundle_manifest['default_user'] = args.user
         bundle_manifest['files']['root.ext4.img'] = {
             'bytes': root_img.stat().st_size,

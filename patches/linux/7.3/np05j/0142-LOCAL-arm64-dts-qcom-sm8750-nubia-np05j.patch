@@ -1,22 +1,31 @@
+From: sunuefi-np05j <sunuefi-np05j@local>
+Subject: [PATCH] arm64: dts: qcom: add nubia REDMAGIC Astra (NP05J) device trees
+
+Add SM8750 nubia NP05J common dtsi and board variants (minimal, otg, gpu,
+and native OLED display).
+
+---
 diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
+index 622341b32..c60501762 100644
 --- a/arch/arm64/boot/dts/qcom/Makefile
 +++ b/arch/arm64/boot/dts/qcom/Makefile
-@@ -409,6 +409,9 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sm8650-qrd.dtb
+@@ -407,6 +407,10 @@ dtb-$(CONFIG_ARCH_QCOM)	+= sm8650-hdk.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8650-mtp.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8650-qrd.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-mtp.dtb
- dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-qrd.dtb
- dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-xiaomi-piano.dtb
 +dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j.dtb
 +dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j-otg.dtb
 +dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j-gpu.dtb
++dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-nubia-np05j-display.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-qrd.dtb
+ dtb-$(CONFIG_ARCH_QCOM)	+= sm8750-xiaomi-piano.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= talos-evk.dtb
- 
- talos-evk-el2-dtbs	:= talos-evk.dtb talos-el2.dtbo
 diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
 new file mode 100644
-index 000000000000..111111111111
+index 000000000..53c1fb59a
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-common.dtsi
-@@ -0,0 +1,760 @@
+@@ -0,0 +1,907 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
@@ -30,6 +39,8 @@ index 000000000000..111111111111
 +#include <dt-bindings/gpio/gpio.h>
 +#include <dt-bindings/input/linux-event-codes.h>
 +#include <dt-bindings/regulator/qcom,rpmh-regulator.h>
++#include <dt-bindings/sound/qcom,q6afe.h>
++#include <dt-bindings/sound/qcom,q6dsp-lpass-ports.h>
 +#include "sm8750.dtsi"
 +#include "pm8550.dtsi"
 +#define PMK8550VE_SID 8
@@ -45,6 +56,30 @@ index 000000000000..111111111111
 +
 +	aliases {
 +		serial1 = &uart14;
++	};
++
++	/* โหนดเสียงหลัก AudioReach + ลำโพงคู่สเตอริโอ NXP TFA9874 บน Primary MI2S */
++	sound {
++		compatible = "nubia,np05j-sndcard", "qcom,sm8750-sndcard", "qcom,sm8450-sndcard";
++		model = "nubia-REDMAGIC-Astra";
++		pinctrl-0 = <&pri_mi2s_active>;
++		pinctrl-names = "default";
++
++		speaker-dai-link {
++			link-name = "Primary MI2S Playback";
++
++			codec {
++				sound-dai = <&tfa_left>, <&tfa_right>;
++			};
++
++			cpu {
++				sound-dai = <&q6apmbedai PRIMARY_MI2S_RX>;
++			};
++
++			platform {
++				sound-dai = <&q6apm>;
++			};
++		};
 +	};
 +
 +	/* โหนด /chosen สำหรับ EFI_DT_FIXUP_PROTOCOL ของ SunUEFI และ bootargs ของ systemd-boot */
@@ -163,12 +198,13 @@ index 000000000000..111111111111
 +	};
 +
 +	/*
-+	 * FastConnect 7900 ("Peach" / WCN785x) PMU power sequencing.
-+	 * Live DT verified: wlan-en=tlmm 16, bt-en=pm8550ve_f_gpios 3,
-+	 * sw-ctrl=tlmm 18, RF_CLK1, S5F/L3F/L2F/S4D/S1D/S7I/S3G.
++	 * FastConnect 7900 ("Peach" / WCN7861) PMU power sequencing + OL-CPR PDC maps.
++	 * ยืนยันจาก stock live DTB (vendor/np05j/dtb/np05j.dtb qcom,cnss-peach@b0000000):
++	 * wlan-en=tlmm 16, bt-en=pm8550ve_f_gpios 3, sw-ctrl=tlmm 18, RF_CLK1,
++	 * vdd/vdddig=S5F, vddaon=S4D, vddio=L3F, vddio1p2=L2F, rfa1p2=S7I, rfa1p8=S3G.
 +	 */
 +	wcn7850-pmu {
-+		compatible = "qcom,wcn7850-pmu";
++		compatible = "qcom,wcn7861-pmu";
 +
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&wlan_en>, <&bt_default>;
@@ -180,11 +216,34 @@ index 000000000000..111111111111
 +		vddio-supply = <&vreg_l3f_1p8>;
 +		vddio1p2-supply = <&vreg_l2f_1p2>;
 +		vddaon-supply = <&vreg_s4d_0p85>;
-+		vdddig-supply = <&vreg_s1d_0p97>;
++		vdddig-supply = <&vreg_s5f_0p85>;
 +		vddrfa1p2-supply = <&vreg_s7i_1p2>;
 +		vddrfa1p8-supply = <&vreg_s3g_1p8>;
 +
 +		clocks = <&rpmhcc RPMH_RF_CLK1>;
++		qcom,qmp = <&aoss_qmp>;
++
++		qcom,pdc-init-table =
++			"{class: wlan_pdc, ss: rf, res: s5f.m, enable: 1}",
++			"{class: wlan_pdc, ss: rf, res: s5f.v, enable: 1}",
++			"{class: wlan_pdc, ss: rf, res: s5f.v, upval: 876}",
++			"{class: wlan_pdc, ss: rf, res: s5f.v, dwnval: 876}";
++		qcom,vreg-pdc-map =
++			"s5f:rf",
++			"s4d:bb",
++			"s3g:rf",
++			"s7i:rf";
++		qcom,pmu-vreg-map =
++			"VDDD_AON_0P9:s5f",
++			"VDDA_RFA_1P9:s3g",
++			"VDDA_RFA_1P3:s7i",
++			"VDDA_RFA_0P9:s5f",
++			"VDDD_WLMX_0P9:s4d",
++			"VDDD_WLCX_0P9:s5f",
++			"VDDD_BTCX_0P9:s5f",
++			"VDDD_BTCMX_0P9:s5f",
++			"VDDA_PCIE_1P2:s7i",
++			"VDDA_PCIE_0P9:s7i";
 +
 +		regulators {
 +			vreg_pmu_rfa_cmn: ldo0 {
@@ -519,10 +578,49 @@ index 000000000000..111111111111
 +	status = "okay";
 +};
 +
-+/* Dual NXP TFA98xx stereo smart amps (@0x34, @0x35) + AW22xxx RGB LED (@0x6a) */
++/* Dual NXP TFA9874 stereo smart amps (@0x34 Right, @0x35 Left) + AW22xxx RGB LED (@0x6a) */
 +&i2c_hub_3 {
 +	clock-frequency = <400000>;
 +	status = "okay";
++
++	tfa_right: audio-codec@34 {
++		compatible = "nxp,tfa9874";
++		reg = <0x34>;
++		#sound-dai-cells = <0>;
++		firmware-name = "tfa98xx.cnt";
++		sound-name-prefix = "SpkrRight";
++	};
++
++	tfa_left: audio-codec@35 {
++		compatible = "nxp,tfa9874";
++		reg = <0x35>;
++		#sound-dai-cells = <0>;
++		firmware-name = "tfa98xx.cnt";
++		sound-name-prefix = "SpkrLeft";
++	};
++};
++
++/*
++ * เฟิร์มแวร์ ADSP บน SM8750 รับคำสั่งผ่านพอร์ต GPR แบบสแตติกเฉพาะพอร์ต 3 (APM) และ 7 (PRM)
++ * (ตรงตาม dtbo-piano-audio.dts) และกำหนดนาฬิกา bclk ของ Primary MI2S สำหรับแอมป์ TFA9874
++ */
++&q6apm {
++	reg = <3>;
++};
++
++&q6apmbedai {
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	dai@16 {
++		reg = <PRIMARY_MI2S_RX>;
++		clocks = <&q6prmcc LPASS_CLK_ID_PRI_MI2S_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
++		clock-names = "bclk";
++	};
++};
++
++&q6prm {
++	reg = <7>;
 +};
 +
 +&pcie0 {
@@ -611,10 +709,16 @@ index 000000000000..111111111111
 +	status = "okay";
 +};
 +
-+/* ADSP (Battery/PMIC_GLINK/Type-C/Audio) & CDSP (Hexagon HTP NPU FastRPC) */
++/*
++ * เปิด ADSP remoteproc พร้อม qcom,no-auto-boot เพื่อไม่ให้เริ่มบูตตอน initramfs
++ * ก่อนเฟิร์มแวร์บน rootfs พร้อม แล้วให้ np05j-fw-load สั่งเริ่มงานจาก userspace
++ * เพื่อปลดล็อก pmic-glink (USB-C OTG 5V VBUS / Role Switch และสถานะแบตเตอรี่);
++ * คง CDSP ปิดไว้ก่อนจนกว่าจะทดสอบแยกต่างหาก
++ */
 +&remoteproc_adsp {
 +	firmware-name = "qcom/sm8750/adsp.mdt",
 +			"qcom/sm8750/adsp_dtb.mdt";
++	qcom,no-auto-boot;
 +
 +	status = "okay";
 +};
@@ -623,7 +727,7 @@ index 000000000000..111111111111
 +	firmware-name = "qcom/sm8750/cdsp.mdt",
 +			"qcom/sm8750/cdsp_dtb.mdt";
 +
-+	status = "okay";
++	status = "disabled";
 +};
 +
 +/*
@@ -668,6 +772,37 @@ index 000000000000..111111111111
 +		drive-strength = <16>;
 +		bias-pull-up;
 +		input-enable;
++	};
++
++	/* Primary MI2S (i2s0) สำหรับแอมป์ลำโพงคู่ NXP TFA9874 ตรงตาม stock pri_mi2s_pinctrl */
++	pri_mi2s_active: pri-mi2s-active-state {
++		sck-pins {
++			pins = "gpio126";
++			function = "i2s0_sck";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		data0-pins {
++			pins = "gpio127";
++			function = "i2s0_data0";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		data1-pins {
++			pins = "gpio128";
++			function = "i2s0_data1";
++			drive-strength = <8>;
++			bias-disable;
++		};
++
++		ws-pins {
++			pins = "gpio129";
++			function = "i2s0_ws";
++			drive-strength = <8>;
++			bias-disable;
++		};
 +	};
 +
 +	ts_active: ts-active-state {
@@ -732,12 +867,12 @@ index 000000000000..111111111111
 +	power-domains = <&rpmhpd RPMHPD_CX>;
 +	operating-points-v2 = <&qup_opp_table_128mhz>;
 +
-+	pinctrl-0 = <&uart14_np05j_default>;
++	pinctrl-0 = <&qup_uart14_default>, <&qup_uart14_cts_rts>;
 +	pinctrl-names = "default";
 +	status = "okay";
 +
 +	bluetooth {
-+		compatible = "qcom,wcn7850-bt";
++		compatible = "qcom,wcn7861-bt";
 +
 +		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
 +		vddaon-supply = <&vreg_pmu_aon_0p59>;
@@ -777,43 +912,304 @@ index 000000000000..111111111111
 +
 +	status = "okay";
 +};
-diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
++
++/*
++ * ปิด clock controller กลุ่ม multimedia (MMCX) ระหว่างใช้ UEFI GOP / simpledrm:
++ * dispcc-sm8750 จะตั้งค่า PLL0/1/2 ใหม่และปล่อยโหวต RPMHPD_MMCX ขณะ probe
++ * ทำให้สัญญาณจอ OLED continuous splash หยุดกลางเฟรมทันทีที่ udev โหลดโมดูล
++ */
++&cambistmclkcc {
++	status = "disabled";
++};
++
++&camcc {
++	status = "disabled";
++};
++
++&dispcc {
++	status = "disabled";
++};
++
++&videocc {
++	status = "disabled";
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts
 new file mode 100644
-index 000000000000..111111111111
+index 000000000..0bacfc3ad
 --- /dev/null
-+++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
-@@ -0,0 +1,28 @@
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-display.dts
+@@ -0,0 +1,191 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
 + *
-+ * Default bring-up Device Tree:
-+ * - Full SM8750 peripherals (QSMMU-v500, 1 TB UFS 4.0, SCMI CPUfreq,
-+ *   ADSP + CDSP/NPU FastRPC, pmic-glink Battery, PCIe0 Wi-Fi 7, UART14 BT,
-+ *   SPI4 Touchscreen bus, Buttons, RTC, Thermal)
-+ * - USB-C locked to High-Speed Peripheral mode (CDC-ACM /dev/ttyGS0) so the
-+ *   USB serial console is always available immediately in both plug orientations
-+ *   even before ADSP firmware is loaded from UFS.
++ * Full Native OLED Desktop Device Tree:
++ * Adreno 830v2 GPU + SM8750 DPU/Dual-DSI Command Mode + DSC 1.1
++ * (Himax HX8874 9.06" 2400x1504 @ 60/90/120/144/165 Hz + DCS 0x51 backlight)
++ * + USB-C Dual-Role (OTG + USB 3.1 Gen 2) + Audio (TFA9874) + Wi-Fi 7 + BT + Touch.
 + */
 +
 +/dts-v1/;
 +
 +#include "sm8750-nubia-np05j-common.dtsi"
 +
-+&usb {
-+	/delete-property/ usb-role-switch;
++/ {
++	/*
++	 * รางไฟจำลองแบบ always-on/boot-on สำหรับช่วง bring-up จอ OLED:
++	 * บูตโหลดเดอร์เปิดรางไฟจริงของจอ (L4B/L11B/L12B/L13B/L3G/L3I และ GPIO 208/213) ไว้แล้ว
++	 * การใช้ตัวแทนแบบคงที่ป้องกันไม่ให้ HLOS ปิดหรือลดแรงดันรางไฟจอกลางทางขณะ probe/modeset
++	 */
++	disp_rails: regulator-disp-rails {
++		compatible = "regulator-fixed";
++		regulator-name = "disp_rails";
++		regulator-min-microvolt = <1200000>;
++		regulator-max-microvolt = <1200000>;
++		regulator-always-on;
++		regulator-boot-on;
++	};
++};
 +
-+	dr_mode = "peripheral";
-+	maximum-speed = "high-speed";
-+	phys = <&usb_hsphy>;
-+	phy-names = "usb2-phy";
-+	qcom,select-utmi-as-pipe-clk;
++&dispcc {
++	status = "okay";
++};
++
++&gpu {
++	status = "okay";
++};
++
++&gpu_zap_shader {
++	firmware-name = "qcom/gen80000_zap.mbn";
++};
++
++&mdss {
++	status = "okay";
++};
++
++/* DSI0 เป็น clock master ของคู่ Bonded Dual-DSI (DSI0 + DSI1) */
++&mdss_dsi0 {
++	vdda-supply = <&disp_rails>;
++
++	qcom,dual-dsi-mode;
++	qcom,sync-dual-dsi;
++	qcom,master-dsi;
++
++	status = "okay";
++
++	display_panel: panel@0 {
++		compatible = "himax,hx8874-9p06";
++		reg = <0>;
++
++		reset-gpios = <&tlmm 98 GPIO_ACTIVE_LOW>;
++
++		pinctrl-0 = <&disp0_reset_n_active>, <&sde_te_active>;
++		pinctrl-names = "default";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++
++				panel_in_0: endpoint {
++					remote-endpoint = <&mdss_dsi0_out>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++
++				panel_in_1: endpoint {
++					remote-endpoint = <&mdss_dsi1_out>;
++				};
++			};
++		};
++	};
++};
++
++&mdss_dsi0_out {
++	remote-endpoint = <&panel_in_0>;
++	data-lanes = <0 1 2 3>;
++	qcom,te-source = "mdp_vsync_p";
++};
++
++&mdss_dsi0_phy {
++	vdds-supply = <&disp_rails>;
++	status = "okay";
++};
++
++/* DSI1 เป็น slave ใช้ PLL เดียวกับ DSI0 */
++&mdss_dsi1 {
++	assigned-clocks = <&dispcc DISP_CC_MDSS_BYTE1_CLK_SRC>,
++			  <&dispcc DISP_CC_MDSS_PCLK1_CLK_SRC>;
++	assigned-clock-parents = <&mdss_dsi0_phy DSI_BYTE_PLL_CLK>,
++				 <&mdss_dsi0_phy DSI_PIXEL_PLL_CLK>;
++
++	vdda-supply = <&disp_rails>;
++
++	qcom,dual-dsi-mode;
++	qcom,sync-dual-dsi;
 +
 +	status = "okay";
 +};
++
++&mdss_dsi1_out {
++	remote-endpoint = <&panel_in_1>;
++	data-lanes = <0 1 2 3>;
++};
++
++&mdss_dsi1_phy {
++	vdds-supply = <&disp_rails>;
++	status = "okay";
++};
++
++&pmic_glink {
++	orientation-gpios = <&tlmm 61 GPIO_ACTIVE_HIGH>;
++
++	connector@0 {
++		compatible = "usb-c-connector";
++		reg = <0>;
++
++		power-role = "dual";
++		data-role = "dual";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++
++				pmic_glink_hs_in: endpoint {
++					remote-endpoint = <&usb_dwc3_hs>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++
++				pmic_glink_ss_in: endpoint {
++					remote-endpoint = <&usb_dp_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++&tlmm {
++	disp0_reset_n_active: disp0-reset-n-active-state {
++		pins = "gpio98";
++		function = "gpio";
++		drive-strength = <8>;
++		bias-disable;
++	};
++
++	sde_te_active: sde-te-active-state {
++		pins = "gpio86";
++		function = "mdp_vsync";
++		drive-strength = <2>;
++		bias-pull-down;
++	};
++};
++
++&usb {
++	status = "okay";
++};
++
++&usb_dp_qmpphy {
++	vdda-phy-supply = <&vreg_l2d_0p88>;
++	vdda-pll-supply = <&vreg_l3g_1p2>;
++
++	status = "okay";
++};
++
++&usb_dp_qmpphy_out {
++	remote-endpoint = <&pmic_glink_ss_in>;
++};
++
++&usb_dwc3_hs {
++	remote-endpoint = <&pmic_glink_hs_in>;
++};
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
+new file mode 100644
+index 000000000..834851a43
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
++ *
++ * Full Desktop Device Tree: Adreno 830v2 GPU (headless renderD128 คู่กับ UEFI GOP
++ * simpledrm) + USB-C Dual-Role (OTG + USB 3.0 ผ่าน pmic-glink/ADSP) + Wi-Fi 7 + BT + Touch.
++ */
++
++/dts-v1/;
++
++#include "sm8750-nubia-np05j-common.dtsi"
++
++&gpu {
++	status = "okay";
++};
++
++&gpu_zap_shader {
++	firmware-name = "qcom/gen80000_zap.mbn";
++};
++
++&pmic_glink {
++	orientation-gpios = <&tlmm 61 GPIO_ACTIVE_HIGH>;
++
++	connector@0 {
++		compatible = "usb-c-connector";
++		reg = <0>;
++
++		power-role = "dual";
++		data-role = "dual";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++
++				pmic_glink_hs_in: endpoint {
++					remote-endpoint = <&usb_dwc3_hs>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++
++				pmic_glink_ss_in: endpoint {
++					remote-endpoint = <&usb_dp_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++&usb {
++	status = "okay";
++};
++
++&usb_dp_qmpphy {
++	vdda-phy-supply = <&vreg_l2d_0p88>;
++	vdda-pll-supply = <&vreg_l3g_1p2>;
++
++	status = "okay";
++};
++
++&usb_dp_qmpphy_out {
++	remote-endpoint = <&pmic_glink_ss_in>;
++};
++
++&usb_dwc3_hs {
++	remote-endpoint = <&pmic_glink_hs_in>;
++};
 diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts
 new file mode 100644
-index 000000000000..111111111111
+index 000000000..8219ba21e
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-otg.dts
 @@ -0,0 +1,63 @@
@@ -880,35 +1276,29 @@ index 000000000000..111111111111
 +&usb_dwc3_hs {
 +	remote-endpoint = <&pmic_glink_hs_in>;
 +};
-diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
+diff --git a/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
 new file mode 100644
-index 000000000000..111111111111
+index 000000000..c0d388a89
 --- /dev/null
-+++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j-gpu.dts
-@@ -0,0 +1,239 @@
++++ b/arch/arm64/boot/dts/qcom/sm8750-nubia-np05j.dts
+@@ -0,0 +1,28 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
 + *
-+ * Isolated GPU Test Profile (BOOTDT_GPU.NSH / NP05JGPU.DTB):
-+ * Inherits all verified SM8750 Phase 2/3A peripherals + safe USB-C ttyGS0
-+ * + OLED efifb (headless DRM_MSM with NO MDSS/DPU/DSI), and enables:
-+ *   - gpucc (0x3d90000), gxclkctl (0x3d64000)
-+ *   - adreno_smmu (0x3da0000)
-+ *   - Adreno 830v2 GPU (0x3d00000, chipid=0x44050001) + GMU (0x3d6c000)
++ * Default bring-up Device Tree:
++ * - Full SM8750 peripherals (QSMMU-v500, 1 TB UFS 4.0, SCMI CPUfreq,
++ *   ADSP + CDSP/NPU FastRPC, pmic-glink Battery, PCIe0 Wi-Fi 7, UART14 BT,
++ *   SPI4 Touchscreen bus, Buttons, RTC, Thermal)
++ * - USB-C locked to High-Speed Peripheral mode (CDC-ACM /dev/ttyGS0) so the
++ *   USB serial console is always available immediately in both plug orientations
++ *   even before ADSP firmware is loaded from UFS.
 + */
 +
 +/dts-v1/;
 +
-+#include <dt-bindings/clock/qcom,kaanapali-gxclkctl.h>
-+#include <dt-bindings/clock/qcom,sm8750-gpucc.h>
 +#include "sm8750-nubia-np05j-common.dtsi"
 +
-+/ {
-+	model = "nubia REDMAGIC Astra (NP05J - Adreno 830v2 GPU Test)";
-+};
-+
-+/* Safe USB-C High-Speed Peripheral Gadget (/dev/ttyGS0) */
 +&usb {
 +	/delete-property/ usb-role-switch;
 +
@@ -919,209 +1309,4 @@ index 000000000000..111111111111
 +	qcom,select-utmi-as-pipe-clk;
 +
 +	status = "okay";
-+};
-+
-+&soc {
-+	gpu: gpu@3d00000 {
-+		compatible = "qcom,adreno-44050001", "qcom,adreno";
-+		reg = <0x0 0x03d00000 0x0 0x6c000>,
-+		      <0x0 0x03d9e000 0x0 0x2000>;
-+		reg-names = "kgsl_3d0_reg_memory",
-+			    "cx_mem";
-+
-+		interrupts = <GIC_SPI 300 IRQ_TYPE_LEVEL_HIGH>;
-+
-+		iommus = <&adreno_smmu 0 0x0>,
-+			 <&adreno_smmu 1 0x0>;
-+
-+		operating-points-v2 = <&gpu_opp_table>;
-+
-+		qcom,gmu = <&gmu>;
-+		#cooling-cells = <2>;
-+
-+		interconnects = <&gem_noc MASTER_GFX3D QCOM_ICC_TAG_ALWAYS
-+				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
-+		interconnect-names = "gfx-mem";
-+
-+		zap-shader {
-+			memory-region = <&gpu_micro_code_mem>;
-+			firmware-name = "qcom/gen80000_zap.mbn";
-+		};
-+
-+		gpu_opp_table: opp-table {
-+			compatible = "operating-points-v2-adreno",
-+				     "operating-points-v2";
-+
-+			opp-222000000 {
-+				opp-hz = /bits/ 64 <222000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D2>;
-+				opp-peak-kBps = <5285156>;
-+			};
-+
-+			opp-342000000 {
-+				opp-hz = /bits/ 64 <342000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
-+				opp-peak-kBps = <5285156>;
-+			};
-+
-+			opp-443000000 {
-+				opp-hz = /bits/ 64 <443000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-+				opp-peak-kBps = <6074219>;
-+				qcom,opp-acd-level = <0xc02e5ffd>;
-+			};
-+
-+			opp-525000000 {
-+				opp-hz = /bits/ 64 <525000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS_L1>;
-+				opp-peak-kBps = <6074219>;
-+				qcom,opp-acd-level = <0xc02e5ffd>;
-+			};
-+
-+			opp-607000000 {
-+				opp-hz = /bits/ 64 <607000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
-+				opp-peak-kBps = <8171875>;
-+				qcom,opp-acd-level = <0xa82e5ffd>;
-+			};
-+
-+			opp-734000000 {
-+				opp-hz = /bits/ 64 <734000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
-+				opp-peak-kBps = <12449219>;
-+				qcom,opp-acd-level = <0xa82a5ffd>;
-+			};
-+
-+			opp-832000000 {
-+				opp-hz = /bits/ 64 <832000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_SVS_L2>;
-+				opp-peak-kBps = <16500000>;
-+				qcom,opp-acd-level = <0x882a5ffd>;
-+			};
-+
-+			opp-900000000 {
-+				opp-hz = /bits/ 64 <900000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_NOM>;
-+				opp-peak-kBps = <18597657>;
-+				qcom,opp-acd-level = <0x882a5ffd>;
-+			};
-+		};
-+	};
-+
-+	gxclkctl: clock-controller@3d64000 {
-+		compatible = "qcom,sm8750-gxclkctl";
-+		reg = <0x0 0x03d64000 0x0 0x6000>;
-+
-+		power-domains = <&rpmhpd RPMHPD_GFX>,
-+				<&rpmhpd RPMHPD_GMXC>,
-+				<&gpucc GPU_CC_CX_GDSC>;
-+
-+		#power-domain-cells = <1>;
-+	};
-+
-+	gmu: gmu@3d6c000 {
-+		compatible = "qcom,adreno-gmu-830.0", "qcom,adreno-gmu";
-+
-+		reg = <0x0 0x03d6c000 0x0 0x32000>;
-+		reg-names = "gmu";
-+
-+		interrupts = <GIC_SPI 304 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 305 IRQ_TYPE_LEVEL_HIGH>;
-+		interrupt-names = "hfi",
-+				  "gmu";
-+
-+		clocks = <&gpucc GPU_CC_AHB_CLK>,
-+			 <&gpucc GPU_CC_CX_GMU_CLK>,
-+			 <&gpucc GPU_CC_CXO_CLK>,
-+			 <&gcc GCC_DDRSS_GPU_AXI_CLK>,
-+			 <&gcc GCC_GPU_GEMNOC_GFX_CLK>,
-+			 <&gpucc GPU_CC_HUB_CX_INT_CLK>;
-+		clock-names = "ahb",
-+			      "gmu",
-+			      "cxo",
-+			      "axi",
-+			      "memnoc",
-+			      "hub";
-+
-+		power-domains = <&gpucc GPU_CC_CX_GDSC>,
-+				<&gxclkctl GX_CLKCTL_GX_GDSC>;
-+		power-domain-names = "cx",
-+				     "gx";
-+
-+		iommus = <&adreno_smmu 5 0x0>;
-+
-+		qcom,qmp = <&aoss_qmp>;
-+
-+		operating-points-v2 = <&gmu_opp_table>;
-+
-+		gmu_opp_table: opp-table {
-+			compatible = "operating-points-v2";
-+
-+			opp-500000000 {
-+				opp-hz = /bits/ 64 <500000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
-+			};
-+
-+			opp-650000000 {
-+				opp-hz = /bits/ 64 <650000000>;
-+				opp-level = <RPMH_REGULATOR_LEVEL_SVS>;
-+			};
-+		};
-+	};
-+
-+	gpucc: clock-controller@3d90000 {
-+		compatible = "qcom,sm8750-gpucc";
-+		reg = <0x0 0x03d90000 0x0 0x9800>;
-+
-+		clocks = <&bi_tcxo_div2>,
-+			 <&gcc GCC_GPU_GPLL0_CLK_SRC>,
-+			 <&gcc GCC_GPU_GPLL0_DIV_CLK_SRC>;
-+
-+		power-domains = <&rpmhpd RPMHPD_MX>,
-+				<&rpmhpd RPMHPD_CX>;
-+		required-opps = <&rpmhpd_opp_low_svs>,
-+				<&rpmhpd_opp_low_svs>;
-+
-+		#clock-cells = <1>;
-+		#reset-cells = <1>;
-+		#power-domain-cells = <1>;
-+	};
-+
-+	adreno_smmu: iommu@3da0000 {
-+		compatible = "qcom,sm8750-smmu-500", "qcom,adreno-smmu",
-+			     "qcom,smmu-500", "arm,mmu-500";
-+		reg = <0x0 0x03da0000 0x0 0x40000>;
-+		#iommu-cells = <2>;
-+		#global-interrupts = <1>;
-+		interrupts = <GIC_SPI 674 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 678 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 679 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 680 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 681 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 682 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 683 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 684 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 685 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 686 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 687 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 688 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 422 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 476 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 574 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 575 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 576 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 577 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 660 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 662 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 665 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 666 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 667 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 669 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 670 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 700 IRQ_TYPE_LEVEL_HIGH>;
-+		clocks = <&gpucc GPU_CC_HLOS1_VOTE_GPU_SMMU_CLK>;
-+		clock-names = "hlos";
-+		power-domains = <&gpucc GPU_CC_CX_GDSC>;
-+		dma-coherent;
-+	};
 +};

@@ -134,22 +134,24 @@ for rp in /sys/class/remoteproc/remoteproc*; do
   fi
 done
 
-# 6. Bring up Bluetooth hci0
+# 6. ปล่อยให้ bluetoothd เปิด hci0 แบบ async เพื่อไม่บล็อกการเข้าหน้าเดสก์ท็อปเมื่อ UART BT ตอบช้า
 if [ -d /sys/class/bluetooth/hci0 ]; then
-  echo "Bringing up Bluetooth hci0..." >> "$LOG"
-  /bin/np05j-tool bt-up 0 >> "$LOG" 2>&1 || true
+  echo "Bluetooth hci0 detected; delegating bring-up to bluetoothd" >> "$LOG"
 fi
 
-# 7. Re-probe Wi-Fi 7 (0000:01:00.0) now that /lib/firmware/ath12k/PEACH/hw2.0/* is ready
+# 7. Re-probe Wi-Fi 7 (0000:01:00.0) เฉพาะกรณีที่ยังไม่มี netdev ใต้ PCI device (รองรับทั้ง wlan0 และ wlp1s0)
 if [ -d /sys/bus/pci/devices/0000:01:00.0 ] && [ -e /lib/firmware/ath12k/PEACH/hw2.0/amss.bin ]; then
+  WIFI_NET=$(ls /sys/bus/pci/devices/0000:01:00.0/net 2>/dev/null | head -n 1 || true)
   if [ ! -e /sys/bus/pci/devices/0000:01:00.0/driver ]; then
     echo "Probing ath12k_wifi7_pci on 0000:01:00.0..." >> "$LOG"
     echo 0000:01:00.0 > /sys/bus/pci/drivers_probe 2>>"$LOG" || true
-  elif [ ! -d /sys/class/net/wlan0 ]; then
+  elif [ -z "$WIFI_NET" ]; then
     echo "Rebinding ath12k_wifi7_pci on 0000:01:00.0..." >> "$LOG"
     echo 0000:01:00.0 > /sys/bus/pci/devices/0000:01:00.0/driver/unbind 2>>"$LOG" || true
     sleep 1
     echo 0000:01:00.0 > /sys/bus/pci/drivers_probe 2>>"$LOG" || true
+  else
+    echo "Wi-Fi 7 already active on $WIFI_NET; skipping rebind" >> "$LOG"
   fi
 fi
 

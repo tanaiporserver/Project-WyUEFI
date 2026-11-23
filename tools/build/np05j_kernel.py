@@ -31,11 +31,13 @@ FRAGMENTS = (
     ROOT / 'linux/configs/np05j/fan_i2c.frag',
     ROOT / 'linux/configs/np05j/fix_psci_pd.frag',
     ROOT / 'linux/configs/np05j/desktop.frag',
+    ROOT / 'linux/configs/np05j/display.frag',
 )
 DTB_TARGETS = (
     'qcom/sm8750-nubia-np05j.dtb',
     'qcom/sm8750-nubia-np05j-otg.dtb',
     'qcom/sm8750-nubia-np05j-gpu.dtb',
+    'qcom/sm8750-nubia-np05j-display.dtb',
 )
 REQUIRED = {
     'TOUCHSCREEN_SYNAPTICS_TCM2_SPI': 'y',
@@ -45,7 +47,13 @@ REQUIRED = {
     'ATH12K': 'y',
     'BT_HCIUART_QCA': 'y',
     'EFI_STUB': 'y',
+    'SM_DISPCC_8750': 'y',
     'DRM_MSM': 'y',
+    'DRM_MSM_DPU': 'y',
+    'DRM_MSM_DSI': 'y',
+    'DRM_MSM_DSI_7NM_PHY': 'y',
+    'BACKLIGHT_CLASS_DEVICE': 'y',
+    'DRM_PANEL_HIMAX_HX8874': 'y',
     'DRM_SIMPLEDRM': 'y',
     'SYSFB_SIMPLEFB': 'y',
     'DRM_FBDEV_EMULATION': 'y',

@@ -29,7 +29,8 @@ STATIC CONST UINT8 FactoryDt[6] = {0x55, 0x44, 0x33, 0x22, 0x11, 0x4c};
 // Independent SHA256 fixture for chip 618, serial 0x12345678 and the v1 domain.
 STATIC CONST UINT8 SocDt[6] = {0xeb, 0x1c, 0xd7, 0x06, 0xd8, 0xe2};
 STATIC UINTN RootClosed, FileClosed, Reads, SerialReads;
-STATIC BOOLEAN NoSerial;
+STATIC BOOLEAN NoSerial, RootNvRecord;
+STATIC CONST UINT8 FactoryNv9[9] = {0x01, 0x00, 0x06, 0x55, 0x44, 0x33, 0x22, 0x11, 0x4c};
 
 VOID *EFIAPI CopyMem(VOID *To, CONST VOID *From, UINTN Bytes)
 {
@@ -120,8 +121,15 @@ STATIC EFI_STATUS EFIAPI Open(EFI_FILE_PROTOCOL *This, EFI_FILE_PROTOCOL **Out, 
                               UINT64 Mode, UINT64 Attributes)
 {
   STATIC CONST CHAR16 Expected[] = L"\\bluetooth\\.bt_nv.bin";
-  assert(This == &Root && !StrnCmp(Name, Expected, ARRAY_SIZE(Expected)) &&
-         Mode == EFI_FILE_MODE_READ && !Attributes);
+  STATIC CONST CHAR16 ExpectedRoot[] = L"\\.bt_nv.bin";
+  assert(This == &Root && Mode == EFI_FILE_MODE_READ && !Attributes);
+  if (!StrnCmp(Name, Expected, ARRAY_SIZE(Expected))) {
+    if (RootNvRecord)
+      return EFI_NOT_FOUND;
+    *Out = &File;
+    return EFI_SUCCESS;
+  }
+  assert(RootNvRecord && !StrnCmp(Name, ExpectedRoot, ARRAY_SIZE(ExpectedRoot)));
   *Out = &File;
   return EFI_SUCCESS;
 }
@@ -136,14 +144,15 @@ STATIC EFI_STATUS EFIAPI Info(EFI_FILE_PROTOCOL *This, EFI_GUID *Guid, UINTN *By
   assert(This == &File && Guid == &gEfiFileInfoGuid && *Bytes >= SIZE_OF_EFI_FILE_INFO);
   EFI_FILE_INFO *Information = Buffer;
   memset(Information, 0, *Bytes);
-  Information->FileSize = sizeof(Factory);
+  Information->FileSize = RootNvRecord ? sizeof(FactoryNv9) : sizeof(Factory);
   return EFI_SUCCESS;
 }
 STATIC EFI_STATUS EFIAPI Read(EFI_FILE_PROTOCOL *This, UINTN *Bytes, VOID *Buffer)
 {
-  assert(This == &File && *Bytes == sizeof(Factory));
+  UINTN Expected = RootNvRecord ? sizeof(FactoryNv9) : sizeof(Factory);
+  assert(This == &File && *Bytes == Expected);
   ++Reads;
-  memcpy(Buffer, Factory, sizeof(Factory));
+  memcpy(Buffer, RootNvRecord ? (CONST VOID *)FactoryNv9 : (CONST VOID *)Factory, Expected);
   return EFI_SUCCESS;
 }
 STATIC VOID SetExisting(CONST UINT8 Forward[6], BOOLEAN Broken)
@@ -162,7 +171,7 @@ int main(int Argc, char **Argv)
 {
   assert(Argc == 2);
   int Case = atoi(Argv[1]);
-  assert(Case >= 0 && Case < 8);
+  assert(Case >= 0 && Case < 9);
   gBS = &Services;
   Services.LocateHandleBuffer = Locate;
   Services.HandleProtocol = Protocol;
@@ -199,6 +208,8 @@ int main(int Argc, char **Argv)
     NoSerial = TRUE;
   if (Case == 7)
     Media.ReadOnly = FALSE;
+  if (Case == 8)
+    RootNvRecord = TRUE;
   EFI_STATUS Status = PianoBluetoothAddressInitialize();
   assert(PianoBluetoothAddressInitialize() == Status);
   assert(Status == (Case == 6 ? EFI_NOT_FOUND : EFI_SUCCESS));

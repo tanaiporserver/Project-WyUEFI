@@ -1,0 +1,191 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Copyright (c) 2026 Project Silicium / nubia NP05J (REDMAGIC Astra) bring-up
+ *
+ * Full Native OLED Desktop Device Tree:
+ * Adreno 830v2 GPU + SM8750 DPU/Dual-DSI Command Mode + DSC 1.1
+ * (Himax HX8874 9.06" 2400x1504 @ 60/90/120/144/165 Hz + DCS 0x51 backlight)
+ * + USB-C Dual-Role (OTG + USB 3.1 Gen 2) + Audio (TFA9874) + Wi-Fi 7 + BT + Touch.
+ */
+
+/dts-v1/;
+
+#include "sm8750-nubia-np05j-common.dtsi"
+
+/ {
+	/*
+	 * รางไฟจำลองแบบ always-on/boot-on สำหรับช่วง bring-up จอ OLED:
+	 * บูตโหลดเดอร์เปิดรางไฟจริงของจอ (L4B/L11B/L12B/L13B/L3G/L3I และ GPIO 208/213) ไว้แล้ว
+	 * การใช้ตัวแทนแบบคงที่ป้องกันไม่ให้ HLOS ปิดหรือลดแรงดันรางไฟจอกลางทางขณะ probe/modeset
+	 */
+	disp_rails: regulator-disp-rails {
+		compatible = "regulator-fixed";
+		regulator-name = "disp_rails";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
+
+&dispcc {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};
+
+&gpu_zap_shader {
+	firmware-name = "qcom/gen80000_zap.mbn";
+};
+
+&mdss {
+	status = "okay";
+};
+
+/* DSI0 เป็น clock master ของคู่ Bonded Dual-DSI (DSI0 + DSI1) */
+&mdss_dsi0 {
+	vdda-supply = <&disp_rails>;
+
+	qcom,dual-dsi-mode;
+	qcom,sync-dual-dsi;
+	qcom,master-dsi;
+
+	status = "okay";
+
+	display_panel: panel@0 {
+		compatible = "himax,hx8874-9p06";
+		reg = <0>;
+
+		reset-gpios = <&tlmm 98 GPIO_ACTIVE_LOW>;
+
+		pinctrl-0 = <&disp0_reset_n_active>, <&sde_te_active>;
+		pinctrl-names = "default";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				panel_in_0: endpoint {
+					remote-endpoint = <&mdss_dsi0_out>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+
+				panel_in_1: endpoint {
+					remote-endpoint = <&mdss_dsi1_out>;
+				};
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	remote-endpoint = <&panel_in_0>;
+	data-lanes = <0 1 2 3>;
+	qcom,te-source = "mdp_vsync_p";
+};
+
+&mdss_dsi0_phy {
+	vdds-supply = <&disp_rails>;
+	status = "okay";
+};
+
+/* DSI1 เป็น slave ใช้ PLL เดียวกับ DSI0 */
+&mdss_dsi1 {
+	assigned-clocks = <&dispcc DISP_CC_MDSS_BYTE1_CLK_SRC>,
+			  <&dispcc DISP_CC_MDSS_PCLK1_CLK_SRC>;
+	assigned-clock-parents = <&mdss_dsi0_phy DSI_BYTE_PLL_CLK>,
+				 <&mdss_dsi0_phy DSI_PIXEL_PLL_CLK>;
+
+	vdda-supply = <&disp_rails>;
+
+	qcom,dual-dsi-mode;
+	qcom,sync-dual-dsi;
+
+	status = "okay";
+};
+
+&mdss_dsi1_out {
+	remote-endpoint = <&panel_in_1>;
+	data-lanes = <0 1 2 3>;
+};
+
+&mdss_dsi1_phy {
+	vdds-supply = <&disp_rails>;
+	status = "okay";
+};
+
+&pmic_glink {
+	orientation-gpios = <&tlmm 61 GPIO_ACTIVE_HIGH>;
+
+	connector@0 {
+		compatible = "usb-c-connector";
+		reg = <0>;
+
+		power-role = "dual";
+		data-role = "dual";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				pmic_glink_hs_in: endpoint {
+					remote-endpoint = <&usb_dwc3_hs>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+
+				pmic_glink_ss_in: endpoint {
+					remote-endpoint = <&usb_dp_qmpphy_out>;
+				};
+			};
+		};
+	};
+};
+
+&tlmm {
+	disp0_reset_n_active: disp0-reset-n-active-state {
+		pins = "gpio98";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	sde_te_active: sde-te-active-state {
+		pins = "gpio86";
+		function = "mdp_vsync";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+};
+
+&usb {
+	status = "okay";
+};
+
+&usb_dp_qmpphy {
+	vdda-phy-supply = <&vreg_l2d_0p88>;
+	vdda-pll-supply = <&vreg_l3g_1p2>;
+
+	status = "okay";
+};
+
+&usb_dp_qmpphy_out {
+	remote-endpoint = <&pmic_glink_ss_in>;
+};
+
+&usb_dwc3_hs {
+	remote-endpoint = <&pmic_glink_hs_in>;
+};

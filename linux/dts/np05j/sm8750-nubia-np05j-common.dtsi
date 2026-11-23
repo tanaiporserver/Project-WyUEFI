@@ -11,6 +11,8 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/sound/qcom,q6afe.h>
+#include <dt-bindings/sound/qcom,q6dsp-lpass-ports.h>
 #include "sm8750.dtsi"
 #include "pm8550.dtsi"
 #define PMK8550VE_SID 8
@@ -26,6 +28,30 @@
 
 	aliases {
 		serial1 = &uart14;
+	};
+
+	/* โหนดเสียงหลัก AudioReach + ลำโพงคู่สเตอริโอ NXP TFA9874 บน Primary MI2S */
+	sound {
+		compatible = "nubia,np05j-sndcard", "qcom,sm8750-sndcard", "qcom,sm8450-sndcard";
+		model = "nubia-REDMAGIC-Astra";
+		pinctrl-0 = <&pri_mi2s_active>;
+		pinctrl-names = "default";
+
+		speaker-dai-link {
+			link-name = "Primary MI2S Playback";
+
+			codec {
+				sound-dai = <&tfa_left>, <&tfa_right>;
+			};
+
+			cpu {
+				sound-dai = <&q6apmbedai PRIMARY_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6apm>;
+			};
+		};
 	};
 
 	/* โหนด /chosen สำหรับ EFI_DT_FIXUP_PROTOCOL ของ SunUEFI และ bootargs ของ systemd-boot */
@@ -144,12 +170,13 @@
 	};
 
 	/*
-	 * FastConnect 7900 ("Peach" / WCN785x) PMU power sequencing.
-	 * Live DT verified: wlan-en=tlmm 16, bt-en=pm8550ve_f_gpios 3,
-	 * sw-ctrl=tlmm 18, RF_CLK1, S5F/L3F/L2F/S4D/S1D/S7I/S3G.
+	 * FastConnect 7900 ("Peach" / WCN7861) PMU power sequencing + OL-CPR PDC maps.
+	 * ยืนยันจาก stock live DTB (vendor/np05j/dtb/np05j.dtb qcom,cnss-peach@b0000000):
+	 * wlan-en=tlmm 16, bt-en=pm8550ve_f_gpios 3, sw-ctrl=tlmm 18, RF_CLK1,
+	 * vdd/vdddig=S5F, vddaon=S4D, vddio=L3F, vddio1p2=L2F, rfa1p2=S7I, rfa1p8=S3G.
 	 */
 	wcn7850-pmu {
-		compatible = "qcom,wcn7850-pmu";
+		compatible = "qcom,wcn7861-pmu";
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&wlan_en>, <&bt_default>;
@@ -161,11 +188,34 @@
 		vddio-supply = <&vreg_l3f_1p8>;
 		vddio1p2-supply = <&vreg_l2f_1p2>;
 		vddaon-supply = <&vreg_s4d_0p85>;
-		vdddig-supply = <&vreg_s1d_0p97>;
+		vdddig-supply = <&vreg_s5f_0p85>;
 		vddrfa1p2-supply = <&vreg_s7i_1p2>;
 		vddrfa1p8-supply = <&vreg_s3g_1p8>;
 
 		clocks = <&rpmhcc RPMH_RF_CLK1>;
+		qcom,qmp = <&aoss_qmp>;
+
+		qcom,pdc-init-table =
+			"{class: wlan_pdc, ss: rf, res: s5f.m, enable: 1}",
+			"{class: wlan_pdc, ss: rf, res: s5f.v, enable: 1}",
+			"{class: wlan_pdc, ss: rf, res: s5f.v, upval: 876}",
+			"{class: wlan_pdc, ss: rf, res: s5f.v, dwnval: 876}";
+		qcom,vreg-pdc-map =
+			"s5f:rf",
+			"s4d:bb",
+			"s3g:rf",
+			"s7i:rf";
+		qcom,pmu-vreg-map =
+			"VDDD_AON_0P9:s5f",
+			"VDDA_RFA_1P9:s3g",
+			"VDDA_RFA_1P3:s7i",
+			"VDDA_RFA_0P9:s5f",
+			"VDDD_WLMX_0P9:s4d",
+			"VDDD_WLCX_0P9:s5f",
+			"VDDD_BTCX_0P9:s5f",
+			"VDDD_BTCMX_0P9:s5f",
+			"VDDA_PCIE_1P2:s7i",
+			"VDDA_PCIE_0P9:s7i";
 
 		regulators {
 			vreg_pmu_rfa_cmn: ldo0 {
@@ -500,10 +550,49 @@
 	status = "okay";
 };
 
-/* Dual NXP TFA98xx stereo smart amps (@0x34, @0x35) + AW22xxx RGB LED (@0x6a) */
+/* Dual NXP TFA9874 stereo smart amps (@0x34 Right, @0x35 Left) + AW22xxx RGB LED (@0x6a) */
 &i2c_hub_3 {
 	clock-frequency = <400000>;
 	status = "okay";
+
+	tfa_right: audio-codec@34 {
+		compatible = "nxp,tfa9874";
+		reg = <0x34>;
+		#sound-dai-cells = <0>;
+		firmware-name = "tfa98xx.cnt";
+		sound-name-prefix = "SpkrRight";
+	};
+
+	tfa_left: audio-codec@35 {
+		compatible = "nxp,tfa9874";
+		reg = <0x35>;
+		#sound-dai-cells = <0>;
+		firmware-name = "tfa98xx.cnt";
+		sound-name-prefix = "SpkrLeft";
+	};
+};
+
+/*
+ * เฟิร์มแวร์ ADSP บน SM8750 รับคำสั่งผ่านพอร์ต GPR แบบสแตติกเฉพาะพอร์ต 3 (APM) และ 7 (PRM)
+ * (ตรงตาม dtbo-piano-audio.dts) และกำหนดนาฬิกา bclk ของ Primary MI2S สำหรับแอมป์ TFA9874
+ */
+&q6apm {
+	reg = <3>;
+};
+
+&q6apmbedai {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	dai@16 {
+		reg = <PRIMARY_MI2S_RX>;
+		clocks = <&q6prmcc LPASS_CLK_ID_PRI_MI2S_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
+		clock-names = "bclk";
+	};
+};
+
+&q6prm {
+	reg = <7>;
 };
 
 &pcie0 {
@@ -592,10 +681,16 @@
 	status = "okay";
 };
 
-/* ADSP (Battery/PMIC_GLINK/Type-C/Audio) & CDSP (Hexagon HTP NPU FastRPC) */
+/*
+ * เปิด ADSP remoteproc พร้อม qcom,no-auto-boot เพื่อไม่ให้เริ่มบูตตอน initramfs
+ * ก่อนเฟิร์มแวร์บน rootfs พร้อม แล้วให้ np05j-fw-load สั่งเริ่มงานจาก userspace
+ * เพื่อปลดล็อก pmic-glink (USB-C OTG 5V VBUS / Role Switch และสถานะแบตเตอรี่);
+ * คง CDSP ปิดไว้ก่อนจนกว่าจะทดสอบแยกต่างหาก
+ */
 &remoteproc_adsp {
 	firmware-name = "qcom/sm8750/adsp.mdt",
 			"qcom/sm8750/adsp_dtb.mdt";
+	qcom,no-auto-boot;
 
 	status = "okay";
 };
@@ -604,7 +699,7 @@
 	firmware-name = "qcom/sm8750/cdsp.mdt",
 			"qcom/sm8750/cdsp_dtb.mdt";
 
-	status = "okay";
+	status = "disabled";
 };
 
 /*
@@ -649,6 +744,37 @@
 		drive-strength = <16>;
 		bias-pull-up;
 		input-enable;
+	};
+
+	/* Primary MI2S (i2s0) สำหรับแอมป์ลำโพงคู่ NXP TFA9874 ตรงตาม stock pri_mi2s_pinctrl */
+	pri_mi2s_active: pri-mi2s-active-state {
+		sck-pins {
+			pins = "gpio126";
+			function = "i2s0_sck";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		data0-pins {
+			pins = "gpio127";
+			function = "i2s0_data0";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		data1-pins {
+			pins = "gpio128";
+			function = "i2s0_data1";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		ws-pins {
+			pins = "gpio129";
+			function = "i2s0_ws";
+			drive-strength = <8>;
+			bias-disable;
+		};
 	};
 
 	ts_active: ts-active-state {
@@ -713,12 +839,12 @@
 	power-domains = <&rpmhpd RPMHPD_CX>;
 	operating-points-v2 = <&qup_opp_table_128mhz>;
 
-	pinctrl-0 = <&uart14_np05j_default>;
+	pinctrl-0 = <&qup_uart14_default>, <&qup_uart14_cts_rts>;
 	pinctrl-names = "default";
 	status = "okay";
 
 	bluetooth {
-		compatible = "qcom,wcn7850-bt";
+		compatible = "qcom,wcn7861-bt";
 
 		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
 		vddaon-supply = <&vreg_pmu_aon_0p59>;
@@ -757,4 +883,25 @@
 	phys = <&pmih0108_eusb2_repeater>;
 
 	status = "okay";
+};
+
+/*
+ * ปิด clock controller กลุ่ม multimedia (MMCX) ระหว่างใช้ UEFI GOP / simpledrm:
+ * dispcc-sm8750 จะตั้งค่า PLL0/1/2 ใหม่และปล่อยโหวต RPMHPD_MMCX ขณะ probe
+ * ทำให้สัญญาณจอ OLED continuous splash หยุดกลางเฟรมทันทีที่ udev โหลดโมดูล
+ */
+&cambistmclkcc {
+	status = "disabled";
+};
+
+&camcc {
+	status = "disabled";
+};
+
+&dispcc {
+	status = "disabled";
+};
+
+&videocc {
+	status = "disabled";
 };

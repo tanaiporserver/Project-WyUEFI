@@ -363,10 +363,61 @@ class Np05jPortTests(unittest.TestCase):
         self.assertIn('chosen { };', common_dtsi)
         self.assertIn('compatible = "ramoops";', common_dtsi)
         self.assertIn('console-size = <0x200000>;', common_dtsi)
+        self.assertIn('&dispcc {\n\tstatus = "disabled";\n};', common_dtsi)
+        self.assertIn('&remoteproc_adsp {\n\tfirmware-name = "qcom/sm8750/adsp.mdt",\n\t\t\t"qcom/sm8750/adsp_dtb.mdt";\n\tqcom,no-auto-boot;\n\n\tstatus = "okay";\n};', common_dtsi)
+        self.assertIn('&remoteproc_cdsp {\n\tfirmware-name = "qcom/sm8750/cdsp.mdt",\n\t\t\t"qcom/sm8750/cdsp_dtb.mdt";\n\n\tstatus = "disabled";\n};', common_dtsi)
+        self.assertIn('pinctrl-0 = <&qup_uart14_default>, <&qup_uart14_cts_rts>;', common_dtsi)
+        self.assertIn('compatible = "qcom,wcn7861-bt";', common_dtsi)
+        self.assertIn('compatible = "qcom,wcn7861-pmu";', common_dtsi)
+        self.assertIn('qcom,vreg-pdc-map =', common_dtsi)
+        self.assertIn('qcom,pmu-vreg-map =', common_dtsi)
+        self.assertIn('vdddig-supply = <&vreg_s5f_0p85>;', common_dtsi)
         self.assertNotIn('gpu-microcode@9b09a000', common_dtsi)
+        gpu_dts = (ROOT / 'linux/dts/np05j/sm8750-nubia-np05j-gpu.dts').read_text()
+        self.assertIn('&gpu {\n\tstatus = "okay";\n};', gpu_dts)
+        self.assertIn('firmware-name = "qcom/gen80000_zap.mbn";', gpu_dts)
+        self.assertIn('power-role = "dual";', gpu_dts)
+        display_dts = (ROOT / 'linux/dts/np05j/sm8750-nubia-np05j-display.dts').read_text()
+        self.assertIn('&dispcc {\n\tstatus = "okay";\n};', display_dts)
+        self.assertIn('compatible = "himax,hx8874-9p06";', display_dts)
+        self.assertIn('qcom,dual-dsi-mode;', display_dts)
+        self.assertIn('qcom,sync-dual-dsi;', display_dts)
+        self.assertIn('qcom,te-source = "mdp_vsync_p";', display_dts)
+        display_frag = (ROOT / 'linux/configs/np05j/display.frag').read_text()
+        for opt in (
+            'CONFIG_SM_DISPCC_8750=y',
+            'CONFIG_DRM_MSM_DPU=y',
+            'CONFIG_DRM_MSM_DSI=y',
+            'CONFIG_DRM_MSM_DSI_7NM_PHY=y',
+            'CONFIG_BACKLIGHT_CLASS_DEVICE=y',
+            'CONFIG_DRM_PANEL_HIMAX_HX8874=y',
+        ):
+            self.assertIn(opt, display_frag)
         smmu_patch = (ROOT / 'patches/linux/7.3/np05j/0144-LOCAL-iommu-arm-smmu-cap-qcom-smr-groups.patch').read_text()
         self.assertIn('smmu->num_mapping_groups = QCOM_HANDOFF_MAX_SMR;', smmu_patch)
-        self.assertTrue((ROOT / 'tools/build/np05j_ubuntu.py').is_file())
+        audio_patch = (ROOT / 'patches/linux/7.3/np05j/0145-LOCAL-asoc-tfa9874-and-np05j-sndcard.patch').read_text()
+        self.assertIn('nubia,np05j-sndcard', audio_patch)
+        panel_patch = (ROOT / 'patches/linux/7.3/np05j/0146-LOCAL-drm-panel-himax-hx8874.patch').read_text()
+        self.assertIn('himax,hx8874-9p06', panel_patch)
+        self.assertIn('HX8874_MODE(32, 8, 40, 144)', panel_patch)
+        self.assertIn('HX8874_MODE(10, 8, 12, 165)', panel_patch)
+        ubuntu_py = (ROOT / 'tools/build/np05j_ubuntu.py').read_text()
+        self.assertIn('build_early_firmware_cpio_gz', ubuntu_py)
+        self.assertIn('EARLY_FIRMWARE_MARKER', ubuntu_py)
+        self.assertIn('msm.separate_gpu_kms=1', ubuntu_py)
+        self.assertIn('sm8750-nubia-np05j-display.dtb', ubuntu_py)
+        self.assertIn('02-ubuntu-np05j-oled.conf', ubuntu_py)
+        self.assertIn('hci_uart.piano_retries=0 hci_uart.piano_peri=106', ubuntu_py)
+        self.assertIn('cma=128M', ubuntu_py)
+        self.assertIn('kisak/kisak-mesa', ubuntu_py)
+        self.assertIn('artifacts/mesa-np05j-noble', ubuntu_py)
+        self.assertIn('video,render,audio,bluetooth', ubuntu_py)
+        self.assertIn('Adreno (TM) 830', ubuntu_py)
+        self.assertIn('PasswordAuthentication yes', ubuntu_py)
+        bt_c = (ROOT / 'uefi/components/board-identity/PianoBluetoothAddress.c').read_text()
+        self.assertIn('L"\\\\.bt_nv.bin"', bt_c)
+        fw_load = (ROOT / 'linux/userspace/np05j/np05j-fw-load').read_text()
+        self.assertIn('/sys/bus/pci/devices/0000:01:00.0/net', fw_load)
 
     def test_native_np05j_port_c_suite(self):
         res = subprocess.run(

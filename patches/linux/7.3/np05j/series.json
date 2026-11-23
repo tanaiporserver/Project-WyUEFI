@@ -15,7 +15,7 @@
     },
     {
       "file": "0142-LOCAL-arm64-dts-qcom-sm8750-nubia-np05j.patch",
-      "sha256": "72c0ac65df213c3bc824f157796e65ab85ec3c8800e44c20149ae0e16b59736f",
+      "sha256": "3f761b913f53c999bd11747cf02f2c47825ecc0bcd4d7c01c585c78f8fbca1a4",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
@@ -38,6 +38,24 @@
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",
         "drop_when": "Drop once the shared arm-smmu Qualcomm handoff patch caps smmu->num_mapping_groups to QCOM_HANDOFF_MAX_SMR on platforms reporting >128 SMR groups."
+      }
+    },
+    {
+      "file": "0145-LOCAL-asoc-tfa9874-and-np05j-sndcard.patch",
+      "sha256": "0899967a2accbbf72093a13cfa8142f240d3393e152d1bf0132ee8fc73e22b82",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once upstream Linux adds NXP TFA9874 ASoC codec support and nubia,np05j-sndcard Primary MI2S matching."
+      }
+    },
+    {
+      "file": "0146-LOCAL-drm-panel-himax-hx8874.patch",
+      "sha256": "62baa8c7bfe35fbc5d25a92ae236c193141bc40743fe870f87b061df71973ad1",
+      "upstream": {
+        "status": "downstream",
+        "url": "https://github.com/tanaiporserver/Project-WyUEFI",
+        "drop_when": "Drop once upstream Linux drivers/gpu/drm/panel/ includes Himax HX8874 Dual-DSI DSC OLED panel support."
       }
     }
   ]

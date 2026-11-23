@@ -51,24 +51,46 @@ STATIC EFI_STATUS FactoryAddress(UINT8 Address[6]){
   if(Matches!=1)return Matches?EFI_COMPROMISED_DATA:EFI_NOT_FOUND;
 
   EFI_FILE_PROTOCOL *Root=NULL,*File=NULL;
+  BOOLEAN NvRecord=FALSE;
   Status=Filesystem->OpenVolume(Filesystem,&Root);
   if(EFI_ERROR(Status))return Status;
   Status=Root->Open(Root,&File,L"\\bluetooth\\.bt_nv.bin",EFI_FILE_MODE_READ,0);
+  if(Status==EFI_NOT_FOUND){
+    // บางบอร์ด Qualcomm (เช่น NP05J) เก็บ NV record 9 ไบต์ (01 00 06 + MAC แบบ LSB-first) ไว้ที่รากของ persist
+    Status=Root->Open(Root,&File,L"\\.bt_nv.bin",EFI_FILE_MODE_READ,0);
+    if(Status==EFI_SUCCESS)NvRecord=TRUE;
+  }
   EFI_STATUS CloseStatus=Root->Close(Root);
   if(Status==EFI_SUCCESS)Status=CloseStatus;
   if(EFI_ERROR(Status)){if(File)File->Close(File);return Status;}
 
   UINT64 InfoStorage[(SIZE_OF_EFI_FILE_INFO+256+7)/8];
-  UINTN Bytes=sizeof(InfoStorage);
+  UINTN Bytes=sizeof(InfoStorage),ExpectedSize=NvRecord?9:6;
   Status=File->GetInfo(File,&gEfiFileInfoGuid,&Bytes,InfoStorage);
   if(Status==EFI_SUCCESS){
     EFI_FILE_INFO *Info=(VOID *)InfoStorage;
-    if((Info->Attribute&EFI_FILE_DIRECTORY)||Info->FileSize!=6)Status=EFI_VOLUME_CORRUPTED;
+    if((Info->Attribute&EFI_FILE_DIRECTORY)||Info->FileSize!=ExpectedSize)Status=EFI_VOLUME_CORRUPTED;
   }
   if(Status==EFI_SUCCESS){
-    Bytes=6;
-    Status=File->Read(File,&Bytes,Address);
-    if(Status==EFI_SUCCESS&&(Bytes!=6||!ValidAddress(Address,TRUE)))Status=EFI_COMPROMISED_DATA;
+    UINT8 Raw[9];
+    Bytes=ExpectedSize;
+    Status=File->Read(File,&Bytes,Raw);
+    if(Status==EFI_SUCCESS){
+      if(Bytes!=ExpectedSize){
+        Status=EFI_COMPROMISED_DATA;
+      }else if(NvRecord){
+        if(Raw[0]!=0x01||Raw[1]!=0x00||Raw[2]!=0x06){
+          Status=EFI_COMPROMISED_DATA;
+        }else{
+          // แปลง 6 ไบต์ท้ายจาก LSB-first เป็น MSB-first ให้ตรงกับรูปแบบ Address ที่ใช้ร่วมกัน
+          for(UINTN I=0;I<6;++I)Address[I]=Raw[8-I];
+          if(!ValidAddress(Address,TRUE))Status=EFI_COMPROMISED_DATA;
+        }
+      }else{
+        CopyMem(Address,Raw,6);
+        if(!ValidAddress(Address,TRUE))Status=EFI_COMPROMISED_DATA;
+      }
+    }
   }
   CloseStatus=File->Close(File);
   return Status==EFI_SUCCESS?CloseStatus:Status;
