@@ -537,7 +537,13 @@ class Np05jPortTests(unittest.TestCase):
         self.assertIn('SunUEFI-NP05J-Linux', shared_yml)
         self.assertIn('np05j-distro overlays', overlays_yml)
         self.assertIn('np05j-distro verify-overlay', overlays_yml)
+        self.assertIn('.venv/bin/pip install -r requirements-build.txt', overlays_yml)
+        self.assertIn('. .venv/bin/activate', overlays_yml)
         self.assertIn('np05j-distro build', rootfs_yml)
+        self.assertIn('.venv/bin/pip install -r requirements-build.txt', rootfs_yml)
+        self.assertIn('. .venv/bin/activate', rootfs_yml)
+        self.assertIn('./build.sh sources --group firmware', rootfs_yml)
+        self.assertIn('./build.sh sources --group devices', rootfs_yml)
         self.assertIn('SunUEFI-NP05J-ESP', rootfs_yml)
         self.assertIn('SunUEFI-NP05J-Root-', rootfs_yml)
 

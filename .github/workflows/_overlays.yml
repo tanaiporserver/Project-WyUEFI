@@ -83,6 +83,9 @@ jobs:
               if [[ "$SUNUEFI_BUILD_TARGET" == *-denial ]]; then
                 exec ./build.sh denial --overlay-target "$SUNUEFI_BUILD_TARGET" --package-output "$output"
               fi
+              python3 -m venv .venv
+              .venv/bin/pip install -r requirements-build.txt
+              . .venv/bin/activate
               exec ./build.sh np05j-distro overlays --target "$SUNUEFI_BUILD_TARGET" --output "$output"
             ' 2>&1 | tee build/logs/overlay-packages.log
       - name: Verify the NP05J package set and hashes
