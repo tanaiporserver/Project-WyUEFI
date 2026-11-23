@@ -31,6 +31,8 @@
 [Guids]
   gNp05jBiosConfigGuid
   gEfiFileSystemInfoGuid
+  gEfiPartTypeSystemPartGuid
 
 [Protocols]
   gEfiSimpleFileSystemProtocolGuid
+  gEfiPartitionInfoProtocolGuid

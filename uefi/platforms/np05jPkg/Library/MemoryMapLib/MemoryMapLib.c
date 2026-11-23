@@ -60,11 +60,16 @@ gMemoryDescriptor[] = {
   {"DXE_Heap", 0xB90C0000, 0x1BD63000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},
   {"hwfence-shmem", 0xD4E23000, 0x002DD000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"tz_merged", 0xD8000000, 0x00600000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+  // ช่วงหน่วยความจำ TZ/Secure ที่ ABL ตัดออกจาก linux_memory_reg (ป้องกัน RamManagerDxe แจกให้ OS)
+  {"tz_sec_gap", 0xD8600000, 0x0B120000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"RamConsole", 0xE4A00000, 0x00200000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"trust_ui_vm", 0xF3800000, 0x04400000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"oem_vm", 0xF7C00000, 0x04C00000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
   {"Display_Reserved", 0xFC800000, 0x02B00000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
   {"llcc_lpi", 0xFF800000, 0x00800000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+  // ช่วง Hypervisor/TZ carveout ใน High DDR region1 (อ้างอิง live-porting-evidence.json)
+  {"hyp_high_gap1", 0x8AF300000, 0x00D00000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+  {"hyp_high_gap2", 0x8B12C0000, 0x0ED40000, HobOnlyNoCacheSetting, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
 };
 
 VOID

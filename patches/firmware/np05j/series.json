@@ -30,7 +30,7 @@
       "repository": "upstream/Mu-Silicium/Silicium-ACPI",
       "base_commit": "f50bc115dccdea12e44efb550fd783d1daafc739",
       "patch": "0003-silicium-acpi-pakala-and-np05j.patch",
-      "sha256": "82e006395a2b198f308717f623d3a20610906da3b5d64b05453d8fa7ab0a6858",
+      "sha256": "7218955af28865d3af25a1bafb24625151def5b96cca762243eb1271072ad22a",
       "upstream": {
         "status": "downstream",
         "url": "https://github.com/tanaiporserver/Project-WyUEFI",

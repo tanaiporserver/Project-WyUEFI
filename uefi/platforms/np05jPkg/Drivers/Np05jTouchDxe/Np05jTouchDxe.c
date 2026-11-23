@@ -95,6 +95,7 @@ STATIC BOOLEAN                      mRunning       = FALSE;
 STATIC BOOLEAN                      mExited        = FALSE;
 STATIC BOOLEAN                      mBusy          = FALSE;
 STATIC BOOLEAN                      mPointerActive = FALSE;
+STATIC BOOLEAN                      mKeepRailsForOs = FALSE;
 
 STATIC NP05J_RPMH_PROTOCOL         *mRpmh          = NULL;
 STATIC VOID                        *mPowerHandle   = NULL;
@@ -1018,8 +1019,13 @@ TouchExitBootServices (
   if (mTimerEvent != NULL) {
     gBS->SetTimer (mTimerEvent, TimerCancel, 0);
   }
-  RestorePinsAndClocks ();
-  ReleaseTouchRails ();
+  /* เมื่อเปิด ACPI Touch สำหรับ Windows/WinPE ให้คงไฟเลี้ยง RPMh (ldob4/ldob14) และขา TLMM
+   * ไว้ให้ไดรเวอร์ Np05jSynaTouch.sys รับช่วงต่อได้ทันที (ไม่มี DMA ที่ต้อง quiesce)
+   */
+  if (!mKeepRailsForOs) {
+    RestorePinsAndClocks ();
+    ReleaseTouchRails ();
+  }
 }
 
 STATIC
@@ -1210,10 +1216,11 @@ Np05jTouchDxeEntry (
   EFI_STATUS        Status;
 
   Np05jBiosConfigLoad (&Config);
-  mSwapXY     = Config.TouchSwapXY;
-  mInvertX    = Config.TouchInvertX;
-  mInvertY    = Config.TouchInvertY;
-  mPollRateHz = (Config.TouchPollRateHz >= 20U) ? Config.TouchPollRateHz : 50U;
+  mSwapXY         = Config.TouchSwapXY;
+  mInvertX        = Config.TouchInvertX;
+  mInvertY        = Config.TouchInvertY;
+  mPollRateHz     = (Config.TouchPollRateHz >= 20U) ? Config.TouchPollRateHz : 50U;
+  mKeepRailsForOs = (Config.AcpiTouchEnable != 0U);
 
   mTouchInfo.Revision         = 1U;
   mTouchInfo.GetTelemetry     = TouchInfoGetTelemetry;

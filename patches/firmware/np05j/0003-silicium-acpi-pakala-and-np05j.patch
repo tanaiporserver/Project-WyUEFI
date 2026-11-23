@@ -23,19 +23,19 @@ index 0000000..13fe9b7
 +  ASL|IORT.aml
 diff --git a/Platforms/ZTE/nubia_np05j/DBG2.aml b/Platforms/ZTE/nubia_np05j/DBG2.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..639e6801eeb008e1b1f2e87a4a3560bf35ac0a53
+index 0000000000000000000000000000000000000000..f07780b6892bcac2c9aec537fe51f3181e5a6988
 GIT binary patch
-literal 142
-zcmZ>9ayRN@U|?W$@e6hGbX4#QFfjE}P*4bHXJGL33-QrlQ&!Lc$}@q~7&0(&GpGSs
-zK+qrzB*Yk$7#I{7m>CYN1Pd}aFfhc##0NX+g*pbgplD!ja1KP$z>vTN(IEiS5bR{Y
-F006O!69E7K
+literal 140
+zcmZ>9ayRN>U|?WW^9yzIbX4#QFfjE}P*4bHXJGL33-MuLQB}|Z$}@q~7%(t$F{lAq
+zK+qrzB*Yk$7#I{7m>CYN1Pd}aFfhc#2RrG7ItIC*sAq0)4n$JVkiZ4eAOKY#>}0?I
+E09@`80RR91
 
 literal 0
 HcmV?d00001
 
 diff --git a/Platforms/ZTE/nubia_np05j/DBG2.dsl b/Platforms/ZTE/nubia_np05j/DBG2.dsl
 new file mode 100644
-index 0000000..54d2853
+index 0000000..d4065c4
 --- /dev/null
 +++ b/Platforms/ZTE/nubia_np05j/DBG2.dsl
 @@ -0,0 +1,63 @@
@@ -78,7 +78,7 @@ index 0000000..54d2853
 +[0008]                            Address : 0000000000A9C000
 +
 +[0004]                       Address Size : 00004000
-+[0010]                           Namepath : "\\_SB.UARD"
++[0010]                           Namepath : "\_SB.UARD"
 +
 +[0001]                           Revision : 01
 +[0002]                             Length : 0030
@@ -101,106 +101,137 @@ index 0000000..54d2853
 +[0008]                            Address : 000000000A600000
 +
 +[0004]                       Address Size : 00100000
-+[0010]                           Namepath : "\\_SB.USB0"
++[0010]                           Namepath : "\_SB.USB0"
 diff --git a/Platforms/ZTE/nubia_np05j/DSDT.aml b/Platforms/ZTE/nubia_np05j/DSDT.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..b855d7925b41386dcb48dea79dc6efef087bb77a
+index 0000000000000000000000000000000000000000..43736f072a04564445a18e45918ded1a30815294
 GIT binary patch
-literal 1065
-zcmZ`&%We}f6g>_hb*3pv3sOa4F`_K!g35VO9umsL4y{8onZ`3gC`ePO62AcKs*!j}
-zhz&o0P+9O7{S4F%zrcbIz>XbdkcN>)bH~R%_uO-@g%a^j87Tb<lfDf6Fk;=I@B7hv
-zK!)+*oyxY~5WQ6OQ>w;N)Lu_J8&pX#b<uP*Ts14xk(__WD!lUH)yqV*Z>>`mk0&((
-z0-C7)z(%negf@z}bZh-Mw9zcv;!(nAdLYGGz$3{R+XGD#DPXZ?5k_X&4SlXvgn1<k
-zwhO^a7VH#)Weau-!OIrBR|r-txK{|S%(8u&JW;O9BR(FrIziW!NmI@Pa_wrW;s9T(
-zUyO%1!<kpt$V9C__8z^fYD;@R2^cVsPj!4sY#dz>_-?&-K^g!)RzS!O0p4g6Yhp0f
-znFBHL=q!7<FUL6@j5EH}p|fpyoAV54)PZxuR3*PPrC}PDlVBojiKYlPXtnfVu3HzG
-zIbuyq<*iud3$F7YK+mZ<DOoOF(G!vvGGO;}T%yUAvi`Bh3|8KrMG_o)K*N^)-3cD8
-zsYtq3JHZ_%vAi_g3}_)^PWD@8=2IF+hfcP79tQ0PZ6kDH0q-tk|DXP#?1|4eQ9?;u
-zL8`#*KcHGLUg%4=YXswyulr4~p<n%M0@tyvgKu_=>EOH{ccW*MzHNu`f7!}qa&yt<
-UwXM#wUHzl-1KM=`Lc#v}Uvrn=0RR91
+literal 2581
+zcmb_eU1%d!6h4zo+R07Yrs>3XyDMhJB89a(leF7ibS0BJX*;D!rkPBF1a=g0u@=@U
+zi?;rN6zZ;h(nf?nH7zNu@BTe5__PRG1X-cri>wdsi*LSJ&z(Dyq%kZa=3(aCJ73P<
+z{mwa8xAby?00f2#cGl361yh+>OeT}&EdZlXUJ}KLWGu7iSXoE1iiRFtuS~}!%g`&H
+zRLL(!*iI#HxbLD>7`*-Vbz4tAIV@S_Vks(s0Fq6q=1EpI=Sd~Ylgd`E!1qjQczfA$
+zflIZ`r>JQwlCxmw0~$3AMNwu!a%@8fIqX<v4Vq+#qtsp~p%XQMx>CJRB+v~@_k;zz
+zVbeWfVmEB2CoI$ryVMib*A1KP3G45K8U6O0<)v+z7W1iTZN^Vq+`;pJM!3$-1)9(l
+z<PkTMxWx{QZIL0#p(Sg0oQ!@L#xu<PEPxV#kNQ9mCIx^EsBI?nTm?;NdWlG~<dpIi
+z{AX=56Ph=Q9i|nkP~Wu7?U0>1JM~_MAT|Wa7&8<W{s3-hK4fbpod?Z=QF5siYNUo9
+zPXq?s9jab}0h19}QMobFe>#G@p95roNAPlhD}K(lP3r26YDXmG(rSQLfo)}z4t`D2
+z*Kgc>Y30T%Zz7LPO5>79PDmIq(42&z&Omd@W$u>iiLNSM*ysq=1j(_KDhbMGc@E+q
+z@6_@CIjGxM3M}JIkmJlGG_PHoVxBR3r-OhOv0UBk2*RP49b*a=bh<$=XWQ9fIiZ>g
+zZkp!ia$a^A0DY3rac4$+XV9mXH{A3v8FU%onPvx{OYp$)<WUcgs#S}~B`=1~Aj~B_
+zJ}wN85_uEdX20dF58O9<a7!t2(LHt+7z$^E178>qx;tluF<%%(fw__il@{!*OF~>_
+zMYB}KHh_)^a-!wOsdPTt6WQo@bSoc~oU)@pW3I3M>hK7OZT&j+{crHy!d__Vc;~%^
+z-GjU+tnI!A4AmH`b8w`-y8_T04hoO6hp_*2gSekapb7iq{vwErfkuRX5t}4%$j~g7
+zxII_k1=S+U|BzP9`9IUT0kRfpMaoFw#=9u;cpv^y`RgZRo!&W^Tt9xW_~U{4sBnWk
+z+^83!&?L#j{k+)lwe3y*GWOP|_ljRUyZ!Ku=kG7KwW&OLDqueR<ek>0qP8o3h6?9#
+zL~yFJf|ZarIF(Qe@`-?C%*|sg*=&Jvs#SDiyTP#;!~2dLb!Zm*UlduEk^3+iRaAon
+zieC`pVKH)Y0zkgxk^tnZIAMDv0OV^=3<CLvQ}-gdaC-m(Och|a#E}ZOMgefFxj!Xy
+za&khsd=%UO$+AroBw8*lfjk#>iWU{OSAptPwXx98kD!)6PXGDDxy)zPo7&y0_pfiS
+z5)lC@d`tLFudxNw!-O<b^)7pm1ba4OJM|Ueef*-jXtnX!PTj}x?HK#G#=va9xw=2d
+z_n8s3xhiKuEqY)fT;)z3&E9)p&AgNUWc2s^nQv+SV4}^7C@%xXh4cG97f7fn_@|fY
+zE13%CH=Yh_8{&UXdu=mbrCzc4%CLg^EYt8tvNtHE84>XAz^8<g!zJDw(DJ_+MI94k
+z%bR&rDw|7Qv$b9*Xz43yzst8d);-$_B3a};bYuv-H@I@FLr!+cN{1X9Z{w3(W=-!I
+ovs%KQ$F4+fdvDLz)*NRSD3|7u+U684tj;Tg>JNdo%PsuS-;!@p9{>OV
 
 literal 0
 HcmV?d00001
 
 diff --git a/Platforms/ZTE/nubia_np05j/DSDT.asl b/Platforms/ZTE/nubia_np05j/DSDT.asl
 new file mode 100644
-index 0000000..c55a340
+index 0000000..1f1436d
 --- /dev/null
 +++ b/Platforms/ZTE/nubia_np05j/DSDT.asl
-@@ -0,0 +1,238 @@
-+// DSDT for nubia NP05J (REDMAGIC Astra, Qualcomm SM8750P / Pakala)
-+// Supports Linux ACPI and Windows 11 on ARM with runtime-patchable flags via Np05jAcpiUpdateLib.
+@@ -0,0 +1,664 @@
++// DSDT สำหรับ nubia NP05J (REDMAGIC Astra, Qualcomm SM8750P / Pakala)
++// รองรับทั้ง Windows 11 on ARM และ Linux ACPI พร้อมตัวแปรปรับค่าตอนรันไทม์ผ่าน Np05jAcpiUpdateLib
 +DefinitionBlock ("", "DSDT", 2, "NUBIA ", "NP05J   ", 0x00008750)
 +{
 +    Scope (\_SB)
 +    {
-+        // Runtime-patched platform identity & BIOS feature gates.
-+        // IMPORTANT: Initialized to non-0/1 values so iASL emits full-width AML prefixes
-+        // required by AslUpdateLib::AslUpdateName().
-+        Name (SOID, 0x12345678)          // DWORD: SoC ID (639 for SM8750P)
++        // ค่าอัตลักษณ์แพลตฟอร์มและสวิตช์ BIOS ที่อัปเดตตอนรันไทม์
++        // หมายเหตุ: ตั้งค่าเริ่มต้นไม่ใช่ 0/1 เพื่อให้ iASL สร้าง AML prefix เต็มความกว้างสำหรับ AslUpdateName()
++        Name (SOID, 0x12345678)          // DWORD: SoC ID (639 สำหรับ SM8750P)
 +        Name (SIDV, 0x12345678)          // DWORD: SoC Revision (0x00020000)
 +        Name (SVMJ, 0x1234)              // WORD:  SoC Version Major (2)
 +        Name (SVMI, 0x1234)              // WORD:  SoC Version Minor (0)
 +        Name (SOSN, 0x1122334455667788)  // QWORD: Board / Serial Number
-+        Name (STOR, 0x00010001)          // DWORD: UFS0 enable/coherency
-+        Name (USBE, 0x00010001)          // DWORD: USB0 enable (AcpiUsbEnable)
-+        Name (TSEN, 0x00010001)          // DWORD: SPI4 / SYNA3930 touch enable (AcpiTouchEnable)
-+        Name (PCIE, 0x00010001)          // DWORD: PCIe0 gate (AcpiPcieEnable)
-+        Name (BTNE, 0x00010001)          // DWORD: Buttons / PWRB gate (AcpiButtonsEnable)
++        Name (STOR, 0x00010001)          // DWORD: เปิด/ปิด UFS0 (_STA)
++        Name (UCCA, 0x00010001)          // DWORD: สถานะ Cache Coherency ของ UFS0 (_CCA)
++        Name (USBE, 0x00010001)          // DWORD: เปิด/ปิดระบบ USB ทั้งหมด (AcpiUsbEnable)
++        Name (URSE, 0x00010001)          // DWORD: 0 = Host-only USB0 (PNP0D10), 1 = Dual-Role URS0 (PNP0CA1)
++        Name (TSEN, 0x00010001)          // DWORD: เปิด/ปิด SPI4 / SYNA3930 (AcpiTouchEnable)
++        Name (PCIE, 0x00010001)          // DWORD: เปิด/ปิด PCI0 Root Complex (AcpiPcieEnable & Pcie0Enable)
++        Name (BTNE, 0x00010001)          // DWORD: เปิด/ปิดปุ่ม PWRB / BTNS (AcpiButtonsEnable)
 +
 +        Device (CPU0)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 0)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU1)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 1)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU2)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 2)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU3)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 3)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU4)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 4)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU5)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 5)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU6)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 6)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (CPU7)
 +        {
 +            Name (_HID, "ACPI0007")
 +            Name (_UID, 7)
++            Method (_STA, 0, NotSerialized) { Return (0x0F) }
 +        }
 +
 +        Device (UFS0)
 +        {
 +            Name (_HID, "QCOM24A5")
 +            Name (_UID, Zero)
-+            Name (_CCA, One)
++
++            Method (_CCA, 0, NotSerialized)
++            {
++                If (LEqual (UCCA, Zero))
++                {
++                    Return (Zero)
++                }
++                Return (One)
++            }
 +
 +            Method (_STA, 0, NotSerialized)
 +            {
@@ -211,12 +242,11 @@ index 0000000..c55a340
 +                Return (0x0F)
 +            }
 +
++            // หน้าต่าง MMIO ต่อเนื่องเดียวครอบ ufs_mem (0x1d84000) + ice + mcq_vs + mcq_sqd ถึง 0x1da7000
++            // สอดคล้องกับรูปแบบที่ไดรเวอร์ Qualcomm/Microsoft UFS (ACPI\QCOM24A5) บน Windows ARM64 คาดหวัง
 +            Name (_CRS, ResourceTemplate ()
 +            {
-+                Memory32Fixed (ReadWrite, 0x01D84000, 0x00003000)  // ufs_mem
-+                Memory32Fixed (ReadWrite, 0x01D88000, 0x00018000)  // ice
-+                Memory32Fixed (ReadWrite, 0x01DA5000, 0x00002000)  // mcq_sqd
-+                Memory32Fixed (ReadWrite, 0x01DA4000, 0x00000010)  // mcq_vs
++                Memory32Fixed (ReadWrite, 0x01D84000, 0x00023000)
 +                Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive)
 +                    { 297 }
 +            })
@@ -224,6 +254,10 @@ index 0000000..c55a340
 +            Device (DEV0)
 +            {
 +                Name (_ADR, 0x00000008)
++                Method (_RMV, 0, NotSerialized)
++                {
++                    Return (Zero)
++                }
 +            }
 +        }
 +
@@ -232,9 +266,20 @@ index 0000000..c55a340
 +            Name (_HID, "QCOM0C0C")
 +            Name (_UID, Zero)
 +
++            // ปิด GIO0 อัตโนมัติเมื่อเปิด TPL0 แบบ Direct TLMM (TSEN != 0) เพื่อป้องกัน Resource Conflict (Code 12)
++            Method (_STA, 0, NotSerialized)
++            {
++                If (LNotEqual (TSEN, Zero))
++                {
++                    Return (Zero)
++                }
++                Return (0x0F)
++            }
++
++            // ขอบเขต TLMM tile เริ่ม 0x0F100000 สิ้นสุด 0x0F202000 (ตรงตาม pinctrl@f000000 ใน np05j.dtb)
 +            Name (_CRS, ResourceTemplate ()
 +            {
-+                Memory32Fixed (ReadWrite, 0x0F100000, 0x00C00000)
++                Memory32Fixed (ReadWrite, 0x0F100000, 0x00102000)
 +                Interrupt (ResourceConsumer, Level, ActiveHigh, Shared)
 +                    { 240 }
 +            })
@@ -243,7 +288,11 @@ index 0000000..c55a340
 +        Device (UARD)
 +        {
 +            Name (_HID, "QCOM0E22")
-+            Name (_CID, "PNP0501")
++            Name (_CID, Package (0x02)
++            {
++                "QCOM0C16",
++                "PNP0501"
++            })
 +            Name (_UID, 7)
 +
 +            Name (_CRS, ResourceTemplate ()
@@ -254,20 +303,42 @@ index 0000000..c55a340
 +            })
 +        }
 +
++        // คอนเทนเนอร์ข้อมูลพอร์ต USB Type-C สำหรับใช้ร่วมกันระหว่าง USB0 และ URS0
++        Device (UUPC)
++        {
++            Name (_HID, EisaId ("PNP0A05"))
++            Name (_UID, "NP05J USB _UPC Container")
++            Name (UPCC, Package (0x04)
++            {
++                0xFF,   // เชื่อมต่อได้ (Connectable)
++                0x09,   // Type-C USB2 + SuperSpeed พร้อมสวิตช์
++                Zero,
++                Zero
++            })
++        }
++
++        // โหมดที่ 1 (ค่าเริ่มต้นใน Minimal Bring-up / Host-only):
++        // xHCI Host โดยตรงผ่าน Inbox usbxhci.sys (เปิดเมื่อ USBE != 0 และ URSE == 0)
 +        Device (USB0)
 +        {
 +            Name (_HID, "QCOM0E08")
 +            Name (_CID, "PNP0D10")
 +            Name (_UID, Zero)
 +            Name (_CCA, One)
++            Name (_S0W, 0x03)
 +
 +            Method (_STA, 0, NotSerialized)
 +            {
-+                If (LEqual (USBE, Zero))
++                If (LAnd (LNotEqual (USBE, Zero), LEqual (URSE, Zero)))
 +                {
-+                    Return (Zero)
++                    Return (0x0F)
 +                }
-+                Return (0x0F)
++                Return (Zero)
++            }
++
++            Method (_UPC, 0, NotSerialized)
++            {
++                Return (\_SB.UUPC.UPCC)
 +            }
 +
 +            Name (_CRS, ResourceTemplate ()
@@ -278,14 +349,391 @@ index 0000000..c55a340
 +            })
 +        }
 +
++        // โหมดที่ 2 (Dual-Role USB Role Switch ผ่าน urssynopsys.sys / Qualcomm qcurs):
++        // เปิดเมื่อ USBE != 0 และ URSE != 0 (แยกขาดจาก \_SB.USB0 เพื่อป้องกัน MMIO conflict ที่ 0x0A600000)
++        // ค่า MMIO และ GIC INTID ทั้ง 5 ตัวคำนวณจาก ssusb@a600000 + dwc3@a600000 + pdc@b220000 ใน np05j.dtb
++        Device (URS0)
++        {
++            Name (_HID, "QCOM0C8B")
++            Name (_CID, Package (0x02)
++            {
++                "PNP0CA1",
++                "QCOMFFE1"
++            })
++            Name (_UID, Zero)
++            Name (_CCA, One)
++
++            Method (_STA, 0, NotSerialized)
++            {
++                If (LAnd (LNotEqual (USBE, Zero), LNotEqual (URSE, Zero)))
++                {
++                    Return (0x0F)
++                }
++                Return (Zero)
++            }
++
++            Name (_CRS, ResourceTemplate ()
++            {
++                Memory32Fixed (ReadWrite, 0x0A600000, 0x00100000)
++            })
++
++            // บทบาท Host (xHCI): _ADR = 0
++            Device (USB0)
++            {
++                Name (_ADR, Zero)
++                Name (_S0W, 0x03)
++
++                Method (_STA, 0, NotSerialized)
++                {
++                    Return (0x0F)
++                }
++
++                Method (_UPC, 0, NotSerialized)
++                {
++                    Return (\_SB.UUPC.UPCC)
++                }
++
++                Name (_PLD, Package (0x01)
++                {
++                    ToPLD (
++                        PLD_Revision           = 0x2,
++                        PLD_IgnoreColor        = 0x1,
++                        PLD_UserVisible        = 0x1,
++                        PLD_Panel              = "LEFT",
++                        PLD_VerticalPosition   = "CENTER",
++                        PLD_HorizontalPosition = "CENTER",
++                        PLD_Shape              = "OVAL",
++                        PLD_GroupToken         = 0x1,
++                        PLD_GroupPosition      = 0x1)
++                })
++
++                // ชุด IRQ จาก np05j.dtb:
++                // - 0x00A5 (165): dwc3 main IRQ (SPI 0x85 + 32)
++                // - 0x00A2 (162): pwr_event_irq (SPI 0x82 + 32)
++                // - 0x031A (794): ss_phy_irq    (PDC 0x11 -> SPI 0x2E9+0x11 + 32)
++                // - 0x0318 (792): dm_hs_phy_irq (PDC 0x0F -> SPI 0x2E9+0x0F + 32)
++                // - 0x0317 (791): dp_hs_phy_irq (PDC 0x0E -> SPI 0x2E9+0x0E + 32)
++                Name (_CRS, ResourceTemplate ()
++                {
++                    Interrupt (ResourceConsumer, Level, ActiveHigh, Shared)
++                        { 0x000000A5 }
++                    Interrupt (ResourceConsumer, Level, ActiveHigh, SharedAndWake)
++                        { 0x000000A2 }
++                    Interrupt (ResourceConsumer, Level, ActiveHigh, SharedAndWake)
++                        { 0x0000031A }
++                    Interrupt (ResourceConsumer, Edge, ActiveHigh, SharedAndWake)
++                        { 0x00000318 }
++                    Interrupt (ResourceConsumer, Edge, ActiveHigh, SharedAndWake)
++                        { 0x00000317 }
++                })
++
++                Device (RHUB)
++                {
++                    Name (_ADR, Zero)
++                    Device (PRT1)
++                    {
++                        Name (_ADR, One)
++                        Method (_UPC, 0, NotSerialized)
++                        {
++                            Return (\_SB.UUPC.UPCC)
++                        }
++
++                        Name (_PLD, Package (0x01)
++                        {
++                            ToPLD (
++                                PLD_Revision           = 0x2,
++                                PLD_IgnoreColor        = 0x1,
++                                PLD_UserVisible        = 0x1,
++                                PLD_Panel              = "LEFT",
++                                PLD_VerticalPosition   = "CENTER",
++                                PLD_HorizontalPosition = "CENTER",
++                                PLD_Shape              = "OVAL",
++                                PLD_GroupToken         = 0x1,
++                                PLD_GroupPosition      = 0x1)
++                        })
++                    }
++                }
++
++                // _DSM มาตรฐาน Microsoft USB Controller สำหรับ Synopsys DWC3 xHCI
++                Method (_DSM, 4, Serialized)
++                {
++                    If (LEqual (Arg0, ToUUID ("ce2ee385-00e6-48cb-9f05-2edb927c4899")))
++                    {
++                        Switch (ToInteger (Arg2))
++                        {
++                            Case (Zero)
++                            {
++                                If (LEqual (ToInteger (Arg1), Zero))
++                                {
++                                    Return (Buffer (One) { 0x1D })
++                                }
++                                Return (Buffer (One) { 0x01 })
++                            }
++                            Case (0x02)
++                            {
++                                Return (Zero)
++                            }
++                            Case (0x03)
++                            {
++                                Return (Zero)
++                            }
++                            Case (0x04)
++                            {
++                                Return (0x02)
++                            }
++                        }
++                    }
++                    Return (Buffer (One) { 0x00 })
++                }
++            }
++
++            // บทบาท Peripheral / Function (UFX Synopsys): _ADR = 1
++            Device (UFN0)
++            {
++                Name (_ADR, One)
++                Name (_S0W, 0x03)
++
++                Method (_STA, 0, NotSerialized)
++                {
++                    Return (0x0F)
++                }
++
++                Method (_UPC, 0, NotSerialized)
++                {
++                    Return (\_SB.UUPC.UPCC)
++                }
++
++                Name (_PLD, Package (0x01)
++                {
++                    ToPLD (
++                        PLD_Revision           = 0x2,
++                        PLD_IgnoreColor        = 0x1,
++                        PLD_UserVisible        = 0x1,
++                        PLD_Panel              = "LEFT",
++                        PLD_VerticalPosition   = "CENTER",
++                        PLD_HorizontalPosition = "CENTER",
++                        PLD_Shape              = "OVAL",
++                        PLD_GroupToken         = 0x1,
++                        PLD_GroupPosition      = 0x1)
++                })
++
++                Name (_CRS, ResourceTemplate ()
++                {
++                    Interrupt (ResourceConsumer, Level, ActiveHigh, Shared)
++                        { 0x000000A5 }
++                    Interrupt (ResourceConsumer, Level, ActiveHigh, SharedAndWake)
++                        { 0x000000A2 }
++                })
++
++                // _DSM สำหรับ ufxsynopsys.sys (จำนวน endpoint และ revision capability ของ DWC3)
++                Method (_DSM, 4, Serialized)
++                {
++                    If (LEqual (Arg0, ToUUID ("fe56cfeb-49d5-4378-a8a2-2978dbe54ad2")))
++                    {
++                        Switch (ToInteger (Arg2))
++                        {
++                            Case (Zero)
++                            {
++                                If (LEqual (ToInteger (Arg1), Zero))
++                                {
++                                    Return (Buffer (One) { 0x03 })
++                                }
++                                Return (Buffer (One) { 0x01 })
++                            }
++                            Case (One)
++                            {
++                                Return (0x20)
++                            }
++                        }
++                    }
++                    ElseIf (LEqual (Arg0, ToUUID ("18de299f-9476-4fc9-b43b-8aeb713ed751")))
++                    {
++                        Switch (ToInteger (Arg2))
++                        {
++                            Case (Zero)
++                            {
++                                If (LEqual (ToInteger (Arg1), Zero))
++                                {
++                                    Return (Buffer (One) { 0x03 })
++                                }
++                                Return (Buffer (One) { 0x01 })
++                            }
++                            Case (One)
++                            {
++                                Return (0x39)
++                            }
++                        }
++                    }
++                    Return (Buffer (One) { 0x00 })
++                }
++            }
++        }
++
++        // PCIe0 Root Complex สำหรับ WCN7861 (FastConnect 7800, PCI\VEN_17CB&DEV_110E)
++        // ค่า ECAM (0x40000000), MMIO32 (0x40300000..0x43FFFFFF), และ INTx (181..184) อ้างอิงจาก pcie@1c00000 ใน np05j.dtb
++        // หมายเหตุ: ปิดเป็นค่าเริ่มต้น (PCIE=0) จนกว่าจะมี pre-OS PCIe link training DXE หรือไดรเวอร์ Qualcomm PCIe PEP
++        Device (PCI0)
++        {
++            Name (_HID, EisaId ("PNP0A08"))
++            Name (_CID, EisaId ("PNP0A03"))
++            Name (_UID, Zero)
++            Name (_SEG, Zero)
++            Name (_BBN, Zero)
++            Name (_CCA, One)
++            Name (_S0W, 0x04)
++
++            Method (_STA, 0, NotSerialized)
++            {
++                If (LEqual (PCIE, Zero))
++                {
++                    Return (Zero)
++                }
++                Return (0x0F)
++            }
++
++            Method (_CBA, 0, NotSerialized)
++            {
++                Return (0x0000000040000000)
++            }
++
++            Method (_DSW, 3, NotSerialized)
++            {
++            }
++
++            // ตารางเร้าต์อินเทอร์รัปต์ INT A..D ของ pcie@1c00000 (SPI 0x95..0x98 + 32 = GIC 181..184)
++            Name (_PRT, Package (0x04)
++            {
++                Package (0x04) { 0x0000FFFF, 0x00, Zero, 0x000000B5 },
++                Package (0x04) { 0x0000FFFF, 0x01, Zero, 0x000000B6 },
++                Package (0x04) { 0x0000FFFF, 0x02, Zero, 0x000000B7 },
++                Package (0x04) { 0x0000FFFF, 0x03, Zero, 0x000000B8 }
++            })
++
++            // ช่วง Bus 0..1 ตรงตาม MCFG และหน้าต่าง MMIO32 61 MiB แยกออกจากช่วง ECAM (0x40000000..0x401FFFFF)
++            Name (_CRS, ResourceTemplate ()
++            {
++                WordBusNumber (
++                    ResourceProducer,
++                    MinFixed,
++                    MaxFixed,
++                    PosDecode,
++                    0x0000,
++                    0x0000,
++                    0x0001,
++                    0x0000,
++                    0x0002
++                )
++                DWordMemory (
++                    ResourceProducer,
++                    PosDecode,
++                    MinFixed,
++                    MaxFixed,
++                    NonCacheable,
++                    ReadWrite,
++                    0x00000000,
++                    0x40300000,
++                    0x43FFFFFF,
++                    0x00000000,
++                    0x03D00000,
++                    ,
++                    ,
++                    ,
++                    AddressRangeMemory,
++                    TypeStatic
++                )
++            })
++
++            Name (SUPP, Zero)
++            Name (CTRL, Zero)
++
++            Method (_OSC, 4, NotSerialized)
++            {
++                CreateDWordField (Arg3, Zero, CDW1)
++                If (LEqual (Arg0, ToUUID ("33db4d5b-1ff7-401c-9657-7441c03dd766")))
++                {
++                    CreateDWordField (Arg3, 0x04, CDW2)
++                    CreateDWordField (Arg3, 0x08, CDW3)
++                    Store (CDW2, SUPP)
++                    Store (CDW3, CTRL)
++                    // อนุญาตควบคุม Native PME และ PCIe Capability Structure แบบ conservative (ไม่เปิด AER)
++                    And (CTRL, 0x15, CTRL)
++                    If (LNotEqual (Arg1, One))
++                    {
++                        Or (CDW1, 0x08, CDW1)
++                    }
++                    If (LNotEqual (CDW3, CTRL))
++                    {
++                        Or (CDW1, 0x10, CDW1)
++                    }
++                    Store (CTRL, CDW3)
++                    Return (Arg3)
++                }
++                Else
++                {
++                    Or (CDW1, 0x04, CDW1)
++                    Return (Arg3)
++                }
++            }
++
++            Method (_DSM, 4, Serialized)
++            {
++                If (LEqual (Arg0, ToUUID ("e5c937d0-3553-4d7a-9117-ea4d19c3434d")))
++                {
++                    Switch (ToInteger (Arg2))
++                    {
++                        Case (Zero)
++                        {
++                            // รองรับ Function 0 และ Function 5 (Ignore PCI Boot Configuration)
++                            Return (Buffer (One) { 0x21 })
++                        }
++                        Case (0x05)
++                        {
++                            // ให้ OS จัดสรร BAR ภายในช่วง _CRS 0x40300000..0x43FFFFFF เองได้
++                            Return (One)
++                        }
++                    }
++                }
++                Return (Buffer (One) { 0x00 })
++            }
++
++            // Root Port 0 (Bus 0, Dev 0, Fn 0 — SID 0x1400)
++            Device (RP00)
++            {
++                Name (_ADR, Zero)
++                Name (_S0W, 0x04)
++
++                Method (_DSW, 3, NotSerialized)
++                {
++                }
++
++                // เร้าต์อินเทอร์รัปต์สำหรับ Endpoint บน Bus 1 (WCN7861)
++                Name (_PRT, Package (0x04)
++                {
++                    Package (0x04) { 0x0000FFFF, 0x00, Zero, 0x000000B5 },
++                    Package (0x04) { 0x0000FFFF, 0x01, Zero, 0x000000B6 },
++                    Package (0x04) { 0x0000FFFF, 0x02, Zero, 0x000000B7 },
++                    Package (0x04) { 0x0000FFFF, 0x03, Zero, 0x000000B8 }
++                })
++
++                // Endpoint Wi-Fi 7 Qualcomm WCN7861 (Bus 1, Dev 0, Fn 0 — PCI 17cb:110e, SID 0x1401)
++                Device (WCN0)
++                {
++                    Name (_ADR, Zero)
++                    Name (_S0W, 0x04)
++                }
++            }
++        }
++
 +        Device (SPI4)
 +        {
 +            Name (_HID, "QCOM0E24")
++            Name (_CID, "QCOM0C0E")
 +            Name (_UID, 4)
 +
 +            Method (_STA, 0, NotSerialized)
 +            {
-+                If (LEqual (TSEN, Zero))
++                // เปิดเฉพาะเมื่อไม่ได้ใช้ TPL0 แบบ Direct TLMM
++                If (LNotEqual (TSEN, Zero))
 +                {
 +                    Return (Zero)
 +                }
@@ -298,41 +746,33 @@ index 0000000..c55a340
 +                Interrupt (ResourceConsumer, Level, ActiveHigh, Exclusive)
 +                    { 389 }
 +            })
++        }
 +
-+            Device (TPL0)
++        // จอสัมผัส Synaptics S3930TB0A0 (TCM v2) สำหรับไดรเวอร์ Np05jSynaTouch.sys (KMDF + VHF)
++        // ส่งหน้าหน่วยความจำ TLMM 4KB ทั้ง 6 ขาโดยตรง: GPIO 48(MISO), 49(MOSI), 50(CLK), 51(CS), 161(RST), 162(IRQ)
++        Device (TPL0)
++        {
++            Name (_HID, "SYNA3930")
++            Name (_UID, Zero)
++
++            Method (_STA, 0, NotSerialized)
 +            {
-+                Name (_HID, "SYNA3930")
-+                Name (_CID, "PNP0C50")
-+                Name (_UID, Zero)
-+
-+                Method (_STA, 0, NotSerialized)
++                If (LEqual (TSEN, Zero))
 +                {
-+                    If (LEqual (TSEN, Zero))
-+                    {
-+                        Return (Zero)
-+                    }
-+                    Return (0x0F)
++                    Return (Zero)
 +                }
-+
-+                Name (_CRS, ResourceTemplate ()
-+                {
-+                    SpiSerialBusV2 (
-+                        0,                      // DeviceSelection (CS0 / GPIO 51)
-+                        PolarityLow,
-+                        FourWireMode,
-+                        8,                      // DataBitLength
-+                        ControllerInitiated,
-+                        16000000,               // 16 MHz max SPI clock
-+                        ClockPolarityLow,
-+                        ClockPhaseFirst,
-+                        "\\_SB.SPI4",
-+                        0,
-+                        ResourceConsumer
-+                    )
-+                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullUp, 0, "\\_SB.GIO0", 0, ResourceConsumer)
-+                        { 162 }
-+                })
++                Return (0x0F)
 +            }
++
++            Name (_CRS, ResourceTemplate ()
++            {
++                Memory32Fixed (ReadWrite, 0x0F130000, 0x00001000)
++                Memory32Fixed (ReadWrite, 0x0F131000, 0x00001000)
++                Memory32Fixed (ReadWrite, 0x0F132000, 0x00001000)
++                Memory32Fixed (ReadWrite, 0x0F133000, 0x00001000)
++                Memory32Fixed (ReadWrite, 0x0F1A1000, 0x00001000)
++                Memory32Fixed (ReadWrite, 0x0F1A2000, 0x00001000)
++            })
 +        }
 +
 +        Device (PWRB)
@@ -368,26 +808,26 @@ index 0000000..c55a340
 +}
 diff --git a/Platforms/ZTE/nubia_np05j/IORT.aml b/Platforms/ZTE/nubia_np05j/IORT.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..42a4db7acd9625eafc19aaa583f24bd2500e2cce
+index 0000000000000000000000000000000000000000..ada490631e36a28f1a8f2de552b2324bf203f83d
 GIT binary patch
 literal 1084
-zcmX}rw@$-Q7=~eoAVepWFk6Cw0U<6R1I~aH5rv2(6M-c3PUtYwdoP#3LhnUPAOuL6
-zfHb<qjc^>l<d^>Qd_KpvjxF0#S>-e(N|Ll~bD1rQY*#82t0K$xX-Tr!oYtbG0y#k}
-zmx@+PAJFTx6d#RRGQ`k}QEiiGzi6vywE|+&r^Wa<N*cp)oWMz(Lb0V-&EPD~;XE$j
-zA}--FuHY)J;W}>MCT?L6Lm0*gM)3{b@dH2c3%~IPt9i3-tif9Jpcj2uhxOQijo5_E
-z*n+LthV9sao!Eul=*J%H#XjuE0UX339L5pc!Cl<LeLTQJJi=o<!BafLbG*Pyyuw?&
-z!yCNEU-iQm^}z8XKH)R#FZhZ<3}F}}7{zPulgx1nreYeVV+Lko78)=cb1)b4(1`h{
-kD~mmzq;8{Fi?OW6Lbu0Z_LR8F9shs6c7j)+&ZyV?0Ytn^0RR91
+zcmX}rw@$-Q7=~eoAVepWFk50_KqwcG0cSvph(bh?i9iy1Cv+I;y_bPop!Xss5CWu3
+zKpI`*MmUaN@=O1DzT;zC$Choata6!?B}v-0yDe5lb|@8!O_62Cv?N*WE?aR*k(?x!
+zO`_G(2lYBFB}Su`3~}^gRNE{%AlfEct)MvQ*J5HEC5_=YPT(X?q1aNqW^fkga2^+M
+z5tncoS8x^Aa2+>r6SpvgVT@oDWB7*e_<^7Jh2Qvt)x22`)?h7q(T9Gl!+LDMMr^`n
+zY{6D+!*=YzPVB;N3}6rTVjuS701o014&w;!;4bdrJ|5s99^o;b;3=NrIbPr;Ug0g?
+z;SJv7ulnJOdSL#DPx#FG3%+6q!x+IR#_*c^q%u##bj-j^%))HUK?CMu9_C{K8nF;{
+jW%0+8)NPb#F`m_E@_3yVZ>hW7`Tyr@C-~Gg(dspS6bMWK
 
 literal 0
 HcmV?d00001
 
 diff --git a/Platforms/ZTE/nubia_np05j/IORT.dsl b/Platforms/ZTE/nubia_np05j/IORT.dsl
 new file mode 100644
-index 0000000..88f73e2
+index 0000000..f9077a2
 --- /dev/null
 +++ b/Platforms/ZTE/nubia_np05j/IORT.dsl
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,184 @@
 +// UFS-only OS DMA topology. The Android FDT supplies the SMMU aperture and coherent UFS SID; XBL supplies the MMU model and IRQ metadata.
 +
 +[000h 0000 004h]                   Signature : "IORT"    [IO Remapping Table]
@@ -561,7 +1001,8 @@ index 0000000..88f73e2
 +[417h 1047 001h] Memory Flags (decoded below) : 00
 +                                   Coherency : 0
 +                            Device Attribute : 0
-+[418h 1048 001h]           Memory Size Limit : 24
++               Ensured Coherency of Accesses : 0
++[418h 1048 001h]           Memory Size Limit : 30
 +[419h 1049 00Bh]                 Device Name : "\_SB_.UFS0"
 +[424h 1060 004h]                     Padding : 00 00 00 00
 +
@@ -573,10 +1014,10 @@ index 0000000..88f73e2
 +                              Single Mapping : 1
 diff --git a/Platforms/ZTE/nubia_np05j/MCFG.aml b/Platforms/ZTE/nubia_np05j/MCFG.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..198e900c5eff9dcde2e60246fd745a5fab0d0771
+index 0000000000000000000000000000000000000000..275b84204bbad66f4cd3176965fbec8d476ee38d
 GIT binary patch
 literal 60
-zcmeZuc5}C3U|?We<rnJY>8RirU|{N{pr8=Y&cNX57viJArmO&zh5-jCgAqgn08#J=
+zcmeZuc5}C3U|?W8=NIba>8RirU|{N{pr8=Y&cNX57vjUhqN)Ith5-jCgAqgn097go
 A0RR91
 
 literal 0
@@ -611,34 +1052,34 @@ index 0000000..a1291ea
 +[0004]                           Reserved : 00000000
 diff --git a/Platforms/ZTE/nubia_np05j/SPCR.aml b/Platforms/ZTE/nubia_np05j/SPCR.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..e172c35a7a8b7a2c68795056fc3828602687357a
+index 0000000000000000000000000000000000000000..7cb0b7cad2c3057c78dba4a22cb2f0a7b3c378b9
 GIT binary patch
-literal 80
-zcmWFza1IJ!U|?Wc;TP)U>8RirU|{N{pr8=Y&cNX57viJArmP?glxI+2U}iY562xNQ
-VU`S?SU|?rp1Pc8J0<a*I004Ho4gmlF
+literal 98
+zcmWFza1KghU|?Wb;}`1W>8RirU|{N{pr8=Y&cNX57vjUhqN*SalxI+2U}iY562xNQ
+jU`S?SU|?rp1Pc8J0<a(w!Nm~45ECElq!;QK<iY>|hlUXW
 
 literal 0
 HcmV?d00001
 
 diff --git a/Platforms/ZTE/nubia_np05j/SPCR.dsl b/Platforms/ZTE/nubia_np05j/SPCR.dsl
 new file mode 100644
-index 0000000..220240d
+index 0000000..bb7a076
 --- /dev/null
 +++ b/Platforms/ZTE/nubia_np05j/SPCR.dsl
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,45 @@
 +/*
-+ * Serial Port Console Redirection Table (SPCR) for nubia NP05J (SM8750P)
-+ * Points to QUPv3 SE7 GENI Debug UART @ 0x00A9C000, GIC GSIV 611 (0x243 + 32).
++ * Serial Port Console Redirection Table (SPCR Rev 4) สำหรับ nubia NP05J (SM8750P)
++ * ชี้ไปยัง QUPv3 SE7 GENI Debug UART @ 0x00A9C000, GIC GSIV 611 (0x243 + 32)
 + */
 +[0004]                          Signature : "SPCR"
-+[0004]                       Table Length : 00000050
-+[0001]                           Revision : 02
++[0004]                       Table Length : 00000062
++[0001]                           Revision : 04
 +[0001]                           Checksum : 00
 +[0006]                             Oem ID : "NUBIA "
 +[0008]                       Oem Table ID : "NP05J   "
 +[0004]                       Oem Revision : 00008750
 +[0004]                    Asl Compiler ID : "INTL"
-+[0004]              Asl Compiler Revision : 20230628
++[0004]              Asl Compiler Revision : 20250404
 +
 +[0001]                     Interface Type : 13
 +[0003]                           Reserved : 000000
@@ -658,7 +1099,7 @@ index 0000000..220240d
 +[0001]                          Stop Bits : 01
 +[0001]                       Flow Control : 00
 +[0001]                      Terminal Type : 03
-+[0001]                           Reserved : 00
++[0001]                           Language : 00
 +[0002]                      PCI Device ID : FFFF
 +[0002]                      PCI Vendor ID : FFFF
 +[0001]                            PCI Bus : 00
@@ -666,30 +1107,35 @@ index 0000000..220240d
 +[0001]                       PCI Function : 00
 +[0004]                          PCI Flags : 00000000
 +[0001]                        PCI Segment : 00
-+[0004]                           Reserved : 00000000
++[0004]                    Uart Clock Freq : 00000000
++[0004]                  Precise Baud rate : 00000000
++[0002]              NameSpaceStringLength : 000A
++[0002]              NameSpaceStringOffset : 0058
++[0010]                    NamespaceString : "\_SB.UARD"
 diff --git a/Silicon/Qualcomm/Pakala/APIC.aml b/Silicon/Qualcomm/Pakala/APIC.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..4a7acf6dd4fddfd981577e0131a102c622dd4a9f
+index 0000000000000000000000000000000000000000..f8e750ce48575eeddde38542d473a4e2569d2e44
 GIT binary patch
-literal 744
-zcmbWzK?=e!5Czbw)+kueMbQc_0=n=T(N(aNQ1n2qysF1A)5#wfBACvigx~&`q%Qc&
-zYeHlm-TmyH4esh%XKi>A`R>-9%)wHcWsen6k(S#}^mDZv-YhoXA3$U+U#vt#ao{1w
-zD~%A>B63*=;xs1M>i=8UB63*=Vi}Wsu@RBWIuK_u$rtw`a#;tWiAla_MNCcUL!6Hi
-Xk0KUg$+K$oxM@Ek{?V%%d8zpu8WRrz
+literal 724
+zcmb8sK?=e!5Czbw)+*SA3(*QLve1J>SHV((*fV)SSDwcC`AJ-e&<y;NX)>=ZwccG{
+zGm+*!j2CB(w>R5cWBgOZ4UfLA&qiXc?`b7c#pV8c>+k9ic2>LJ0}vsl;KX#XrI=nN
+z@DTNLLej=`aYGS6E{JpOkaBTL5yQD4*4iQEVn-3fxgajIL(0V?MGWVH*l358i-uyH
+Z<UGWsYDl?wqF8Z~*S1rN6`#ky^Z{!(4*>uG
 
 literal 0
 HcmV?d00001
 
 diff --git a/Silicon/Qualcomm/Pakala/APIC.dsl b/Silicon/Qualcomm/Pakala/APIC.dsl
 new file mode 100644
-index 0000000..fb2617b
+index 0000000..424a79b
 --- /dev/null
 +++ b/Silicon/Qualcomm/Pakala/APIC.dsl
-@@ -0,0 +1,215 @@
-+// SM8750 GICv3 with eight PSCI CPUs, per-GICC 0x40000-stride redistributor bases, and one ITS.
+@@ -0,0 +1,217 @@
++// SM8750 GICv3 MADT สำหรับ 8 คอร์ Oryon PSCI (CPU Interface Number 0..7, stride GICR 0x40000)
++// ตัด GIC ITS ออกเพื่อความเข้ากันได้กับ Windows 11 ARM64 บน Android EL1/Gunyah (เหมือน Qualcomm Kailua)
 +
 +[000h 0000 004h]                   Signature : "APIC"    [Multiple APIC Description Table (MADT)]
-+[004h 0004 004h]                Table Length : 000002E8
++[004h 0004 004h]                Table Length : 000002D4
 +[008h 0008 001h]                    Revision : 06
 +[009h 0009 001h]                    Checksum : 00
 +[00Ah 0010 006h]                      Oem ID : "NUBIA "
@@ -711,6 +1157,7 @@ index 0000000..fb2617b
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[03Ch 0060 004h]    Parking Protocol Version : 00000000
 +[040h 0064 004h]       Performance Interrupt : 00000017
 +[044h 0068 008h]              Parked Address : 0000000000000000
@@ -728,12 +1175,13 @@ index 0000000..fb2617b
 +[07Eh 0126 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[07Fh 0127 001h]                      Length : 52
 +[080h 0128 002h]                    Reserved : 0000
-+[082h 0130 004h]        CPU Interface Number : 00000000
++[082h 0130 004h]        CPU Interface Number : 00000001
 +[086h 0134 004h]               Processor UID : 00000001
 +[08Ah 0138 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[08Eh 0142 004h]    Parking Protocol Version : 00000000
 +[092h 0146 004h]       Performance Interrupt : 00000017
 +[096h 0150 008h]              Parked Address : 0000000000000000
@@ -751,12 +1199,13 @@ index 0000000..fb2617b
 +[0D0h 0208 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[0D1h 0209 001h]                      Length : 52
 +[0D2h 0210 002h]                    Reserved : 0000
-+[0D4h 0212 004h]        CPU Interface Number : 00000000
++[0D4h 0212 004h]        CPU Interface Number : 00000002
 +[0D8h 0216 004h]               Processor UID : 00000002
 +[0DCh 0220 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[0E0h 0224 004h]    Parking Protocol Version : 00000000
 +[0E4h 0228 004h]       Performance Interrupt : 00000017
 +[0E8h 0232 008h]              Parked Address : 0000000000000000
@@ -774,12 +1223,13 @@ index 0000000..fb2617b
 +[122h 0290 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[123h 0291 001h]                      Length : 52
 +[124h 0292 002h]                    Reserved : 0000
-+[126h 0294 004h]        CPU Interface Number : 00000000
++[126h 0294 004h]        CPU Interface Number : 00000003
 +[12Ah 0298 004h]               Processor UID : 00000003
 +[12Eh 0302 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[132h 0306 004h]    Parking Protocol Version : 00000000
 +[136h 0310 004h]       Performance Interrupt : 00000017
 +[13Ah 0314 008h]              Parked Address : 0000000000000000
@@ -797,12 +1247,13 @@ index 0000000..fb2617b
 +[174h 0372 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[175h 0373 001h]                      Length : 52
 +[176h 0374 002h]                    Reserved : 0000
-+[178h 0376 004h]        CPU Interface Number : 00000000
++[178h 0376 004h]        CPU Interface Number : 00000004
 +[17Ch 0380 004h]               Processor UID : 00000004
 +[180h 0384 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[184h 0388 004h]    Parking Protocol Version : 00000000
 +[188h 0392 004h]       Performance Interrupt : 00000017
 +[18Ch 0396 008h]              Parked Address : 0000000000000000
@@ -820,12 +1271,13 @@ index 0000000..fb2617b
 +[1C6h 0454 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[1C7h 0455 001h]                      Length : 52
 +[1C8h 0456 002h]                    Reserved : 0000
-+[1CAh 0458 004h]        CPU Interface Number : 00000000
++[1CAh 0458 004h]        CPU Interface Number : 00000005
 +[1CEh 0462 004h]               Processor UID : 00000005
 +[1D2h 0466 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[1D6h 0470 004h]    Parking Protocol Version : 00000000
 +[1DAh 0474 004h]       Performance Interrupt : 00000017
 +[1DEh 0478 008h]              Parked Address : 0000000000000000
@@ -843,12 +1295,13 @@ index 0000000..fb2617b
 +[218h 0536 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[219h 0537 001h]                      Length : 52
 +[21Ah 0538 002h]                    Reserved : 0000
-+[21Ch 0540 004h]        CPU Interface Number : 00000000
++[21Ch 0540 004h]        CPU Interface Number : 00000006
 +[220h 0544 004h]               Processor UID : 00000006
 +[224h 0548 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[228h 0552 004h]    Parking Protocol Version : 00000000
 +[22Ch 0556 004h]       Performance Interrupt : 00000017
 +[230h 0560 008h]              Parked Address : 0000000000000000
@@ -866,12 +1319,13 @@ index 0000000..fb2617b
 +[26Ah 0618 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 +[26Bh 0619 001h]                      Length : 52
 +[26Ch 0620 002h]                    Reserved : 0000
-+[26Eh 0622 004h]        CPU Interface Number : 00000000
++[26Eh 0622 004h]        CPU Interface Number : 00000007
 +[272h 0626 004h]               Processor UID : 00000007
 +[276h 0630 004h]       Flags (decoded below) : 00000001
 +                           Processor Enabled : 1
 +          Performance Interrupt Trigger Mode : 0
 +          Virtual GIC Interrupt Trigger Mode : 0
++                              Online Capable : 0
 +[27Ah 0634 004h]    Parking Protocol Version : 00000000
 +[27Eh 0638 004h]       Performance Interrupt : 00000017
 +[282h 0642 008h]              Parked Address : 0000000000000000
@@ -894,27 +1348,20 @@ index 0000000..fb2617b
 +[2CCh 0716 004h]              Interrupt Base : 00000000
 +[2D0h 0720 001h]                     Version : 03
 +[2D1h 0721 003h]                    Reserved : 000000
-+
-+[2D4h 0724 001h]               Subtable Type : 0F [Generic Interrupt Translator]
-+[2D5h 0725 001h]                      Length : 14
-+[2D6h 0726 002h]                    Reserved : 0000
-+[2D8h 0728 004h]              Translation ID : 00000000
-+[2DCh 0732 008h]                Base Address : 0000000016040000
-+[2E4h 0740 004h]                    Reserved : 00000000
 diff --git a/Silicon/Qualcomm/Pakala/FACP.aml b/Silicon/Qualcomm/Pakala/FACP.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..7aad825b067288c208c6243753f28597dcbd5022
+index 0000000000000000000000000000000000000000..3d192950ec557b4c672880c916e2238d97d08ec3
 GIT binary patch
 literal 276
-zcmZ>BbPf<<WME+1>KE$d>8KFk=<Vp^sGtzg&cNX57viJArmVmK0~|00CA0vlW<~~9
-JRDpr#0RRrg2mt^9
+zcmZ>BbPf<<WME+1=@;tc>8KFk=<Vp^sGtzg&cNX57vjUhqN>0E0~|00CA0ymW<~~9
+JRDpr#0RRNw2mt^9
 
 literal 0
 HcmV?d00001
 
 diff --git a/Silicon/Qualcomm/Pakala/FACP.dsl b/Silicon/Qualcomm/Pakala/FACP.dsl
 new file mode 100644
-index 0000000..3190ebf
+index 0000000..b688157
 --- /dev/null
 +++ b/Silicon/Qualcomm/Pakala/FACP.dsl
 @@ -0,0 +1,167 @@
@@ -974,7 +1421,7 @@ index 0000000..3190ebf
 +                PCIe ASPM Not Supported (V4) : 0
 +                   CMOS RTC Not Present (V5) : 0
 +[06Fh 0111 001h]                    Reserved : 00
-+[070h 0112 004h]       Flags (decoded below) : 00100000
++[070h 0112 004h]       Flags (decoded below) : 00300000
 +      WBINVD instruction is operational (V1) : 0
 +              WBINVD flushes all caches (V1) : 0
 +                    All CPUs support C1 (V1) : 0
@@ -996,7 +1443,7 @@ index 0000000..3190ebf
 +                 Use APIC Cluster Model (V4) : 0
 +     Use APIC Physical Destination Mode (V4) : 0
 +                       Hardware Reduced (V5) : 1
-+                      Low Power S0 Idle (V5) : 0
++                      Low Power S0 Idle (V5) : 1
 +
 +[074h 0116 00Ch]              Reset Register : [Generic Address Structure]
 +[074h 0116 001h]                    Space ID : 00 [SystemMemory]
@@ -1087,18 +1534,18 @@ index 0000000..3190ebf
 +[10Ch 0268 008h]               Hypervisor ID : 0000000000000000
 diff --git a/Silicon/Qualcomm/Pakala/GTDT.aml b/Silicon/Qualcomm/Pakala/GTDT.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..52252c17179fc33c9f0d3f634c8ba63660604308
+index 0000000000000000000000000000000000000000..10a28a493b8c0e8f8095f27f99462aff1af90665
 GIT binary patch
 literal 156
-zcmZ<{aS55jz`($C)-Tk_(@`P7(c96-Q9&V~oq@sAFT_WKO<CbT6abYm$O17N5X(Vn
-tX(%lPrD19rf&2s@X0QPf4Pqb?Bqjo4fPer*j6nfHYd}O9)Sxto0suZJ9033T
+zcmZ<{aS55jz`(%t-7nP1(@`P7(c96-Q9&V~oq@sAFT{t1MOEQH6abYm$O1775X(Vn
+uX(%lPrD19rf&2s@X0QPf4Pqb?Bqjo4fPer*j6nfHYd}O9)SxsIkOlxj{2T!Q
 
 literal 0
 HcmV?d00001
 
 diff --git a/Silicon/Qualcomm/Pakala/GTDT.dsl b/Silicon/Qualcomm/Pakala/GTDT.dsl
 new file mode 100644
-index 0000000..e896d25
+index 0000000..698d400
 --- /dev/null
 +++ b/Silicon/Qualcomm/Pakala/GTDT.dsl
 @@ -0,0 +1,65 @@
@@ -1118,27 +1565,27 @@ index 0000000..e896d25
 +[02Ch 0044 004h]                    Reserved : 00000000
 +
 +[030h 0048 004h]        Secure EL1 Interrupt : 0000001D
-+[034h 0052 004h]   EL1 Flags (decoded below) : 00000006
++[034h 0052 004h]   EL1 Flags (decoded below) : 00000004
 +                                Trigger Mode : 0
-+                                    Polarity : 1
++                                    Polarity : 0
 +                                   Always On : 1
 +
 +[038h 0056 004h]    Non-Secure EL1 Interrupt : 0000001E
-+[03Ch 0060 004h]  NEL1 Flags (decoded below) : 00000006
++[03Ch 0060 004h]  NEL1 Flags (decoded below) : 00000004
 +                                Trigger Mode : 0
-+                                    Polarity : 1
++                                    Polarity : 0
 +                                   Always On : 1
 +
 +[040h 0064 004h]     Virtual Timer Interrupt : 0000001B
-+[044h 0068 004h]    VT Flags (decoded below) : 00000006
++[044h 0068 004h]    VT Flags (decoded below) : 00000004
 +                                Trigger Mode : 0
-+                                    Polarity : 1
++                                    Polarity : 0
 +                                   Always On : 1
 +
 +[048h 0072 004h]    Non-Secure EL2 Interrupt : 0000001A
-+[04Ch 0076 004h]  NEL2 Flags (decoded below) : 00000006
++[04Ch 0076 004h]  NEL2 Flags (decoded below) : 00000004
 +                                Trigger Mode : 0
-+                                    Polarity : 1
++                                    Polarity : 0
 +                                   Always On : 1
 +[050h 0080 008h]  Counter Read Block Address : FFFFFFFFFFFFFFFF
 +
@@ -1164,16 +1611,16 @@ index 0000000..e896d25
 +[094h 0148 004h] Virtual Timer Flags (decoded below) : 00000000
 +                                Trigger Mode : 0
 +                                    Polarity : 0
-+[098h 0152 004h] Common Flags (decoded below) : 00000000
++[098h 0152 004h] Common Flags (decoded below) : 00000002
 +                                      Secure : 0
-+                                   Always On : 0
++                                   Always On : 1
 diff --git a/Silicon/Qualcomm/Pakala/PPTT.aml b/Silicon/Qualcomm/Pakala/PPTT.aml
 new file mode 100644
-index 0000000000000000000000000000000000000000..256dad8b763a78416a2bb1dc50551f3a28643c52
+index 0000000000000000000000000000000000000000..3a99488aab9cda7f6054577be82d071a4150523f
 GIT binary patch
 literal 256
-zcmWFt2nk_eWME(l@e6hGbW{j%^mg=dR8R<LXJGL33-QrlQ&wOQVE`#X1wb(nP=Qbo
-x5-7$6WLe-4gPVb*jtQm~NsJkb7z-9LRwOYH6PsI(0L9sm)PdXw5@Uyo0RV;_3;_TD
+zcmWFt2nk_eWME*b@C$YFbW{j%^mg=dR8R<LXJGL33-MuLQB`0NVE`#X1wb(nP=Qbo
+x5-7$6WLe-4gPVb*jtQm~NsJkb7z-9LRwOYH6PsI(0L9sm)PdXw5@Uyo0RV|t3;_TD
 
 literal 0
 HcmV?d00001

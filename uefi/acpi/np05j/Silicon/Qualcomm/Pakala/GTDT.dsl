@@ -14,27 +14,27 @@
 [02Ch 0044 004h]                    Reserved : 00000000
 
 [030h 0048 004h]        Secure EL1 Interrupt : 0000001D
-[034h 0052 004h]   EL1 Flags (decoded below) : 00000006
+[034h 0052 004h]   EL1 Flags (decoded below) : 00000004
                                 Trigger Mode : 0
-                                    Polarity : 1
+                                    Polarity : 0
                                    Always On : 1
 
 [038h 0056 004h]    Non-Secure EL1 Interrupt : 0000001E
-[03Ch 0060 004h]  NEL1 Flags (decoded below) : 00000006
+[03Ch 0060 004h]  NEL1 Flags (decoded below) : 00000004
                                 Trigger Mode : 0
-                                    Polarity : 1
+                                    Polarity : 0
                                    Always On : 1
 
 [040h 0064 004h]     Virtual Timer Interrupt : 0000001B
-[044h 0068 004h]    VT Flags (decoded below) : 00000006
+[044h 0068 004h]    VT Flags (decoded below) : 00000004
                                 Trigger Mode : 0
-                                    Polarity : 1
+                                    Polarity : 0
                                    Always On : 1
 
 [048h 0072 004h]    Non-Secure EL2 Interrupt : 0000001A
-[04Ch 0076 004h]  NEL2 Flags (decoded below) : 00000006
+[04Ch 0076 004h]  NEL2 Flags (decoded below) : 00000004
                                 Trigger Mode : 0
-                                    Polarity : 1
+                                    Polarity : 0
                                    Always On : 1
 [050h 0080 008h]  Counter Read Block Address : FFFFFFFFFFFFFFFF
 
@@ -60,6 +60,6 @@
 [094h 0148 004h] Virtual Timer Flags (decoded below) : 00000000
                                 Trigger Mode : 0
                                     Polarity : 0
-[098h 0152 004h] Common Flags (decoded below) : 00000000
+[098h 0152 004h] Common Flags (decoded below) : 00000002
                                       Secure : 0
-                                   Always On : 0
+                                   Always On : 1

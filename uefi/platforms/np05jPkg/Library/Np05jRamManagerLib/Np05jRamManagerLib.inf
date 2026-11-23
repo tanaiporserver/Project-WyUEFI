@@ -1,0 +1,32 @@
+## @file
+#  ไลบรารีจัดการช่วง RAM สำหรับ nubia NP05J รองรับการจำกัดเพดาน RAM (RamLimitGb) จาก BIOS Setup
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jRamManagerLib
+  FILE_GUID                      = A1E45113-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = RamManagerLib|DXE_DRIVER
+  CONSTRUCTOR                    = Np05jGetRamPartitions
+
+[Sources]
+  Np05jRamManager.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  QcomPkg/QcomPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  DebugLib
+  MemoryAllocationLib
+  Np05jBiosConfigLib
+  UefiBootServicesTableLib
+
+[Protocols]
+  gEfiRamPartitionProtocolGuid

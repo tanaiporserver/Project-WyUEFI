@@ -1,7 +1,8 @@
-// SM8750 GICv3 with eight PSCI CPUs, per-GICC 0x40000-stride redistributor bases, and one ITS.
+// SM8750 GICv3 MADT สำหรับ 8 คอร์ Oryon PSCI (CPU Interface Number 0..7, stride GICR 0x40000)
+// ตัด GIC ITS ออกเพื่อความเข้ากันได้กับ Windows 11 ARM64 บน Android EL1/Gunyah (เหมือน Qualcomm Kailua)
 
 [000h 0000 004h]                   Signature : "APIC"    [Multiple APIC Description Table (MADT)]
-[004h 0004 004h]                Table Length : 000002E8
+[004h 0004 004h]                Table Length : 000002D4
 [008h 0008 001h]                    Revision : 06
 [009h 0009 001h]                    Checksum : 00
 [00Ah 0010 006h]                      Oem ID : "NUBIA "
@@ -23,6 +24,7 @@
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [03Ch 0060 004h]    Parking Protocol Version : 00000000
 [040h 0064 004h]       Performance Interrupt : 00000017
 [044h 0068 008h]              Parked Address : 0000000000000000
@@ -40,12 +42,13 @@
 [07Eh 0126 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [07Fh 0127 001h]                      Length : 52
 [080h 0128 002h]                    Reserved : 0000
-[082h 0130 004h]        CPU Interface Number : 00000000
+[082h 0130 004h]        CPU Interface Number : 00000001
 [086h 0134 004h]               Processor UID : 00000001
 [08Ah 0138 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [08Eh 0142 004h]    Parking Protocol Version : 00000000
 [092h 0146 004h]       Performance Interrupt : 00000017
 [096h 0150 008h]              Parked Address : 0000000000000000
@@ -63,12 +66,13 @@
 [0D0h 0208 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [0D1h 0209 001h]                      Length : 52
 [0D2h 0210 002h]                    Reserved : 0000
-[0D4h 0212 004h]        CPU Interface Number : 00000000
+[0D4h 0212 004h]        CPU Interface Number : 00000002
 [0D8h 0216 004h]               Processor UID : 00000002
 [0DCh 0220 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [0E0h 0224 004h]    Parking Protocol Version : 00000000
 [0E4h 0228 004h]       Performance Interrupt : 00000017
 [0E8h 0232 008h]              Parked Address : 0000000000000000
@@ -86,12 +90,13 @@
 [122h 0290 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [123h 0291 001h]                      Length : 52
 [124h 0292 002h]                    Reserved : 0000
-[126h 0294 004h]        CPU Interface Number : 00000000
+[126h 0294 004h]        CPU Interface Number : 00000003
 [12Ah 0298 004h]               Processor UID : 00000003
 [12Eh 0302 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [132h 0306 004h]    Parking Protocol Version : 00000000
 [136h 0310 004h]       Performance Interrupt : 00000017
 [13Ah 0314 008h]              Parked Address : 0000000000000000
@@ -109,12 +114,13 @@
 [174h 0372 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [175h 0373 001h]                      Length : 52
 [176h 0374 002h]                    Reserved : 0000
-[178h 0376 004h]        CPU Interface Number : 00000000
+[178h 0376 004h]        CPU Interface Number : 00000004
 [17Ch 0380 004h]               Processor UID : 00000004
 [180h 0384 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [184h 0388 004h]    Parking Protocol Version : 00000000
 [188h 0392 004h]       Performance Interrupt : 00000017
 [18Ch 0396 008h]              Parked Address : 0000000000000000
@@ -132,12 +138,13 @@
 [1C6h 0454 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [1C7h 0455 001h]                      Length : 52
 [1C8h 0456 002h]                    Reserved : 0000
-[1CAh 0458 004h]        CPU Interface Number : 00000000
+[1CAh 0458 004h]        CPU Interface Number : 00000005
 [1CEh 0462 004h]               Processor UID : 00000005
 [1D2h 0466 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [1D6h 0470 004h]    Parking Protocol Version : 00000000
 [1DAh 0474 004h]       Performance Interrupt : 00000017
 [1DEh 0478 008h]              Parked Address : 0000000000000000
@@ -155,12 +162,13 @@
 [218h 0536 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [219h 0537 001h]                      Length : 52
 [21Ah 0538 002h]                    Reserved : 0000
-[21Ch 0540 004h]        CPU Interface Number : 00000000
+[21Ch 0540 004h]        CPU Interface Number : 00000006
 [220h 0544 004h]               Processor UID : 00000006
 [224h 0548 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [228h 0552 004h]    Parking Protocol Version : 00000000
 [22Ch 0556 004h]       Performance Interrupt : 00000017
 [230h 0560 008h]              Parked Address : 0000000000000000
@@ -178,12 +186,13 @@
 [26Ah 0618 001h]               Subtable Type : 0B [Generic Interrupt Controller]
 [26Bh 0619 001h]                      Length : 52
 [26Ch 0620 002h]                    Reserved : 0000
-[26Eh 0622 004h]        CPU Interface Number : 00000000
+[26Eh 0622 004h]        CPU Interface Number : 00000007
 [272h 0626 004h]               Processor UID : 00000007
 [276h 0630 004h]       Flags (decoded below) : 00000001
                            Processor Enabled : 1
           Performance Interrupt Trigger Mode : 0
           Virtual GIC Interrupt Trigger Mode : 0
+                              Online Capable : 0
 [27Ah 0634 004h]    Parking Protocol Version : 00000000
 [27Eh 0638 004h]       Performance Interrupt : 00000017
 [282h 0642 008h]              Parked Address : 0000000000000000
@@ -206,10 +215,3 @@
 [2CCh 0716 004h]              Interrupt Base : 00000000
 [2D0h 0720 001h]                     Version : 03
 [2D1h 0721 003h]                    Reserved : 000000
-
-[2D4h 0724 001h]               Subtable Type : 0F [Generic Interrupt Translator]
-[2D5h 0725 001h]                      Length : 14
-[2D6h 0726 002h]                    Reserved : 0000
-[2D8h 0728 004h]              Translation ID : 00000000
-[2DCh 0732 008h]                Base Address : 0000000016040000
-[2E4h 0740 004h]                    Reserved : 00000000

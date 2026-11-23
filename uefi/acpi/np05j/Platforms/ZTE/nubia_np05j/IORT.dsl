@@ -171,7 +171,8 @@
 [417h 1047 001h] Memory Flags (decoded below) : 00
                                    Coherency : 0
                             Device Attribute : 0
-[418h 1048 001h]           Memory Size Limit : 24
+               Ensured Coherency of Accesses : 0
+[418h 1048 001h]           Memory Size Limit : 30
 [419h 1049 00Bh]                 Device Name : "\_SB_.UFS0"
 [424h 1060 004h]                     Padding : 00 00 00 00
 

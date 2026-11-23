@@ -541,6 +541,84 @@ class Np05jPortTests(unittest.TestCase):
         self.assertIn('SunUEFI-NP05J-ESP', rootfs_yml)
         self.assertIn('SunUEFI-NP05J-Root-', rootfs_yml)
 
+    def test_np05j_woa_readiness_guards(self):
+        # ตรวจสอบไลบรารี KEP แบบรันไทม์, RamLimitGb และ MemoryMap carveouts สำหรับ WoA
+        dsc = (ROOT / 'uefi/platforms/np05jPkg/nubia_np05j.dsc').read_text()
+        self.assertIn('ErrataPatchesLib|nubia_np05jPkg/Library/Np05jErrataPatchesLib/Np05jErrataPatchesLib.inf', dsc)
+        self.assertIn('RamManagerLib|nubia_np05jPkg/Library/Np05jRamManagerLib/Np05jRamManagerLib.inf', dsc)
+
+        kep_c = (ROOT / 'uefi/platforms/np05jPkg/Library/Np05jErrataPatchesLib/Np05jErrataPatchesLib.c').read_text()
+        for tok in ('KepEnable', 'KepPatchActlr', 'KepPatchAmcnten', 'KepPatchGicIrm', 'KepPatchPsciMemProt'):
+            self.assertIn(tok, kep_c)
+
+        mem_c = (ROOT / 'uefi/platforms/np05jPkg/Library/MemoryMapLib/MemoryMapLib.c').read_text()
+        for tok in ('"tz_sec_gap", 0xD8600000, 0x0B120000', '"hyp_high_gap1", 0x8AF300000, 0x00D00000', '"hyp_high_gap2", 0x8B12C0000, 0x0ED40000'):
+            self.assertIn(tok, mem_c)
+
+        # ตรวจสอบความปลอดภัยไม่เขียนคอนฟิก BIOS ลงพาร์ติชัน FAT สต็อก Android
+        cfg_c = (ROOT / 'uefi/platforms/np05jPkg/Library/Np05jBiosConfigLib/Np05jBiosConfigLib.c').read_text()
+        self.assertIn('gEfiPartTypeSystemPartGuid', cfg_c)
+        self.assertNotIn('for (UINTN Pass = 0; (Pass < 2)', cfg_c)
+        self.assertIn('Config->KepPatchGicIrm       = 0;', cfg_c)
+
+        # ตรวจสอบความถูกต้องของตาราง ACPI สำหรับ WoA บน NP05J
+        dsdt = (ROOT / 'uefi/acpi/np05j/Platforms/ZTE/nubia_np05j/DSDT.asl').read_text()
+        self.assertIn('Name (UCCA, 0x00010001)', dsdt)
+        self.assertIn('Name (URSE, 0x00010001)', dsdt)
+        self.assertIn('Memory32Fixed (ReadWrite, 0x01D84000, 0x00023000)', dsdt)
+        self.assertIn('Memory32Fixed (ReadWrite, 0x0F100000, 0x00102000)', dsdt)
+        self.assertNotIn('Name (_CID, "PNP0C50")', dsdt)
+        # ตรวจสอบโครงสร้าง URS0 (Dual-Role DWC3) และ PCI0 (PNP0A08 Root Complex + WCN7861)
+        for tok in (
+            'Device (URS0)',
+            '"PNP0CA1"',
+            '0x000000A2',
+            '0x0000031A',
+            '0x00000318',
+            '0x00000317',
+            'Device (UFN0)',
+            'Device (PCI0)',
+            'EisaId ("PNP0A08")',
+            'Return (0x0000000040000000)',
+            '0x40300000',
+            '0x03D00000',
+            '0x000000B5',
+            '0x000000B8',
+            'Device (RP00)',
+            'Device (WCN0)',
+            'Name (_CID, "QCOM0C0E")',
+            '"QCOM0C16"',
+            'Memory32Fixed (ReadWrite, 0x0F130000, 0x00001000)',
+            'Memory32Fixed (ReadWrite, 0x0F1A2000, 0x00001000)',
+        ):
+            self.assertIn(tok, dsdt)
+        touch_dxe = (ROOT / 'uefi/platforms/np05jPkg/Drivers/Np05jTouchDxe/Np05jTouchDxe.c').read_text()
+        self.assertIn('mKeepRailsForOs', touch_dxe)
+        self.assertIn('if (!mKeepRailsForOs)', touch_dxe)
+        win_touch_inf = (ROOT / 'windows/drivers/np05j-syna-touch/Np05jSynaTouch.inf').read_text()
+        self.assertIn('ACPI\\SYNA3930', win_touch_inf)
+        self.assertIn('"vhf"', win_touch_inf)
+        self.assertIn('KmdfLibraryVersion = 1.31', win_touch_inf)
+        self.assertTrue((ROOT / 'windows/drivers/np05j-syna-touch/Np05jSynaTouch.c').is_file())
+        self.assertTrue((ROOT / 'tools/build/np05j_winpe.py').is_file())
+        self.assertIn('winpe-np05j)', (ROOT / 'build.sh').read_text())
+        apic = (ROOT / 'uefi/acpi/np05j/Silicon/Qualcomm/Pakala/APIC.dsl').read_text()
+        self.assertIn('CPU Interface Number : 00000007', apic)
+        self.assertNotIn('Generic Interrupt Translator', apic)
+        facp = (ROOT / 'uefi/acpi/np05j/Silicon/Qualcomm/Pakala/FACP.dsl').read_text()
+        self.assertIn('Low Power S0 Idle (V5) : 1', facp)
+        gtdt = (ROOT / 'uefi/acpi/np05j/Silicon/Qualcomm/Pakala/GTDT.dsl').read_text()
+        self.assertIn('EL1 Flags (decoded below) : 00000004', gtdt)
+        self.assertIn('Common Flags (decoded below) : 00000002', gtdt)
+        acpi_upd = (ROOT / 'uefi/platforms/np05jPkg/Library/Np05jAcpiUpdateLib/Np05jAcpiUpdate.c').read_text()
+        self.assertIn("SIGNATURE_32 ('U', 'C', 'C', 'A')", acpi_upd)
+        self.assertIn("SIGNATURE_32 ('U', 'R', 'S', 'E')", acpi_upd)
+        self.assertIn('NP05J_ACPI_PROFILE_MINIMAL', acpi_upd)
+        woa_doc = (ROOT / 'docs/np05j/woa-porting.md').read_text()
+        self.assertIn('QCOM24A5', woa_doc)
+        self.assertIn('URS0', woa_doc)
+        self.assertIn('PCI0', woa_doc)
+
     def test_native_np05j_port_c_suite(self):
         res = subprocess.run(
             ['bash', str(ROOT / 'tests/native/test_np05j_port.sh')],

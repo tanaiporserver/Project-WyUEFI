@@ -54,7 +54,7 @@
                 PCIe ASPM Not Supported (V4) : 0
                    CMOS RTC Not Present (V5) : 0
 [06Fh 0111 001h]                    Reserved : 00
-[070h 0112 004h]       Flags (decoded below) : 00100000
+[070h 0112 004h]       Flags (decoded below) : 00300000
       WBINVD instruction is operational (V1) : 0
               WBINVD flushes all caches (V1) : 0
                     All CPUs support C1 (V1) : 0
@@ -76,7 +76,7 @@
                  Use APIC Cluster Model (V4) : 0
      Use APIC Physical Destination Mode (V4) : 0
                        Hardware Reduced (V5) : 1
-                      Low Power S0 Idle (V5) : 0
+                      Low Power S0 Idle (V5) : 1
 
 [074h 0116 00Ch]              Reset Register : [Generic Address Structure]
 [074h 0116 001h]                    Space ID : 00 [SystemMemory]

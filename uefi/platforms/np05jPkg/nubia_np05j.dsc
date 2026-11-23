@@ -100,7 +100,7 @@
   PlatformBootOptionsLib|SiliciumNullPkg/Library/PlatformBootOptionsLibNull/PlatformBootOptionsLibNull.inf
 
   #
-  # NP05J SunUEFI Libraries (Touch, Splash, Unlocked BIOS Config, Hardware Reset, RTC, WoA ACPI)
+  # NP05J SunUEFI Libraries (Touch, Splash, Unlocked BIOS Config, Hardware Reset, RTC, WoA ACPI/KEP/RAM)
   #
   Np05jBiosConfigLib|nubia_np05jPkg/Library/Np05jBiosConfigLib/Np05jBiosConfigLib.inf
   Np05jSplashLib|nubia_np05jPkg/Library/Np05jSplashLib/Np05jSplashLib.inf
@@ -108,6 +108,8 @@
   RealTimeClockLib|nubia_np05jPkg/Library/Np05jRealTimeClockLib/Np05jRealTimeClockLib.inf
   PlatformBootManagerLib|nubia_np05jPkg/Library/Np05jBootManagerLib/Np05jBootManagerLib.inf
   AcpiTableUpdateLib|nubia_np05jPkg/Library/Np05jAcpiUpdateLib/Np05jAcpiUpdateLib.inf
+  ErrataPatchesLib|nubia_np05jPkg/Library/Np05jErrataPatchesLib/Np05jErrataPatchesLib.inf
+  RamManagerLib|nubia_np05jPkg/Library/Np05jRamManagerLib/Np05jRamManagerLib.inf
   CustomizedDisplayLib|MdeModulePkg/Library/CustomizedDisplayLib/CustomizedDisplayLib.inf
   FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
 

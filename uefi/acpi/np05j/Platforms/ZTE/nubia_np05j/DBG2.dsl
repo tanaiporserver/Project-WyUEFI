@@ -37,7 +37,7 @@
 [0008]                            Address : 0000000000A9C000
 
 [0004]                       Address Size : 00004000
-[0010]                           Namepath : "\\_SB.UARD"
+[0010]                           Namepath : "\_SB.UARD"
 
 [0001]                           Revision : 01
 [0002]                             Length : 0030
@@ -60,4 +60,4 @@
 [0008]                            Address : 000000000A600000
 
 [0004]                       Address Size : 00100000
-[0010]                           Namepath : "\\_SB.USB0"
+[0010]                           Namepath : "\_SB.USB0"

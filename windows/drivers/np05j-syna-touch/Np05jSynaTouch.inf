@@ -1,0 +1,64 @@
+; ไดรเวอร์จอสัมผัส Synaptics S3930TB0A0 (TCM v2) สำหรับ Windows 11 / WinPE ARM64 บน nubia NP05J
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider    = %Provider%
+DriverVer   = 11/23/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%Provider% = Models,NTARM64.10.0...19041
+
+[Models.NTARM64.10.0...19041]
+%DeviceDesc% = Np05jTouch_Install, ACPI\SYNA3930
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+Np05jSynaTouch.sys = 1
+
+[Np05jTouch_Install.NT]
+CopyFiles = DriverCopy
+
+[DriverCopy]
+Np05jSynaTouch.sys
+
+[Np05jTouch_Install.NT.HW]
+AddReg = HardwareSettings
+
+[HardwareSettings]
+HKR,,"LowerFilters",0x00010008,"vhf"
+
+[Np05jTouch_Install.NT.Services]
+AddService = Np05jSynaTouch,0x00000002,DriverService
+
+[DriverService]
+DisplayName   = %DeviceDesc%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %13%\Np05jSynaTouch.sys
+AddReg        = ServiceParams
+
+[ServiceParams]
+HKR,Parameters,SwapXY,0x00010001,1
+HKR,Parameters,InvertX,0x00010001,0
+HKR,Parameters,InvertY,0x00010001,1
+HKR,Parameters,PollIntervalMs,0x00010001,10
+HKR,Parameters,SkipReset,0x00010001,0
+
+[Np05jTouch_Install.NT.Wdf]
+KmdfService = Np05jSynaTouch,KmdfSettings
+
+[KmdfSettings]
+KmdfLibraryVersion = 1.31
+
+[Strings]
+Provider   = "Project WyUEFI (NP05J)"
+DeviceDesc = "nubia NP05J Synaptics S3930TB0A0 Touchscreen (TCM v2)"
+DiskName   = "NP05J ARM64 Touchscreen Driver"

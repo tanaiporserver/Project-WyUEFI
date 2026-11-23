@@ -9,6 +9,7 @@
 
 #include <Uefi.h>
 #include <Guid/FileSystemInfo.h>
+#include <Guid/Gpt.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -16,6 +17,7 @@
 #include <Library/Np05jBiosConfigLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
+#include <Protocol/PartitionInfo.h>
 #include <Protocol/SimpleFileSystem.h>
 
 STATIC
@@ -94,13 +96,14 @@ Np05jBiosConfigGetDefaults (
   Config->KepEnable            = 1;
   Config->KepPatchActlr        = 1;
   Config->KepPatchAmcnten      = 1;
-  Config->KepPatchGicIrm       = 1;
+  /* ปิด IRM เป็นค่าเริ่มต้นบน SM8750P เพราะ MPIDR เป็น 2 คลัสเตอร์ (Aff2=0/1) ไม่ตรงกับสคริปต์ IRM คลัสเตอร์เดียว */
+  Config->KepPatchGicIrm       = 0;
   Config->KepPatchPsciMemProt  = 1;
   Config->RuntimeServicesMode  = 0; /* Enabled */
   Config->AcpiSmmuIortMode     = NP05J_IORT_OMIT_FOR_WOA;
   Config->AcpiUsbEnable        = 1;
-  Config->AcpiTouchEnable      = 1;
-  Config->AcpiPcieEnable       = 1;
+  Config->AcpiTouchEnable      = 0; /* ปิดไว้จนกว่าจะมีไดรเวอร์ Windows Synaptics TCM v2 SPI4 */
+  Config->AcpiPcieEnable       = 0; /* ปิด MCFG/PCIe0 เป็นค่าเริ่มต้นเพื่อเลี่ยงความเสี่ยงช่วง bring-up */
   Config->AcpiButtonsEnable    = 1;
   Config->DtbFixupEnable       = 1;
 
@@ -133,23 +136,27 @@ Np05jBiosConfigApplyPreset (
   if (Preset == Np05jPresetWindowsOnArm) {
     Config->DefaultOs           = NP05J_OS_WINDOWS_ARM;
     Config->OsCompatProfile     = NP05J_COMPAT_WINDOWS_11_ARM;
-    Config->AcpiTableProfile    = NP05J_ACPI_PROFILE_WOA_FULL;
+    Config->AcpiTableProfile    = NP05J_ACPI_PROFILE_MINIMAL;
     Config->KepEnable           = 1;
     Config->KepPatchActlr       = 1;
     Config->KepPatchAmcnten     = 1;
-    Config->KepPatchGicIrm      = 1;
+    Config->KepPatchGicIrm      = 0;
     Config->KepPatchPsciMemProt = 1;
     Config->RuntimeServicesMode = 0;
     Config->AcpiSmmuIortMode    = NP05J_IORT_OMIT_FOR_WOA;
     Config->AcpiUsbEnable       = 1;
     Config->AcpiTouchEnable     = 1;
+    Config->AcpiPcieEnable      = 0;
     Config->AcpiButtonsEnable   = 1;
     Config->SecureBootMode      = NP05J_SB_DISABLED;
     Config->AllowUnsignedEfi    = 1;
   } else if (Preset == Np05jPresetMainlineLinux) {
     Config->DefaultOs           = NP05J_OS_LINUX_DT;
     Config->OsCompatProfile     = NP05J_COMPAT_LINUX_DT;
+    Config->AcpiTableProfile    = NP05J_ACPI_PROFILE_WOA_FULL;
     Config->AcpiSmmuIortMode    = NP05J_IORT_ENABLED;
+    Config->AcpiPcieEnable      = 1;
+    Config->AcpiTouchEnable     = 1;
     Config->DtbFixupEnable      = 1;
   }
 
@@ -452,44 +459,54 @@ Np05jBiosConfigSave (
     if (!EFI_ERROR (Status) && (Handles != NULL)) {
       CHAR16 *TargetSlot = ((ToSave.Sequence & 1ULL) != 0ULL) ? NP05J_BIOS_CONFIG_FILE_B : NP05J_BIOS_CONFIG_FILE_A;
 
-      /* Pass 1: prefer volume that already holds \NP05J or \EFI */
-      for (UINTN Pass = 0; (Pass < 2) && EFI_ERROR (DiskStatus); Pass++) {
-        for (UINTN Index = 0; Index < Count; Index++) {
-          EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
-          EFI_FILE_PROTOCOL               *Root;
-          EFI_FILE_PROTOCOL               *Probe;
+      /* ขอบเขตความปลอดภัย: เขียนไฟล์คอนฟิกเฉพาะพาร์ติชัน GPT ESP หรือ volume ที่มี \EFI / \NP05J อยู่แล้วเท่านั้น
+       * ห้ามเขียนทับพาร์ติชัน FAT สต็อกของ Android (เช่น logfs หรือ modem) โดยเด็ดขาด
+       */
+      for (UINTN Index = 0; Index < Count; Index++) {
+        EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
+        EFI_PARTITION_INFO_PROTOCOL     *PartInfo = NULL;
+        EFI_FILE_PROTOCOL               *Root;
+        EFI_FILE_PROTOCOL               *Probe;
+        BOOLEAN                          Allowed = FALSE;
 
-          if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs))) {
-            continue;
-          }
-          if (EFI_ERROR (Fs->OpenVolume (Fs, &Root))) {
-            continue;
-          }
-          if (!IsVolumeWritable (Root)) {
-            Root->Close (Root);
-            continue;
-          }
+        if (!EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiPartitionInfoProtocolGuid, (VOID **)&PartInfo)) &&
+            (PartInfo != NULL) &&
+            (PartInfo->Type == PARTITION_TYPE_GPT) &&
+            CompareGuid (&PartInfo->Info.Gpt.PartitionTypeGUID, &gEfiPartTypeSystemPartGuid))
+        {
+          Allowed = TRUE;
+        }
 
-          if (Pass == 0) {
-            BOOLEAN Preferred = FALSE;
-            if (!EFI_ERROR (Root->Open (Root, &Probe, L"\\NP05J", EFI_FILE_MODE_READ, 0))) {
-              Preferred = TRUE;
-              Probe->Close (Probe);
-            } else if (!EFI_ERROR (Root->Open (Root, &Probe, L"\\EFI", EFI_FILE_MODE_READ, 0))) {
-              Preferred = TRUE;
-              Probe->Close (Probe);
-            }
-            if (!Preferred) {
-              Root->Close (Root);
-              continue;
-            }
-          }
-
-          DiskStatus = WriteBiosFileSlot (Root, TargetSlot, &ToSave);
+        if (EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs))) {
+          continue;
+        }
+        if (EFI_ERROR (Fs->OpenVolume (Fs, &Root))) {
+          continue;
+        }
+        if (!IsVolumeWritable (Root)) {
           Root->Close (Root);
-          if (!EFI_ERROR (DiskStatus)) {
-            break;
+          continue;
+        }
+
+        if (!Allowed) {
+          if (!EFI_ERROR (Root->Open (Root, &Probe, L"\\NP05J", EFI_FILE_MODE_READ, 0))) {
+            Allowed = TRUE;
+            Probe->Close (Probe);
+          } else if (!EFI_ERROR (Root->Open (Root, &Probe, L"\\EFI", EFI_FILE_MODE_READ, 0))) {
+            Allowed = TRUE;
+            Probe->Close (Probe);
           }
+        }
+
+        if (!Allowed) {
+          Root->Close (Root);
+          continue;
+        }
+
+        DiskStatus = WriteBiosFileSlot (Root, TargetSlot, &ToSave);
+        Root->Close (Root);
+        if (!EFI_ERROR (DiskStatus)) {
+          break;
         }
       }
 

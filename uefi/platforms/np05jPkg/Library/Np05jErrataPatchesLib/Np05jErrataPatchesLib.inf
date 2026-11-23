@@ -1,0 +1,28 @@
+## @file
+#  ไลบรารีแพตช์ Errata ของ Windows ARM64 แบบปรับค่าตาม BIOS Setup สำหรับ nubia NP05J (SM8750P)
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = Np05jErrataPatchesLib
+  FILE_GUID                      = A1E45112-9B1C-4F2A-8C3D-10054E503035
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = ErrataPatchesLib|DXE_DRIVER
+
+[Sources]
+  Np05jErrataPatchesLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  SiliciumPkg/SiliciumPkg.dec
+  QcomPkg/QcomPkg.dec
+  nubia_np05jPkg/nubia_np05j.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  Np05jBiosConfigLib

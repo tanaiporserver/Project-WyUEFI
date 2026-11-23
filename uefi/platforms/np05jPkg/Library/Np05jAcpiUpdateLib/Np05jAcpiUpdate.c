@@ -59,18 +59,24 @@ UpdateAcpiTables (
   UINT16 Svmj = 2U;
   UINT16 Svmi = 0U;
   UINT64 Sosn = 0x4E5030354A008750ULL;
-  UINT32 Stor;
+  UINT32 Stor = 1U;
+  UINT32 Ucca;
   UINT32 Usbe;
+  UINT32 Urse;
   UINT32 Tsen;
   UINT32 Pcie;
   UINT32 Btne;
+  BOOLEAN MinimalAcpi;
 
   Np05jBiosConfigLoad (&Config);
 
-  Stor = (Config.UfsCacheCoherency != 0U) ? 1U : 0U;
+  MinimalAcpi = (Config.AcpiTableProfile == NP05J_ACPI_PROFILE_MINIMAL);
+  Ucca = (Config.UfsCacheCoherency != 0U) ? 1U : 0U;
   Usbe = (Config.AcpiUsbEnable != 0U) ? 1U : 0U;
+  /* เปิด URS0 (Dual-Role) เฉพาะในโหมด Full ACPI ที่ไม่ได้บังคับ Host-only (UsbCRolePolicy == 2) */
+  Urse = (!MinimalAcpi && (Usbe != 0U) && (Config.UsbCRolePolicy != 2U)) ? 1U : 0U;
   Tsen = (Config.AcpiTouchEnable != 0U) ? 1U : 0U;
-  Pcie = ((Config.AcpiPcieEnable != 0U) && (Config.Pcie0Enable != 0U)) ? 1U : 0U;
+  Pcie = (!MinimalAcpi && (Config.AcpiPcieEnable != 0U) && (Config.Pcie0Enable != 0U)) ? 1U : 0U;
   Btne = (Config.AcpiButtonsEnable != 0U) ? 1U : 0U;
 
   Status = LocateTableBySignature (
@@ -85,13 +91,16 @@ UpdateAcpiTables (
     AslUpdateName (DsdtTable, SIGNATURE_32 ('S', 'V', 'M', 'I'), &Svmi, sizeof (Svmi));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('S', 'O', 'S', 'N'), &Sosn, sizeof (Sosn));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('S', 'T', 'O', 'R'), &Stor, sizeof (Stor));
+    AslUpdateName (DsdtTable, SIGNATURE_32 ('U', 'C', 'C', 'A'), &Ucca, sizeof (Ucca));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('U', 'S', 'B', 'E'), &Usbe, sizeof (Usbe));
+    AslUpdateName (DsdtTable, SIGNATURE_32 ('U', 'R', 'S', 'E'), &Urse, sizeof (Urse));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('T', 'S', 'E', 'N'), &Tsen, sizeof (Tsen));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('P', 'C', 'I', 'E'), &Pcie, sizeof (Pcie));
     AslUpdateName (DsdtTable, SIGNATURE_32 ('B', 'T', 'N', 'E'), &Btne, sizeof (Btne));
 
     Status = ReinstallTable (DsdtTable, &DsdtHandle);
-    DEBUG ((DEBUG_INFO, "NP05J_ACPI: Reinstall DSDT -> %r\n", Status));
+    DEBUG ((DEBUG_INFO, "NP05J_ACPI: Reinstall DSDT (min=%u ucca=%u usb=%u urs=%u touch=%u pcie=%u) -> %r\n",
+            (UINT32)MinimalAcpi, Ucca, Usbe, Urse, Tsen, Pcie, Status));
   } else {
     DEBUG ((DEBUG_WARN, "NP05J_ACPI: DSDT not found (%r)\n", Status));
   }
@@ -101,11 +110,16 @@ UpdateAcpiTables (
     return;
   }
 
-  if (Config.AcpiSmmuIortMode == NP05J_IORT_OMIT_FOR_WOA) {
+  if (MinimalAcpi || (Config.AcpiSmmuIortMode == NP05J_IORT_OMIT_FOR_WOA)) {
     UninstallAcpiBySignature (AcpiTableProtocol, SIGNATURE_32 ('I', 'O', 'R', 'T'), "IORT (WoA safe)");
   }
 
   if (Pcie == 0U) {
     UninstallAcpiBySignature (AcpiTableProtocol, SIGNATURE_32 ('M', 'C', 'F', 'G'), "MCFG (PCIe disabled)");
+  }
+
+  if (MinimalAcpi) {
+    UninstallAcpiBySignature (AcpiTableProtocol, SIGNATURE_32 ('D', 'B', 'G', '2'), "DBG2 (minimal bring-up)");
+    UninstallAcpiBySignature (AcpiTableProtocol, SIGNATURE_32 ('S', 'P', 'C', 'R'), "SPCR (minimal bring-up)");
   }
 }

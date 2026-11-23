@@ -136,7 +136,7 @@ STATIC CONST SETUP_ITEM_DESC mItems[] = {
   { 6, ItemKindToggle, "KernelErrataPatcher",  "Master toggle for Silicium Winload EL2 errata hooks",   OFF (KepEnable),            0, 1,   1, NULL, ActNone },
   { 6, ItemKindToggle, "Patch EL1 ACTLR",      "Enable Qualcomm CPU errata ACTLR_EL1 patch",            OFF (KepPatchActlr),        0, 1,   1, NULL, ActNone },
   { 6, ItemKindToggle, "Patch PMU AMCNTEN",    "Enable Windows ARM64 cycle counter access patch",       OFF (KepPatchAmcnten),      0, 1,   1, NULL, ActNone },
-  { 6, ItemKindToggle, "Patch GICv3 IRM",      "Route GIC interrupts safely for Windows HAL",           OFF (KepPatchGicIrm),       0, 1,   1, NULL, ActNone },
+  { 6, ItemKindToggle, "Patch GICv3 IRM",      "Legacy 1-cluster SGI IRM hook (keep OFF on SM8750P 2-cluster)", OFF (KepPatchGicIrm),       0, 1,   1, NULL, ActNone },
   { 6, ItemKindToggle, "Patch PSCI MemProt",   "Bypass PSCI memory protection halt during Win11 boot",  OFF (KepPatchPsciMemProt),  0, 1,   1, NULL, ActNone },
   { 6, ItemKindEnum,   "UEFI Runtime Services","Full SetVirtualAddressMap vs virtual-only mode",        OFF (RuntimeServicesMode),  0, 1,   1, mRtSvcNames, ActNone },
   { 6, ItemKindEnum,   "ACPI IORT / SMMU",     "Omit IORT for safe WoA boot, or keep Enabled for Linux", OFF (AcpiSmmuIortMode),     0, 2,   1, mIortNames, ActNone },
