@@ -1,13 +1,13 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Project SunUEFI <sunuefi@users.noreply.github.com>
-Date: Sun, 22 Nov 2026 23:15:00 +0000
+Date: Mon, 23 Nov 2026 06:30:00 +0000
 Subject: [PATCH] ASoC: codecs: add NXP TFA9874 driver and nubia NP05J sound card
 
-Add a minimal ASoC I2C codec driver for the NXP/Goodix TFA9874 (TFA2)
-smart speaker amplifier configured from the vendor container file
-(tfa98xx.cnt) with proper KEY1/KEY2 unlock and rev 0x0c74 defaults, and
-wire the nubia,np05j-sndcard Primary MI2S (S32_LE, 48 kHz, stereo)
-backend in sc8280xp.c.
+Add an ASoC I2C codec driver for the NXP/Goodix TFA9874 (TFA2) smart
+speaker amplifier configured from the vendor container file (tfa98xx.cnt)
+with KEY1/KEY2 unlock and rev 0x0c74 defaults, and wire the
+nubia,np05j-sndcard Primary MI2S (S32_LE, 48 kHz, stereo) backend in
+sc8280xp.c. Verified on nubia REDMAGIC Astra (NP05J) with stereo playback.
 
 Signed-off-by: Project SunUEFI <sunuefi@users.noreply.github.com>
 ---

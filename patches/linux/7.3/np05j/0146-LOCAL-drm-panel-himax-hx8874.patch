@@ -1,19 +1,23 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Project SunUEFI <sunuefi@users.noreply.github.com>
-Date: Sun, 22 Nov 2026 23:55:00 +0000
+Date: Mon, 23 Nov 2026 06:30:00 +0000
 Subject: [PATCH] drm/panel: add Himax HX8874 9.06-inch Dual-DSI OLED panel driver
 
 Add a DRM MIPI-DSI panel driver for the Himax HX8874 9.06-inch 2400x1504
-Dual-DSI command-mode DSC 1.1 OLED panel used on the nubia REDMAGIC Astra
-(NP05J), supporting 144/165/120/90/60 Hz refresh rates and MIPI DCS 0x51
-backlight control.
+bonded Dual-DSI command-mode DSC 1.1 OLED panel used on the nubia REDMAGIC
+Astra (NP05J).
+
+The driver supports 144/165/120/90/60 Hz refresh rates, MIPI DCS 0x51
+backlight control, non-continuous clock LP11 init matching stock DTS, and
+sends MIPI PPS (0x0A) with range_max_qp[0] = 8 to match the panel's
+factory DSC 1.1 parameter table.
 
 Signed-off-by: Project SunUEFI <sunuefi@users.noreply.github.com>
 ---
  drivers/gpu/drm/panel/Kconfig              |  15 ++
  drivers/gpu/drm/panel/Makefile             |   1 +
- drivers/gpu/drm/panel/panel-himax-hx8874.c | 399 +++++++++++++++++++++++++++++
- 3 files changed, 415 insertions(+)
+ drivers/gpu/drm/panel/panel-himax-hx8874.c | 404 +++++++++++++++++++++++++++++
+ 3 files changed, 420 insertions(+)
 
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
 index f368eb4a4..aaec238d4 100644
@@ -55,10 +59,10 @@ index 0f920cff7..64520eb04 100644
  obj-$(CONFIG_DRM_PANEL_ILITEK_IL9322) += panel-ilitek-ili9322.o
 diff --git a/drivers/gpu/drm/panel/panel-himax-hx8874.c b/drivers/gpu/drm/panel/panel-himax-hx8874.c
 new file mode 100644
-index 000000000..be14c8e10
+index 000000000..b5d781557
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-himax-hx8874.c
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,404 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * ไดรเวอร์จอ OLED Himax HX8874 ขนาด 9.06 นิ้ว (2400x1504) สำหรับ nubia REDMAGIC Astra (NP05J)
@@ -230,6 +234,7 @@ index 000000000..be14c8e10
 +	struct mipi_dsi_device *dsi = hx8874_trigger_dsi(ctx);
 +	struct mipi_dsi_multi_context dsi_ctx = { .dsi = dsi };
 +	const struct drm_display_mode *mode = hx8874_current_mode(ctx);
++	struct drm_dsc_picture_parameter_set pps;
 +	u8 fps = hx8874_vrefresh_code(drm_mode_vrefresh(mode));
 +
 +	hx8874_reset(ctx);
@@ -268,12 +273,16 @@ index 000000000..be14c8e10
 +					 0x04, 0x00, 0x00, 0x00);
 +
 +	/*
-+	 * ปรับค่า range_max_qp[0] ของ DPU DSC encoder เป็น 8 ให้ตรงกับตาราง PPS
-+	 * ที่ส่งผ่าน hx8874_dsc_init_cmd (สต็อกไม่ได้ส่ง MIPI 0x0A ซ้ำหลัง 0x29)
++	 * ปรับค่า range_max_qp[0] ของ DPU DSC encoder เป็น 8 ให้ตรงกับตาราง PPS ของสต็อก
++	 * แล้วส่ง MIPI PPS (0x0A) เพื่อยืนยันตาราง DSC เข้าสู่ DDIC (จำเป็นสำหรับ HX8874)
 +	 */
 +	ctx->dsc.rc_range_params[0].range_max_qp = 8;
 +	if (!dsi_ctx.accum_err)
 +		dsi_ctx.accum_err = drm_dsc_compute_rc_parameters(&ctx->dsc);
++	if (!dsi_ctx.accum_err) {
++		drm_dsc_pps_payload_pack(&pps, &ctx->dsc);
++		mipi_dsi_picture_parameter_set_multi(&dsi_ctx, &pps);
++	}
 +
 +	if (dsi_ctx.accum_err) {
 +		gpiod_set_value_cansleep(ctx->reset_gpio, 1);

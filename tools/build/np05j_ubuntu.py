@@ -258,8 +258,39 @@ def configure_np05j_user(rootfs: Path, username: str, password: str | None, gues
     elif not has_target:
         guest(['useradd', '-m', '-s', '/bin/bash', username])
 
-    # ให้บัญชีหลักมีสิทธิ์ใช้งาน GPU (/dev/dri/renderD128), เสียง และ Bluetooth โดยตรง
-    guest(['usermod', '-aG', 'video,render,audio,bluetooth', username])
+    # ให้บัญชีหลักมีสิทธิ์ใช้งาน GPU (/dev/dri/renderD128), เสียง, Bluetooth, เครือข่าย และ sudo โดยตรง
+    guest(['usermod', '-aG', 'video,render,audio,bluetooth,sudo,netdev,plugdev', username])
+
+    # กฎ polkit สำหรับผู้ใช้กลุ่ม sudo/netdev/bluetooth เพื่อจัดการ Wi-Fi, Bluetooth และปิด/รีบูตเครื่องในเดสก์ท็อปได้ทันที
+    polkit_dir = rootfs / 'etc/polkit-1/rules.d'
+    polkit_dir.mkdir(parents=True, exist_ok=True)
+    polkit_rule = polkit_dir / '50-np05j-user-hardware.rules'
+    polkit_rule.write_text(
+        '// อนุญาตให้ผู้ใช้ในกลุ่มอุปกรณ์จัดการ Wi-Fi, Bluetooth และพลังงานบน REDMAGIC Astra (NP05J)\n'
+        'polkit.addRule(function(action, subject) {\n'
+        '    if (subject.local && subject.active && (\n'
+        '        subject.isInGroup("sudo") ||\n'
+        '        subject.isInGroup("netdev") ||\n'
+        '        subject.isInGroup("bluetooth")\n'
+        '    )) {\n'
+        '        if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 ||\n'
+        '            action.id.indexOf("org.freedesktop.login1.") === 0 ||\n'
+        '            action.id.indexOf("org.freedesktop.UPower.") === 0 ||\n'
+        '            action.id.indexOf("org.blueman.") === 0) {\n'
+        '            return polkit.Result.YES;\n'
+        '        }\n'
+        '    }\n'
+        '});\n'
+    )
+    polkit_rule.chmod(0o644)
+
+    # ใช้ cairo สำหรับ widget 2D ของ GTK 4.14 บน Ubuntu 24.04 เพื่อเลี่ยงบั๊ก GPU dma-buf ของ Mesa 27.0-devel Adreno 830
+    # (gnome-shell compositor, เบราว์เซอร์/วิดีโอ, OpenGL และ Vulkan ยังคงใช้ Adreno 830 GPU เต็มความเร็ว 165 Hz)
+    env_dir = rootfs / 'etc/environment.d'
+    env_dir.mkdir(parents=True, exist_ok=True)
+    gtk4_env = env_dir / '60-np05j-gtk4.conf'
+    gtk4_env.write_text('GSK_RENDERER=cairo\n')
+    gtk4_env.chmod(0o644)
 
     if password:
         argv = guest_command(rootfs, [
@@ -716,14 +747,14 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
 
     loader_conf = work / 'loader.conf'
     loader_conf.write_text(
-        'default 01-ubuntu-np05j-gpu.conf\n'
+        'default 01-ubuntu-np05j-oled.conf\n'
         'timeout 5\n'
         'console-mode keep\n'
     )
 
     base = f'/linux/{release}'
     # คง boot-up votes ของ rpmhpd (MMCX/CX/MX) และ sm8750 interconnect (mmss_noc/mc_virt)
-    # ไว้ระหว่างใช้ UEFI GOP / simpledrm เพื่อไม่ให้ of_platform_sync_state_init ตัดไฟ/แบนด์วิดท์จอ OLED
+    # ไว้สำหรับรายการสำรอง UEFI GOP / simpledrm เพื่อไม่ให้ of_platform_sync_state_init ตัดไฟ/แบนด์วิดท์จอ
     bl_keep_sync_state = ','.join((
         '__initstub__kmod_core__802_1299_sync_state_resume_initcall7',
         '__initstub__kmod_platform__675_611_of_platform_sync_state_init7s',
@@ -737,21 +768,21 @@ def build_esp_image(esp_path: Path, esp_size_mib: int, kernel_dir: Path, kernel_
         'efi=noruntime systemd.show_status=true systemd.log_target=kmsg'
     )
     entries = {
-        '/loader/entries/01-ubuntu-np05j-gpu.conf': (
+        '/loader/entries/01-ubuntu-np05j-oled.conf': (
             'title Boot Linux\n'
-            f'version {release}\n'
-            f'linux {base}/Image\n'
-            f'initrd {base}/initrd.img\n'
-            f'devicetree {base}/sm8750-nubia-np05j-gpu.dtb\n'
-            f'options {common_opts} msm.separate_gpu_kms=1 initcall_blacklist={bl_keep_sync_state}\n'
-        ),
-        '/loader/entries/02-ubuntu-np05j-oled.conf': (
-            'title Boot Linux (OLED 144Hz/165Hz)\n'
             f'version {release}\n'
             f'linux {base}/Image\n'
             f'initrd {base}/initrd.img\n'
             f'devicetree {base}/sm8750-nubia-np05j-display.dtb\n'
             f'options {common_opts}\n'
+        ),
+        '/loader/entries/02-ubuntu-np05j-gpu.conf': (
+            'title Boot Linux (Safe 60Hz)\n'
+            f'version {release}\n'
+            f'linux {base}/Image\n'
+            f'initrd {base}/initrd.img\n'
+            f'devicetree {base}/sm8750-nubia-np05j-gpu.dtb\n'
+            f'options {common_opts} msm.separate_gpu_kms=1 initcall_blacklist={bl_keep_sync_state}\n'
         ),
         '/loader/entries/03-ubuntu-np05j-safe.conf': (
             'title Boot Linux (Safe - No GPU)\n'

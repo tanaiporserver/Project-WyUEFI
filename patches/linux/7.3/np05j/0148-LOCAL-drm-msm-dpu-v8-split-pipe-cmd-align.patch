@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Project SunUEFI <sunuefi@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 06:30:00 +0000
+Subject: [PATCH] drm/msm/dpu: use smart panel align mode for split command-mode on DPU 8+
+
+dpu_hw_setup_split_pipe() unconditionally writes legacy split-display bits
+(FLD_SPLIT_DISPLAY_CMD and FLD_INTF_*_SW_TRG_MUX, e.g. 0x100) into
+SPLIT_DISPLAY_LOWER_PIPE_CTRL (MDP_TOP + 0x3F0).
+
+On DPU 8.0+ targets where MDP_PERIPH_TOP_0 has been removed (SM8450 through
+SM8750 / DPU 12.0), programming those legacy SW_TRG_MUX bits breaks
+external TE detection in bonded Dual-DSI command mode: TE_ASSERT remains at
+0 Hz, INT_COUNT_VAL free-runs at half the panel refresh rate, producing
+4-pixel DSC slice banding, left/right panel desynchronization, and
+frame-done timeouts during encoder disable/reboot.
+
+Add dpu_hw_setup_split_pipe_v8() for DPU >= 8.0 that avoids programming the
+legacy SW_TRG_MUX bits and programs BIT(12) (FLD_SMART_PANEL_ALIGN_MODE,
+matching Qualcomm downstream qcom,sde-smart-panel-align-mode = <0x0c>) for
+command mode. Verified on SM8750P nubia REDMAGIC Astra (HX8874 Dual-DSI
+command-mode OLED): external TE locks at full 165 Hz, banding and
+left/right split artifacts disappear completely, and warm reboot succeeds
+without frame-done timeouts.
+
+Signed-off-by: Project SunUEFI <sunuefi@users.noreply.github.com>
+---
+ drivers/gpu/drm/msm/disp/dpu1/dpu_hw_top.c | 35 +++++++++++++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_top.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_top.c
+index 1ebd75d4f..21293996d 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_top.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_top.c
+@@ -15,6 +15,7 @@
+ #define FLD_SMART_PANEL_FREE_RUN          BIT(2)
+ #define FLD_INTF_1_SW_TRG_MUX             BIT(4)
+ #define FLD_INTF_2_SW_TRG_MUX             BIT(8)
++#define FLD_SMART_PANEL_ALIGN_MODE        BIT(12)
+ #define FLD_TE_LINE_INTER_WATERLEVEL_MASK 0xFFFF
+ 
+ #define TRAFFIC_SHAPER_EN                 BIT(31)
+@@ -60,6 +61,35 @@ static void dpu_hw_setup_split_pipe(struct dpu_hw_mdp *mdp,
+ 	DPU_REG_WRITE(c, SPLIT_DISPLAY_EN, cfg->en & 0x1);
+ }
+ 
++static void dpu_hw_setup_split_pipe_v8(struct dpu_hw_mdp *mdp,
++		struct split_pipe_cfg *cfg)
++{
++	struct dpu_hw_blk_reg_map *c;
++	u32 upper_pipe = 0;
++	u32 lower_pipe = 0;
++
++	if (!mdp || !cfg)
++		return;
++
++	c = &mdp->hw;
++
++	/*
++	 * ตั้งแต่ DPU 8.0 (ไม่มีบล็อก MDP_PERIPH_TOP_0) ห้ามเขียนบิตเก่า
++	 * เช่น FLD_SPLIT_DISPLAY_CMD และ FLD_INTF_*_SW_TRG_MUX ลงใน
++	 * SPLIT_DISPLAY_LOWER_PIPE_CTRL เพราะจะบล็อก External TE ในโหมด
++	 * Dual-DSI Command ให้ใช้บิต SMART_PANEL_ALIGN_MODE (BIT(12)) แทน
++	 */
++	if (cfg->en && cfg->mode == INTF_MODE_CMD) {
++		lower_pipe = FLD_SMART_PANEL_ALIGN_MODE;
++		upper_pipe = lower_pipe;
++	}
++
++	DPU_REG_WRITE(c, SSPP_SPARE, cfg->split_flush_en ? 0x1 : 0x0);
++	DPU_REG_WRITE(c, SPLIT_DISPLAY_LOWER_PIPE_CTRL, lower_pipe);
++	DPU_REG_WRITE(c, SPLIT_DISPLAY_UPPER_PIPE_CTRL, upper_pipe);
++	DPU_REG_WRITE(c, SPLIT_DISPLAY_EN, cfg->en & 0x1);
++}
++
+ static bool dpu_hw_setup_clk_force_ctrl(struct dpu_hw_mdp *mdp,
+ 		enum dpu_clk_ctrl_type clk_ctrl, bool enable)
+ {
+@@ -259,7 +289,10 @@ static void dpu_hw_dp_phy_intf_sel(struct dpu_hw_mdp *mdp,
+ static void _setup_mdp_ops(struct dpu_hw_mdp_ops *ops,
+ 			   const struct dpu_mdss_version *mdss_rev)
+ {
+-	ops->setup_split_pipe = dpu_hw_setup_split_pipe;
++	if (mdss_rev->core_major_ver >= 8)
++		ops->setup_split_pipe = dpu_hw_setup_split_pipe_v8;
++	else
++		ops->setup_split_pipe = dpu_hw_setup_split_pipe;
+ 	ops->setup_clk_force_ctrl = dpu_hw_setup_clk_force_ctrl;
+ 	ops->get_danger_status = dpu_hw_get_danger_status;
+ 

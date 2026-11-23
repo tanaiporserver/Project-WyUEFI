@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Project SunUEFI <sunuefi@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 06:30:00 +0000
+Subject: [PATCH] drm/msm/mdss: enable MDSS clocks before core reset
+
+On SM8750 platforms handing off from a bootloader with continuous splash
+enabled, issuing DISP_CC_MDSS_CORE_BCR reset inside msm_mdss_init() before
+MDSS clocks and dispcc power domains are active leaves the bootloader
+display pipeline running when DPU later attaches to Stage-1 SMMU.
+
+Parse the MDSS clocks first, enable them around msm_mdss_reset(), and
+disable them again so DISP_CC_MDSS_CORE_BCR cleanly resets the display
+subsystem before DPU/SMMU handoff. Verified on nubia REDMAGIC Astra
+(SM8750P) across cold boot and warm reboot.
+
+Signed-off-by: Project SunUEFI <sunuefi@users.noreply.github.com>
+---
+ drivers/gpu/drm/msm/msm_mdss.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/gpu/drm/msm/msm_mdss.c b/drivers/gpu/drm/msm/msm_mdss.c
+index 9087c4b29..e1276fb08 100644
+--- a/drivers/gpu/drm/msm/msm_mdss.c
++++ b/drivers/gpu/drm/msm/msm_mdss.c
+@@ -369,10 +369,6 @@ static struct msm_mdss *msm_mdss_init(struct platform_device *pdev, bool is_mdp5
+ 	int ret;
+ 	int irq;
+ 
+-	ret = msm_mdss_reset(&pdev->dev);
+-	if (ret)
+-		return ERR_PTR(ret);
+-
+ 	msm_mdss = devm_kzalloc(&pdev->dev, sizeof(*msm_mdss), GFP_KERNEL);
+ 	if (!msm_mdss)
+ 		return ERR_PTR(-ENOMEM);
+@@ -410,6 +406,21 @@ static struct msm_mdss *msm_mdss_init(struct platform_device *pdev, bool is_mdp5
+ 
+ 	msm_mdss->dev = &pdev->dev;
+ 
++	/*
++	 * เปิดนาฬิกาของ MDSS เพื่อปลุก dispcc (RPMHPD_MMCX + GCC_DISP_AHB_CLK)
++	 * ก่อนสั่ง DISP_CC_MDSS_CORE_BCR reset ให้ล้างท่อ continuous splash
++	 * ของบูตโหลดเดอร์จนหมดจริงก่อนที่ DPU จะผูก Stage-1 SMMU
++	 */
++	ret = clk_bulk_prepare_enable(msm_mdss->num_clocks, msm_mdss->clocks);
++	if (ret) {
++		dev_err(&pdev->dev, "failed to enable clocks for mdss reset, ret=%d\n", ret);
++		return ERR_PTR(ret);
++	}
++	ret = msm_mdss_reset(&pdev->dev);
++	clk_bulk_disable_unprepare(msm_mdss->num_clocks, msm_mdss->clocks);
++	if (ret)
++		return ERR_PTR(ret);
++
+ 	irq = platform_get_irq(pdev, 0);
+ 	if (irq < 0)
+ 		return ERR_PTR(irq);
