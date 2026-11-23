@@ -177,11 +177,14 @@ def build(output, arch, compiler=None, sysroot=None):
     return binary, record
 
 
-def prototype_policy(binary, result, selector_dir, product, app, output):
+def prototype_policy(binary, result, selector_dir, product, app, output, device=None):
     """Deployable input records with every unperformed device proof still false."""
     meta = json.loads((selector_dir / 'selector.json').read_text())
+    if device is None:
+        device = 'np05j' if (product / 'Np05jUEFI-product.fd').is_file() else 'piano'
+    fd_name = 'Np05jUEFI-product.fd' if device == 'np05j' else 'PianoUEFI-product.fd'
     paths = {'selector.bin': selector_dir / 'selector.bin', 'shim.bin': product / 'BootShim.bin',
-             'fd.bin': product / 'PianoUEFI-product.fd', 'app.bin': app}
+             'fd.bin': product / fd_name, 'app.bin': app}
     payloads = {name: {'sha256': sha(path), 'bytes': path.stat().st_size} for name, path in paths.items()}
     result['payload_sha256'] = {name: item['sha256'] for name, item in payloads.items()}
     selector_meta = {**meta, 'schema_version': 1, 'interface_version': 1,

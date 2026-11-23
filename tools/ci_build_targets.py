@@ -15,7 +15,7 @@ FULL_FILES = {'.github/workflows/build-products.yml', '.gitmodules',
               'uefi/handoff/bootselect/BootRequest.h',
               'docs/user/install-from-artifact.md'}
 FULL_PREFIXES = ('.github/workflows/', '.github/actions/', 'tools/', 'config/', 'containers/', 'linux/',
-                 'vendor/piano-linux/', 'vendor/firmware/', 'patches/', 'upstream/')
+                 'vendor/piano-linux/', 'vendor/firmware/', 'vendor/np05j-firmware/', 'patches/', 'upstream/')
 UEFI_FILES = {'requirements-build.txt', 'tools/build_android_product_module.py',
               'tools/build_android_module.py', 'tools/build_boot_repack.py',
               'tools/build_boot_request.py', 'tools/build_storage.py',
@@ -27,7 +27,7 @@ UEFI_FILES = {'requirements-build.txt', 'tools/build_android_product_module.py',
               'tools/prepare_product.py', 'tools/prepare_nv_runtime_guard.py', 'tools/firmware/prepare_ext4.py',
               'tools/package_product.py', 'tools/build_integrity.py',
               'tools/product_payload_digest.py', 'tools/piano_vendor_inputs.py'}
-UEFI_PREFIXES = ('android/', 'uefi/', 'vendor/piano/', 'patches/firmware/',
+UEFI_PREFIXES = ('android/', 'uefi/', 'vendor/piano/', 'vendor/np05j/', 'patches/firmware/',
                  'tools/prepare_product_')
 DISTROS = ['debian-gnome', 'debian-kde', 'debian-denial', 'nyarch-gnome',
            'arch-denial', 'steamos']
@@ -51,12 +51,13 @@ def shared_kinds(targets):
 
 
 def overlay_targets(targets):
-    """Build one set of Debian overlays and the matched pacman package sets."""
+    """เลือกชุด overlay ตามดิสโทรที่ร้องขอ (แยก Arch/Nyarch ออกจาก SteamOS เพื่อไม่ต้องบิลด์ข้ามดิสโทร)"""
     selected = set(targets)
     result = ['debian-gnome'] if any(name.startswith('debian-') for name in selected) else []
-    # The shared Arch sensor package must have an ABI-matched SSC provider in both repositories.
-    if selected & {'nyarch-gnome', 'arch-denial', 'steamos'}:
-        result.extend(('nyarch-gnome', 'steamos'))
+    if selected & {'nyarch-gnome', 'arch-denial'}:
+        result.append('nyarch-gnome')
+    if 'steamos' in selected:
+        result.append('steamos')
     result.extend(target for target in DENIAL_TARGETS if target in selected)
     return result
 

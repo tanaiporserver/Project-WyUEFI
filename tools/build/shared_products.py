@@ -32,6 +32,22 @@ FIRMWARE_INPUTS = ('build.sh', 'Makefile', '.gitmodules', 'sources.lock.json',
                    ':(exclude,literal)tools/build_release_rootfs.py',
                    ':(exclude,literal)tools/build_nyarch_rootfs.py',
                    ':(exclude,literal)tools/build_steamos_rootfs.py')
+NP05J_FIRMWARE_INPUTS = ('build.sh', 'Makefile', '.gitmodules', 'sources.lock.json',
+                         'requirements-build.txt', 'tools', 'uefi', 'patches/firmware',
+                         'patches/f2fs-tools', 'vendor/np05j', 'config/np05j-product.json',
+                         'config/uefi-ext4.json', 'config/simpleinit.np05j.uefi.cfg', 'android',
+                         ':(exclude,literal)tools/check_host.py',
+                         ':(exclude,literal)tools/build/check_patch_series.py',
+                         ':(exclude,literal)tools/build/denial.py',
+                         ':(exclude,literal)tools/build/np05j_distro.py',
+                         ':(exclude,literal)tools/build/np05j_ubuntu.py',
+                         ':(exclude,literal)tools/repo',
+                         ':(exclude,literal)tools/package/85-piano-boot-space.install',
+                         ':(exclude,literal)tools/package/boot.py',
+                         ':(exclude,literal)tools/package/camera.py',
+                         ':(exclude,literal)tools/build_release_rootfs.py',
+                         ':(exclude,literal)tools/build_nyarch_rootfs.py',
+                         ':(exclude,literal)tools/build_steamos_rootfs.py')
 KERNEL_INPUTS = ('build.sh', 'sources.lock.json', 'config/release.json',
                 'config/kernel-llvm.json', 'patches/linux', 'patches/v4l2loopback', 'linux/configs',
                 'tools/prepare_release_kernel.py', 'tools/build/kernel.py',
@@ -46,6 +62,13 @@ KERNEL_INPUTS = ('build.sh', 'sources.lock.json', 'config/release.json',
                 'tools/package/archive.py', 'tools/package/download.py',
                 'vendor/piano-linux/board.dtb', 'linux/dts',
                 'config/keys/sunuefi-archive-keyring.gpg')
+NP05J_KERNEL_INPUTS = ('build.sh', 'sources.lock.json', 'config/release.json',
+                       'config/kernel-llvm.json', 'patches/linux', 'linux/configs/np05j',
+                       'linux/dts/np05j', 'tools/prepare_release_kernel.py',
+                       'tools/build/np05j_kernel.py', 'tools/build_piano_full_kernel.py',
+                       'tools/build_kernel.py', 'tools/prepare_linux_modules.py',
+                       'tools/prepare_boot_files.py', 'tools/desktop/prepare_kernel_llvm.py',
+                       'tools/desktop/package_build.py')
 KERNEL_BUILD_FILES = ('.config', 'Makefile', 'Module.symvers', 'include', 'scripts',
                       'arch/arm64/include/generated')
 
@@ -63,9 +86,12 @@ def environment_identity():
     return {'architecture': platform.machine(), 'tools': tools}
 
 
-def identity(kind, root=ROOT):
+def identity(kind, root=ROOT, device='piano'):
     root = Path(root).resolve()
-    inputs = FIRMWARE_INPUTS if kind == 'firmware' else KERNEL_INPUTS
+    if device == 'np05j':
+        inputs = NP05J_FIRMWARE_INPUTS if kind == 'firmware' else NP05J_KERNEL_INPUTS
+    else:
+        inputs = FIRMWARE_INPUTS if kind == 'firmware' else KERNEL_INPUTS
     rows = source_identity(root, (*inputs, 'tools/build/shared_products.py',
                                    'tools/build/cache.py', 'tools/build_container.py',
                                    'config/build-container.json',
@@ -75,13 +101,19 @@ def identity(kind, root=ROOT):
         rows['config/release.json'] = {'section': 'kernel',
                                        **kernel_policy_identity(root, with_packages=True)}
     record = {'schema_version': 1, 'kind': kind,
+              **({'device': device} if device != 'piano' else {}),
               'workspace': os.environ.get('SUNUEFI_CACHE_WORKSPACE', str(root)),
               'environment': environment_identity(), 'inputs': rows}
     digest = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
     return record, digest
 
 
-def output_paths(kind, root=ROOT):
+def output_paths(kind, root=ROOT, device='piano'):
+    if device == 'np05j':
+        if kind == 'firmware':
+            return [root / name for name in ('artifacts/product-np05j', 'artifacts/android-np05j',
+                                             'artifacts/simpleinit/product-np05j')]
+        return [root / 'artifacts/kernels/np05j']
     if kind == 'firmware':
         return [root / name for name in ('artifacts/product', 'artifacts/android',
                                          'artifacts/simpleinit/product')]
@@ -112,13 +144,14 @@ def locked(kind, root=ROOT):
         yield
 
 
-def verify_firmware(root=ROOT, source_build=False):
+def verify_firmware(root=ROOT, source_build=False, device='piano'):
     import build_integrity
     import build_android_module
     import product_contract
     import simpleinit_build_identity
     from firmware_workspace import active_root
 
+    is_np05j = device == 'np05j'
     lock = json.loads((root / 'sources.lock.json').read_text())
     for name, row in lock.items():
         if not name.startswith(('Mu-Silicium', 'simple-init')):
@@ -129,13 +162,23 @@ def verify_firmware(root=ROOT, source_build=False):
             ['git', '-C', repository, 'status', '--porcelain=v1', '--untracked-files=all'], text=True)
         if head != row['commit'] or changes:
             raise ValueError('Shared firmware upstream source differs: ' + name)
-    from piano_vendor_inputs import load
-    load(root)
+    if is_np05j:
+        from np05j_vendor_inputs import load
+        load(root)
+    else:
+        from piano_vendor_inputs import load
+        load(root)
 
-    folder = root / 'artifacts/product'
+    profile = 'product-np05j' if is_np05j else 'product'
+    contract_path = root / ('config/np05j-product.json' if is_np05j else 'config/piano-product.json')
+    android_dir = root / ('artifacts/android-np05j' if is_np05j else 'artifacts/android')
+    zip_prefix = 'SunUEFI-NP05J-' if is_np05j else 'SunUEFI-Piano-'
+    si_build = 'build/simpleinit-product-np05j-edk2' if is_np05j else 'build/simpleinit-product-edk2'
+
+    folder = root / 'artifacts' / profile
     manifest = build_android_module.read_json(folder / 'manifest.json')
     product_contract.validate_build_manifest(
-        json.loads((root / 'config/piano-product.json').read_text()), manifest)
+        json.loads(contract_path.read_text()), manifest)
     marker = json.loads((folder / 'build-ok.json').read_text())
     if (marker.get('build_id') != manifest.get('build_id') or
             marker.get('inputs') != manifest.get('build_inputs')):
@@ -143,24 +186,24 @@ def verify_firmware(root=ROOT, source_build=False):
     for name, digest in marker.get('outputs', {}).items():
         if Path(name).name != name or sha(folder / name) != digest:
             raise ValueError('Shared firmware build output differs: ' + name)
-    simpleinit = root / 'artifacts/simpleinit/product'
+    simpleinit = root / 'artifacts/simpleinit' / profile
     app_identity = json.loads((simpleinit / 'build-ok.json').read_text())
     if (sha(simpleinit / 'SimpleInit.efi') != app_identity.get('application_sha256') or
             app_identity != manifest.get('simpleinit')):
         raise ValueError('Shared SimpleInit payload identity differs')
     if source_build:
         workspace = active_root(root)
-        build_integrity.validate(root, 'product', manifest)
+        build_integrity.validate(root, profile, manifest)
         built = simpleinit_build_identity.inspect(
-            workspace / 'build/simpleinit-product-edk2', root / 'artifacts/simpleinit/product', True)
-        if built != json.loads((root / 'artifacts/simpleinit/product/build-ok.json').read_text()):
+            workspace / si_build, simpleinit, True, device=device)
+        if built != json.loads((simpleinit / 'build-ok.json').read_text()):
             raise ValueError('Cached SimpleInit build identity differs')
-    payloads, product = build_android_module.product_payload(folder)
-    module = build_android_module.read_json(root / 'artifacts/android/manifest.json')
+    payloads, product = build_android_module.product_payload(folder, device=device)
+    module = build_android_module.read_json(android_dir / 'manifest.json')
     filename = Path(module.get('zip', '')).name
-    if not filename.startswith('SunUEFI-Piano-') or not filename.endswith('.zip'):
+    if not filename.startswith(zip_prefix) or not filename.endswith('.zip'):
         raise ValueError('Shared Android module filename is missing')
-    package = root / 'artifacts/android' / filename
+    package = android_dir / filename
     if not package.is_file() or sha(package) != module.get('zip_sha256'):
         raise ValueError('Shared Android module ZIP differs')
     if module.get('same_product') != product:
@@ -177,7 +220,44 @@ def verify_firmware(root=ROOT, source_build=False):
     return {'product_sha256': product['product_sha256'], 'module_sha256': sha(package)}
 
 
-def verify_kernel(root=ROOT):
+def verify_np05j_kernel(root=ROOT):
+    """ตรวจสอบผลบิลด์เคอร์เนล, DTBs ทั้ง 4 ชุด และโมดูลของ NP05J ให้ตรงกับ manifest.json"""
+    from build.np05j_kernel import DTB_TARGETS
+
+    folder = root / 'artifacts/kernels/np05j'
+    manifest_path = folder / 'manifest.json'
+    if not manifest_path.is_file():
+        raise ValueError('NP05J kernel manifest is missing: ' + str(manifest_path))
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get('device') != 'np05j':
+        raise ValueError('Kernel manifest does not belong to np05j')
+    status = manifest.get('status', '')
+    if not status or any(bad in status.upper() for bad in ('FAILED', 'INCOMPLETE', 'CONFIGURED_NOT_BUILT', 'BUILDING')):
+        raise ValueError('NP05J kernel build did not complete cleanly: ' + status)
+    release = manifest.get('kernel_release', '')
+    if not release or '/' in release:
+        raise ValueError('Invalid NP05J kernel_release in manifest')
+    image = folder / 'Image'
+    config = folder / 'config'
+    if not image.is_file() or sha(image) != manifest.get('image', {}).get('sha256'):
+        raise ValueError('NP05J kernel Image differs from manifest')
+    if not config.is_file() or sha(config) != manifest.get('config_sha256'):
+        raise ValueError('NP05J kernel config differs from manifest')
+    dtbs = manifest.get('dtbs', {})
+    for rel_dtb in DTB_TARGETS:
+        name = Path(rel_dtb).name
+        dtb_path = folder / name
+        if name not in dtbs or not dtb_path.is_file() or sha(dtb_path) != dtbs[name].get('sha256'):
+            raise ValueError('NP05J DTB missing or differs from manifest: ' + name)
+    mod_dir = folder / 'modules/lib/modules' / release
+    if not (mod_dir / 'modules.dep').is_file():
+        raise ValueError('NP05J kernel modules.dep is missing: ' + str(mod_dir))
+    return {'device': 'np05j', 'kernel_release': release, 'manifest_sha256': sha(manifest_path)}
+
+
+def verify_kernel(root=ROOT, device='piano'):
+    if device == 'np05j':
+        return verify_np05j_kernel(root)
     from stage_piano_kernel_modules import inspect
     manifest, digest = inspect(root / 'artifacts/kernels/release')
     return {'kernel_release': manifest['kernel_release'], 'manifest_sha256': digest}
@@ -236,16 +316,19 @@ def prepare_kernel_sources(root=ROOT):
                    cwd=root, check=True)
 
 
-def run(kind, verify_only=False, root=ROOT):
+def run(kind, verify_only=False, root=ROOT, device='piano'):
     root = Path(root).resolve()
     started = time.monotonic()
-    with locked(kind, root):
-        record, key = identity(kind, root)
-        receipt = root / 'build/shared-products' / (kind + '.json')
+    receipt_name = f'{device}-{kind}.json' if device != 'piano' else f'{kind}.json'
+    lock_name = f'{device}-{kind}' if device != 'piano' else kind
+    with locked(lock_name, root):
+        record, key = (identity(kind, root) if device == 'piano' else identity(kind, root, device=device))
+        receipt = root / 'build/shared-products' / receipt_name
         cached = json.loads(receipt.read_text()) if receipt.is_file() else None
+        outputs_list = output_paths(kind, root) if device == 'piano' else output_paths(kind, root, device=device)
         try:
             matching = (cached is not None and cached.get('identity') == record and
-                        cached.get('outputs') == inventory(output_paths(kind, root), root))
+                        cached.get('outputs') == inventory(outputs_list, root))
         except (OSError, ValueError):
             matching = False
         if verify_only and not matching:
@@ -257,33 +340,45 @@ def run(kind, verify_only=False, root=ROOT):
         if matching and not cached.get('verification'):
             raise ValueError('Shared cache has no successful build verification')
         if kind == 'kernel':
-            # This native entry checks source cleanliness, compiler hashes,
-            # config, Module.symvers and every module before its hot return.
-            prepare_kernel_sources(root)
-            if matching:
-                # Let the native entry recreate its compiler checkout while
-                # holding its own source/output locks, then take its hot path.
-                check_kernel_hot_inputs(root)
-            subprocess.run([root / 'build.sh', 'linux'], cwd=root, check=True)
-            result = verify_kernel(root)
-            if not matching:
-                for package_format in ('debian', 'pacman'):
-                    output = root / 'artifacts/packages/kernel' / package_format
-                    if output.exists():
-                        shutil.rmtree(output)
-                    subprocess.run([root / 'build.sh', 'linux-package', '--format', package_format,
-                                    '--output', output], cwd=root, check=True)
+            if device == 'np05j':
+                if not matching:
+                    subprocess.run([root / 'build.sh', 'linux', '--device', 'np05j', '--rebuild'],
+                                   cwd=root, check=True)
+                result = verify_np05j_kernel(root)
+            else:
+                # This native entry checks source cleanliness, compiler hashes,
+                # config, Module.symvers and every module before its hot return.
+                prepare_kernel_sources(root)
+                if matching:
+                    # Let the native entry recreate its compiler checkout while
+                    # holding its own source/output locks, then take its hot path.
+                    check_kernel_hot_inputs(root)
+                subprocess.run([root / 'build.sh', 'linux'], cwd=root, check=True)
+                result = verify_kernel(root)
+                if not matching:
+                    for package_format in ('debian', 'pacman'):
+                        output = root / 'artifacts/packages/kernel' / package_format
+                        if output.exists():
+                            shutil.rmtree(output)
+                        subprocess.run([root / 'build.sh', 'linux-package', '--format', package_format,
+                                        '--output', output], cwd=root, check=True)
         elif matching:
-            result = verify_firmware(root)
+            result = verify_firmware(root) if device == 'piano' else verify_firmware(root, device=device)
         else:
             import prepare_sources
             prepare_sources.check(root, 'firmware')
-            subprocess.run([root / 'build.sh', 'uefi'], cwd=root, check=True)
-            subprocess.run([root / 'build.sh', 'module'], cwd=root, check=True)
-            result = verify_firmware(root, source_build=True)
-        if identity(kind, root)[0] != record:
+            if device == 'np05j':
+                subprocess.run([root / 'build.sh', 'uefi', '--device', 'np05j'], cwd=root, check=True)
+                subprocess.run([root / 'build.sh', 'module', '--device', 'np05j'], cwd=root, check=True)
+                result = verify_firmware(root, source_build=True, device='np05j')
+            else:
+                subprocess.run([root / 'build.sh', 'uefi'], cwd=root, check=True)
+                subprocess.run([root / 'build.sh', 'module'], cwd=root, check=True)
+                result = verify_firmware(root, source_build=True)
+        latest_record = identity(kind, root)[0] if device == 'piano' else identity(kind, root, device=device)[0]
+        if latest_record != record:
             raise ValueError('Shared build inputs changed during ' + kind)
-        outputs = inventory(output_paths(kind, root), root)
+        outputs = inventory(outputs_list, root)
         if matching and outputs != cached['outputs']:
             raise ValueError('Shared cache changed during verification')
         if matching and result != cached['verification']:
@@ -291,7 +386,7 @@ def run(kind, verify_only=False, root=ROOT):
         if not matching:
             atomic_json(receipt, {'schema_version': 1, 'identity': record,
                                   'outputs': outputs, 'verification': result})
-    print(json.dumps({'kind': kind, 'cache_key': key, 'reused': matching,
+    print(json.dumps({'device': device, 'kind': kind, 'cache_key': key, 'reused': matching,
                       'seconds': round(time.monotonic() - started, 3),
                       'verification': result}), flush=True)
     return result
@@ -301,10 +396,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('keys', 'ensure', 'verify'))
     parser.add_argument('--kind', choices=('firmware', 'kernel'))
+    parser.add_argument('--device', choices=('piano', 'np05j'), default='piano')
     parser.add_argument('--github-output', type=Path)
     args = parser.parse_args()
     if args.operation == 'keys':
-        values = {kind + '_key': 'shared-' + kind + '-' + identity(kind)[1]
+        prefix = f'shared-{args.device}-' if args.device != 'piano' else 'shared-'
+        values = {kind + '_key': prefix + kind + '-' + identity(kind, device=args.device)[1]
                   for kind in ('firmware', 'kernel')}
         if args.github_output:
             with args.github_output.open('a') as stream:
@@ -314,7 +411,7 @@ def main():
     else:
         if args.kind is None:
             parser.error('--kind is required for ensure and verify')
-        run(args.kind, args.operation == 'verify')
+        run(args.kind, args.operation == 'verify', device=args.device)
 
 
 if __name__ == '__main__':

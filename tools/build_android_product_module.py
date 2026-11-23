@@ -110,14 +110,16 @@ def add_licenses_and_records(output, sysroot, records):
 
 
 def build(args):
-    payloads, product = module.product_payload(args.product)
+    device = getattr(args, 'device', 'piano')
+    payloads, product = module.product_payload(args.product, device=device)
     version = next(line.partition('=')[2].strip() for line in
                    (ROOT / 'android/module/module.prop').read_text().splitlines()
                    if line.startswith('version='))
     if not re.fullmatch(r'[0-9A-Za-z.+_-]+', version):
         raise ValueError('Module version is not a safe artifact filename')
     work, artifacts = args.work.resolve(), args.output.resolve()
-    output = artifacts / ('SunUEFI-Piano-' + version + '.zip')
+    prefix = 'SunUEFI-NP05J-' if device == 'np05j' else 'SunUEFI-Piano-'
+    output = artifacts / (prefix + version + '.zip')
     work.mkdir(parents=True, exist_ok=True)
     (work / '.incomplete').write_text('Android module build has not completed.\n')
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -148,7 +150,7 @@ def build(args):
     shutil.copy2(selector_dir / 'selector.bin', payload_dir / 'selector.bin')
     binary, native = repack.build(work / 'boot-repack', 'aarch64', args.cc, sysroot)
     repack.prototype_policy(binary, native, selector_dir, args.product.resolve(),
-                            payload_dir / 'app.bin', work / 'boot-repack')
+                            payload_dir / 'app.bin', work / 'boot-repack', device=device)
     policy_path = work / 'boot-repack/policy-prototype.json'
     policy = module.read_json(policy_path)
     descriptor = {'schema_version': 1, 'interface_version': 1, 'wrapper_version': 1,
@@ -212,9 +214,10 @@ def build(args):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument('--product', type=Path, default=ROOT / 'artifacts/product')
-    result.add_argument('--work', type=Path, default=ROOT / 'build/android-product-module')
-    result.add_argument('--output', type=Path, default=ROOT / 'artifacts/android')
+    result.add_argument('--device', choices=('piano', 'np05j'), default='piano')
+    result.add_argument('--product', type=Path)
+    result.add_argument('--work', type=Path)
+    result.add_argument('--output', type=Path)
     result.add_argument('--sysroot', type=Path, help='Existing ARM64 libc/GCC/uuid/blkid development sysroot')
     result.add_argument('--cc', help='Native tool compiler; defaults to clang targeting ARM64')
     result.add_argument('--suite', default='trixie')
@@ -225,8 +228,20 @@ def parser():
     return result
 
 
+def resolve_device_paths(arguments):
+    """เติมพาธเริ่มต้นของ product/work/output ตามอุปกรณ์ที่เลือก (piano หรือ np05j)"""
+    is_np05j = getattr(arguments, 'device', 'piano') == 'np05j'
+    if arguments.product is None:
+        arguments.product = ROOT / ('artifacts/product-np05j' if is_np05j else 'artifacts/product')
+    if arguments.work is None:
+        arguments.work = ROOT / ('build/android-product-module-np05j' if is_np05j else 'build/android-product-module')
+    if arguments.output is None:
+        arguments.output = ROOT / ('artifacts/android-np05j' if is_np05j else 'artifacts/android')
+    return arguments
+
+
 if __name__ == '__main__':
-    arguments = parser().parse_args()
+    arguments = resolve_device_paths(parser().parse_args())
     if arguments.jobs < 1:
         raise SystemExit('--jobs must be positive')
     try:

@@ -74,15 +74,20 @@ def checked(data, meta, label):
             type(meta.get('bytes')) is int and meta['bytes'] == len(data), label + ' hash/size mismatch')
 
 
-def product_payload(folder):
+def product_payload(folder, device=None):
     folder = Path(folder)
     require(not (folder / '.incomplete').exists(), 'Product bundle is incomplete')
     meta = read_json(folder / 'manifest.json')
     files = meta.get('files', {})
-    image = read_file(child(folder, 'PianoUEFI-product.img'))
-    fd = read_file(child(folder, 'PianoUEFI-product.fd'))
+    # ตรวจจับชื่ออิมเมจและ FD ตามอุปกรณ์ (รองรับทั้ง Piano และ NP05J)
+    if device is None:
+        device = 'np05j' if 'Np05jUEFI-product.img' in files else 'piano'
+    img_name = 'Np05jUEFI-product.img' if device == 'np05j' else 'PianoUEFI-product.img'
+    fd_name = 'Np05jUEFI-product.fd' if device == 'np05j' else 'PianoUEFI-product.fd'
+    image = read_file(child(folder, img_name))
+    fd = read_file(child(folder, fd_name))
     shim = read_file(child(folder, 'BootShim.bin'))
-    for name, data in (('PianoUEFI-product.img', image), ('PianoUEFI-product.fd', fd), ('BootShim.bin', shim)):
+    for name, data in ((img_name, image), (fd_name, fd), ('BootShim.bin', shim)):
         checked(data, files.get(name), name)
     require(len(image) >= 4096 and image[:8] == b'ANDROID!', 'Invalid product Android header')
     kernel_bytes, ramdisk_bytes = struct.unpack_from('<II', image, 8)
