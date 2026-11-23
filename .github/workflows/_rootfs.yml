@@ -1,4 +1,4 @@
-name: Distribution images from signed packages
+name: NP05J distribution images
 
 on:
   workflow_call:
@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   build:
+    name: NP05J ${{ matrix.target }}
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 300
     strategy:
@@ -37,10 +38,10 @@ jobs:
         with:
           operation: download
           name: builder
-      - name: Load the verified builder and fixed sources
+      - name: Load the verified builder and AudioReach macros
         run: |
           python3 tools/build/ci_container.py load
-          ./build.sh sources
+          ./build.sh sources --group devices
       - uses: ./.github/actions/build-input
         with:
           operation: download
@@ -49,90 +50,64 @@ jobs:
         with:
           operation: download
           name: kernel
-      - name: Download this run's shared device packages
+      - name: Download the base overlay packages for this distribution
         uses: ./.github/actions/build-input
         with:
           operation: download
-          name: devices
-      - name: Download the manifests from the completed publication
+          name: overlay-${{ env.SUNUEFI_OVERLAY_TARGET }}
+      - name: Download the Denial overlay packages when building Denial
+        if: endsWith(matrix.target, '-denial')
         uses: ./.github/actions/build-input
         with:
           operation: download
-          name: published-overlay-manifests
-      - name: Check this image's published manifest
-        run: |
-          jq -e --arg target "$SUNUEFI_OVERLAY_TARGET" \
-            'select(.target == $target and .schema_version == 1 and (.packages | length > 0))' \
-            "artifacts/packages/overlays/$SUNUEFI_OVERLAY_TARGET/manifest.json" >/dev/null
-          if [[ "$SUNUEFI_BUILD_TARGET" == *-denial ]]; then
-            jq -e --arg target "$SUNUEFI_BUILD_TARGET" \
-              'select(.target == $target and .schema_version == 1 and (.packages | length > 0))' \
-              "artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET/manifest.json" >/dev/null
-          fi
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: build/toolchains/*.tar.zst
-          key: llvm-arm64-${{ hashFiles('config/kernel-llvm.json', 'tools/desktop/prepare_kernel_llvm.py') }}
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: build/ccache
-          key: ccache-${{ runner.arch }}-${{ matrix.target }}-${{ github.sha }}
-          restore-keys: ccache-${{ runner.arch }}-${{ matrix.target }}-
-      - name: Assemble the image using the verified package generation
+          name: overlay-${{ matrix.target }}
+      - name: Assemble the NP05J rootfs, shared ESP and sparse images
         run: |
           set -o pipefail
-          mkdir -p build/logs build/ccache artifacts/downloads
+          mkdir -p build/logs artifacts/downloads
           docker run --rm --privileged -v "$PWD:/workspace" -w /workspace \
             -e SUNUEFI_BUILD_ENVIRONMENT_ID -e SUNUEFI_CACHE_WORKSPACE -e SUNUEFI_TOOLCHAIN_ROOT=/usr \
             -e SUNUEFI_BUILD_TARGET -e SUNUEFI_OVERLAY_TARGET \
-            -e CCACHE_DIR=/workspace/build/ccache -e CCACHE_MAXSIZE=3G \
-            -e CCACHE_BASEDIR=/workspace -e CCACHE_COMPILERCHECK=content \
             sunuefi-builder bash -euc '
-              git config --global --add safe.directory /workspace
-              git config --global --add safe.directory "/workspace/*"
-              python3 -m venv .venv
-              .venv/bin/pip install -r requirements-build.txt
-              . .venv/bin/activate
-              python3 tools/build/shared_products.py verify --kind firmware
-              python3 tools/build/shared_products.py verify --kind kernel
-              packages="artifacts/packages/overlays/$SUNUEFI_OVERLAY_TARGET/manifest.json"
-              denial=()
+              git config --global --add safe.directory "*"
+              python3 tools/build/shared_products.py verify --device np05j --kind firmware
+              python3 tools/build/shared_products.py verify --device np05j --kind kernel
+              overlay="artifacts/packages/overlays/$SUNUEFI_OVERLAY_TARGET"
+              extra=()
               if [[ "$SUNUEFI_BUILD_TARGET" == *-denial ]]; then
-                denial=(--denial-packages "artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET/manifest.json")
+                extra+=(--denial-dir "artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET")
               fi
               case "$SUNUEFI_BUILD_TARGET" in
-                steamos|nyarch-gnome|arch-denial)
-                  ./build.sh "$SUNUEFI_BUILD_TARGET-rootfs" --published-packages "$packages" "${denial[@]}"
-                  root="build/distros/$SUNUEFI_BUILD_TARGET-piano"
-                  ./build.sh package --rootfs "$root/rootfs" --rootfs-manifest "$root/manifest.json" \
-                    --initramfs "$root/initramfs/initramfs.cpio.gz" --root-size-mib 16384
-                  ;;
-                debian-gnome|debian-kde|debian-denial)
-                  ./build.sh release-rootfs --desktop "${SUNUEFI_BUILD_TARGET#debian-}" \
-                    --published-packages "$packages" "${denial[@]}"
-                  ./build.sh package --root-size-mib 8192
-                  ;;
+                steamos|nyarch-gnome|arch-denial) root_mib=16384 ;;
+                debian-gnome|debian-kde|debian-denial) root_mib=8192 ;;
               esac
-              python3 tools/package_sparse_images.py --bundle artifacts/release --output artifacts/fastboot-sparse
+              ./build.sh np05j-distro build \
+                --target "$SUNUEFI_BUILD_TARGET" \
+                --kernel artifacts/kernels/np05j \
+                --overlay-dir "$overlay" \
+                --output-bundle artifacts/release-np05j \
+                --output-sparse artifacts/fastboot-sparse-np05j \
+                --root-size-mib "$root_mib" \
+                --execute "${extra[@]}"
             ' 2>&1 | tee build/logs/ci-build.log
-      - name: Prepare the product downloads
+      - name: Prepare the NP05J product downloads
         run: |
           mkdir -p artifacts/downloads/esp artifacts/downloads/root
-          cp artifacts/fastboot-sparse/esp.img artifacts/downloads/esp/esp.sparse.img
-          cp artifacts/fastboot-sparse/root.ext4.img "artifacts/downloads/root/root-${SUNUEFI_BUILD_TARGET}.sparse.img"
-      - name: Shared sparse ESP
+          cp artifacts/fastboot-sparse-np05j/esp.img artifacts/downloads/esp/esp-np05j.sparse.img
+          cp artifacts/fastboot-sparse-np05j/root.ext4.img "artifacts/downloads/root/root-${SUNUEFI_BUILD_TARGET}-np05j.sparse.img"
+      - name: Shared NP05J sparse ESP
         if: matrix.target == inputs.shared_target
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: SunUEFI-ESP
+          name: SunUEFI-NP05J-ESP
           path: artifacts/downloads/esp/
           if-no-files-found: error
           retention-days: 7
           compression-level: 1
-      - name: Distribution sparse root
+      - name: NP05J distribution sparse root
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: SunUEFI-Root-${{ matrix.target }}
+          name: SunUEFI-NP05J-Root-${{ matrix.target }}
           path: artifacts/downloads/root/
           if-no-files-found: error
           retention-days: 7
@@ -144,19 +119,16 @@ jobs:
           name: build-logs-${{ matrix.target }}
           path: |
             build/logs/
-            build/distros/release.build.log
-            build/distros/*-piano/build.log
-            build/distros/*/manifest.json
-            build/distros/*/FAILED.json
-            build/distros/*/packages.tsv
-            build/distros/*/runtime/manifest.json
-            build/release/source-manifest.json
+            build/distros/*-np05j/build.log
+            build/distros/*-np05j/manifest.json
+            build/distros/*-np05j/FAILED.json
+            build/distros/*-np05j/packages.tsv
             artifacts/packages/overlays/${{ env.SUNUEFI_OVERLAY_TARGET }}/manifest.json
             artifacts/packages/overlays/${{ env.SUNUEFI_BUILD_TARGET }}/manifest.json
-            artifacts/kernels/release/manifest.json
-            artifacts/release/manifest.json
-            artifacts/fastboot-sparse/manifest.json
-            artifacts/fastboot-sparse/SHA256SUMS
+            artifacts/kernels/np05j/manifest.json
+            artifacts/release-np05j/manifest.json
+            artifacts/fastboot-sparse-np05j/manifest.json
+            artifacts/fastboot-sparse-np05j/SHA256SUMS
           if-no-files-found: ignore
           retention-days: 7
           compression-level: 0

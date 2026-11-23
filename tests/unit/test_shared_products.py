@@ -190,7 +190,36 @@ class SharedProductsTests(unittest.TestCase):
         self.assertEqual(ci_build_targets.overlay_targets(ci_build_targets.DISTROS),
                          ['debian-gnome', 'nyarch-gnome', 'steamos', 'debian-denial', 'arch-denial'])
         self.assertEqual(ci_build_targets.overlay_targets(['debian-kde']), ['debian-gnome'])
+        self.assertEqual(ci_build_targets.overlay_targets(['nyarch-gnome']), ['nyarch-gnome'])
+        self.assertEqual(ci_build_targets.overlay_targets(['steamos']), ['steamos'])
         self.assertEqual(ci_build_targets.overlay_targets(['linux', 'uefi']), [])
+
+    def test_np05j_shared_products_keys_and_outputs(self):
+        self.git('init', '-q')
+        for rel in ('config/np05j-product.json', 'config/release.json',
+                    'tools/build/np05j_kernel.py', 'vendor/np05j/manifest.json'):
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if rel == 'config/release.json':
+                path.write_bytes((ROOT / rel).read_bytes())
+            else:
+                path.write_text('np05j\n')
+        self.git('add', '.')
+        with patch.object(shared, 'environment_identity', return_value={'container_image': 'sha256:np05j'}):
+            fw_record, fw_key = shared.identity('firmware', self.root, device='np05j')
+            k_record, k_key = shared.identity('kernel', self.root, device='np05j')
+            self.assertEqual(fw_record.get('device'), 'np05j')
+            self.assertEqual(k_record.get('device'), 'np05j')
+            self.assertNotEqual(fw_key, shared.identity('firmware', self.root, device='piano')[1])
+            self.assertNotEqual(k_key, shared.identity('kernel', self.root, device='piano')[1])
+        self.assertEqual(
+            [p.relative_to(self.root).as_posix() for p in shared.output_paths('firmware', self.root, device='np05j')],
+            ['artifacts/product-np05j', 'artifacts/android-np05j', 'artifacts/simpleinit/product-np05j'],
+        )
+        self.assertEqual(
+            [p.relative_to(self.root).as_posix() for p in shared.output_paths('kernel', self.root, device='np05j')],
+            ['artifacts/kernels/np05j'],
+        )
 
 
 if __name__ == '__main__':

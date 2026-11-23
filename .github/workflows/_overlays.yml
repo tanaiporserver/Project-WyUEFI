@@ -1,4 +1,4 @@
-name: Native distribution overlay packages
+name: Native NP05J distribution overlay packages
 
 on:
   workflow_call:
@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   packages:
+    name: NP05J overlay (${{ matrix.target }})
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 300
     strategy:
@@ -34,12 +35,8 @@ jobs:
         with:
           operation: download
           name: builder
-      - name: Load the verified builder and fixed sources
-        run: |
-          python3 tools/build/ci_container.py load
-          if [[ "$SUNUEFI_BUILD_TARGET" != *-denial ]]; then
-            ./build.sh sources
-          fi
+      - name: Load the verified builder
+        run: python3 tools/build/ci_container.py load
       - if: endsWith(matrix.target, '-denial')
         uses: ./.github/actions/build-input
         with:
@@ -51,34 +48,24 @@ jobs:
         with:
           path: build/source-cache/denial
           key: denial-release-${{ matrix.target }}-${{ hashFiles('config/denial.json', 'config/keys/denial-repo-key.asc') }}
-      - if: ${{ !endsWith(matrix.target, '-denial') }}
-        uses: ./.github/actions/build-input
-        with:
-          operation: download
-          name: kernel
-      - if: ${{ !endsWith(matrix.target, '-denial') }}
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: build/toolchains/*.tar.zst
-          key: llvm-arm64-${{ hashFiles('config/kernel-llvm.json', 'tools/desktop/prepare_kernel_llvm.py') }}
       - name: Restore the overlay compiler cache
         id: overlay-ccache
         if: ${{ !endsWith(matrix.target, '-denial') }}
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: build/ccache
-          key: ccache-${{ runner.arch }}-overlays-${{ matrix.target }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ccache-${{ runner.arch }}-np05j-overlays-${{ matrix.target }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ccache-${{ runner.arch }}-overlays-${{ matrix.target }}-${{ github.sha }}-
-            ccache-${{ runner.arch }}-overlays-${{ matrix.target }}-
-      - name: Restore the last completed overlay package set
+            ccache-${{ runner.arch }}-np05j-overlays-${{ matrix.target }}-${{ github.sha }}-
+            ccache-${{ runner.arch }}-np05j-overlays-${{ matrix.target }}-
+      - name: Restore the last completed NP05J overlay package set
         if: ${{ !endsWith(matrix.target, '-denial') }}
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          path: build/overlay-cache/${{ matrix.target }}
-          key: overlay-inputs-v1-${{ matrix.target }}-${{ inputs.image_id }}-run-${{ github.run_id }}
-          restore-keys: overlay-inputs-v1-${{ matrix.target }}-${{ inputs.image_id }}-
-      - name: Build and seal the native overlay packages
+          path: build/overlay-cache/np05j-${{ matrix.target }}
+          key: overlay-np05j-v1-${{ matrix.target }}-${{ inputs.image_id }}-run-${{ github.run_id }}
+          restore-keys: overlay-np05j-v1-${{ matrix.target }}-${{ inputs.image_id }}-
+      - name: Build and seal the native NP05J overlay packages
         id: build
         run: |
           set -o pipefail
@@ -91,32 +78,25 @@ jobs:
             -e CCACHE_DIR=/workspace/build/ccache -e CCACHE_MAXSIZE=3G \
             -e CCACHE_BASEDIR=/workspace -e CCACHE_COMPILERCHECK=content \
             sunuefi-builder bash -euc '
-              git config --global --add safe.directory /workspace
-              git config --global --add safe.directory "/workspace/*"
+              git config --global --add safe.directory "*"
               output="artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET"
               if [[ "$SUNUEFI_BUILD_TARGET" == *-denial ]]; then
                 exec ./build.sh denial --overlay-target "$SUNUEFI_BUILD_TARGET" --package-output "$output"
               fi
-              python3 -m venv .venv
-              .venv/bin/pip install -r requirements-build.txt
-              . .venv/bin/activate
-              python3 tools/build/shared_products.py verify --kind kernel
-              case "$SUNUEFI_BUILD_TARGET" in
-                debian-gnome) ./build.sh release-rootfs --desktop gnome --packages-only "$output" ;;
-                nyarch-gnome|steamos) ./build.sh "$SUNUEFI_BUILD_TARGET-rootfs" --packages-only "$output" ;;
-              esac
+              exec ./build.sh np05j-distro overlays --target "$SUNUEFI_BUILD_TARGET" --output "$output"
             ' 2>&1 | tee build/logs/overlay-packages.log
-      - name: Verify the package set and hashes
+      - name: Verify the NP05J package set and hashes
         run: |
           docker run --rm --network none -v "$PWD:/workspace:ro" -w /workspace \
-            sunuefi-builder ./build.sh repo products --verify-target "$SUNUEFI_BUILD_TARGET" \
-              --output "artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET"
+            sunuefi-builder ./build.sh np05j-distro verify-overlay \
+              --target "$SUNUEFI_BUILD_TARGET" \
+              --directory "artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET"
       - id: completed
-        name: Stage the verified overlay set for reuse across runs
+        name: Stage the verified NP05J overlay set for reuse across runs
         if: ${{ !endsWith(matrix.target, '-denial') }}
         run: |
           packages="artifacts/packages/overlays/$SUNUEFI_BUILD_TARGET"
-          cache="build/overlay-cache/$SUNUEFI_BUILD_TARGET"
+          cache="build/overlay-cache/np05j-$SUNUEFI_BUILD_TARGET"
           mkdir -p build/overlay-cache
           if [ -e "$cache" ] || [ -L "$cache" ]; then
             mv -T -- "$cache" "$cache.previous"
@@ -124,12 +104,12 @@ jobs:
           cp -R -- "$packages" "$cache"
           read -r digest _ < <(sha256sum "$cache/manifest.json")
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
-      - name: Cache the verified overlay package set
+      - name: Cache the verified NP05J overlay package set
         if: steps.completed.outputs.digest != ''
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          path: build/overlay-cache/${{ matrix.target }}
-          key: overlay-inputs-v1-${{ matrix.target }}-${{ inputs.image_id }}-${{ steps.completed.outputs.digest }}
+          path: build/overlay-cache/np05j-${{ matrix.target }}
+          key: overlay-np05j-v1-${{ matrix.target }}-${{ inputs.image_id }}-${{ steps.completed.outputs.digest }}
       - name: Pass the verified overlay packages to this run
         uses: ./.github/actions/build-input
         with:
@@ -143,9 +123,8 @@ jobs:
           name: build-logs-overlays-${{ matrix.target }}
           path: |
             build/logs/
-            build/distros/overlays/*.build.log
-            build/distros/overlays/${{ matrix.target }}/packages/*/build.log
-            build/distros/overlays/${{ matrix.target }}/packages/*/SOURCE.json
+            build/distros/overlays/np05j-${{ matrix.target }}/mesa/build.log
+            build/distros/overlays/np05j-${{ matrix.target }}/packages/*/build.log
             artifacts/packages/overlays/${{ matrix.target }}/manifest.json
           if-no-files-found: ignore
           retention-days: 7

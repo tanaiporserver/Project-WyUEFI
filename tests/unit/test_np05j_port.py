@@ -1,4 +1,5 @@
 """ชุดทดสอบโฮสต์แบบ Portable สำหรับพอร์ต nubia NP05J (REDMAGIC Astra)"""
+import argparse
 import ast
 import json
 from pathlib import Path
@@ -428,6 +429,117 @@ class Np05jPortTests(unittest.TestCase):
         self.assertIn('L"\\\\.bt_nv.bin"', bt_c)
         fw_load = (ROOT / 'linux/userspace/np05j/np05j-fw-load').read_text()
         self.assertIn('/sys/bus/pci/devices/0000:01:00.0/net', fw_load)
+
+    def test_np05j_ci_workflows_and_distro_pipeline(self):
+        import build_android_product_module
+        from build import np05j_distro
+
+        # 1. ตรวจสอบตัวเลือก build_android_product_module สำหรับ --device np05j
+        args = build_android_product_module.resolve_device_paths(
+            build_android_product_module.parser().parse_args(['--device', 'np05j'])
+        )
+        self.assertEqual(args.product, ROOT / 'artifacts/product-np05j')
+        self.assertEqual(args.work, ROOT / 'build/android-product-module-np05j')
+        self.assertEqual(args.output, ROOT / 'artifacts/android-np05j')
+
+        # 2. ตรวจสอบค่าจอ KDE 2400x1504 @ 144Hz, SteamOS device TOML, init script และ desktop.frag
+        kwin_cfg = json.loads(np05j_distro.np05j_kwin_output_config())
+        outputs = next(row['data'] for row in kwin_cfg if row['name'] == 'outputs')
+        self.assertEqual(outputs[0]['mode'], {'width': 2400, 'height': 1504, 'refreshRate': 144000})
+        self.assertEqual(outputs[0]['scale'], 2)
+        self.assertIn('dt.compatible = "nubia,np05j"', np05j_distro.NP05J_STEAMOS_DEVICE_TOML)
+        self.assertIn('PARTNAME=$partname', np05j_distro.NP05J_INIT_SCRIPT)
+        self.assertIn('LABEL=PIANOROOT', np05j_distro.NP05J_INIT_SCRIPT)
+        self.assertIn('TYPE -o value "$rootdev")" = ext4', np05j_distro.NP05J_INIT_SCRIPT)
+
+        desktop_frag = (ROOT / 'linux/configs/np05j/desktop.frag').read_text()
+        for opt in (
+            'CONFIG_BINFMT_MISC=y',
+            'CONFIG_EXFAT_FS=y',
+            'CONFIG_NTFS3_FS=y',
+            'CONFIG_SECURITY_LANDLOCK=y',
+            'CONFIG_INPUT_JOYSTICK=y',
+        ):
+            self.assertIn(opt, desktop_frag)
+
+        # 3. ทดสอบ verify_overlay_directory และ build --plan สำหรับครบทั้ง 6 ดิสโทร
+        with tempfile.TemporaryDirectory(prefix='np05j-distro-test-') as tmpdir:
+            tmp = Path(tmpdir)
+            kdir = tmp / 'kernel'
+            kdir.mkdir()
+            (kdir / 'manifest.json').write_text(json.dumps({
+                'device': 'np05j',
+                'kernel_release': '7.3.3-np05j',
+                'status': 'HOST_BUILT_NP05J_CANDIDATE_NOT_HARDWARE_VERIFIED',
+            }))
+            for ov_target, fmt in (('debian-gnome', 'debian'), ('nyarch-gnome', 'pacman'), ('steamos', 'pacman')):
+                ov_dir = tmp / ov_target
+                ov_dir.mkdir()
+                pkg = ov_dir / ('mesa_27.0_arm64.deb' if fmt == 'debian' else 'mesa-27.0-aarch64.pkg.tar.zst')
+                pkg.write_bytes(b'dummy-package')
+                (ov_dir / 'manifest.json').write_text(json.dumps({
+                    'schema_version': 1,
+                    'device': 'np05j',
+                    'target': ov_target,
+                    'format': fmt,
+                    'packages': {
+                        pkg.name: {
+                            'name': 'mesa',
+                            'version': '27.0',
+                            'architecture': 'arm64' if fmt == 'debian' else 'aarch64',
+                            'sha256': np05j_vendor_inputs.sha(pkg.read_bytes()),
+                            'component': 'mesa',
+                        },
+                    },
+                }))
+                verified = np05j_distro.verify_overlay_directory(ov_dir, ov_target)
+                self.assertEqual(verified['target'], ov_target)
+
+            for target, ov in (
+                ('debian-gnome', 'debian-gnome'),
+                ('debian-kde', 'debian-gnome'),
+                ('nyarch-gnome', 'nyarch-gnome'),
+                ('steamos', 'steamos'),
+            ):
+                plan = np05j_distro.build_distro_image(argparse.Namespace(
+                    target=target,
+                    kernel=kdir,
+                    overlay_dir=tmp / ov,
+                    denial_dir=None,
+                    output_rootfs=tmp / f'rootfs-{target}',
+                    output_bundle=tmp / f'bundle-{target}',
+                    output_sparse=tmp / f'sparse-{target}',
+                    esp_size_mib=512,
+                    root_size_mib=8192,
+                    execute=False,
+                ))
+                self.assertEqual(plan['status'], 'PLAN_ONLY')
+                self.assertEqual(plan['device'], 'np05j')
+                self.assertEqual(plan['target'], target)
+
+        # 4. ตรวจสอบ GitHub Actions workflows สำหรับ NP05J ทั้ง 8 เป้าหมาย
+        wf_dir = ROOT / '.github/workflows'
+        self.assertFalse((wf_dir / '_publish.yml').exists())
+        build_yml = (wf_dir / 'build-products.yml').read_text()
+        shared_yml = (wf_dir / '_shared.yml').read_text()
+        overlays_yml = (wf_dir / '_overlays.yml').read_text()
+        rootfs_yml = (wf_dir / '_rootfs.yml').read_text()
+        for target in ('all', 'uefi', 'linux', 'debian-gnome', 'debian-kde',
+                       'debian-denial', 'nyarch-gnome', 'arch-denial', 'steamos'):
+            self.assertIn(target, build_yml)
+        self.assertIn('vendor/np05j/**', build_yml)
+        self.assertIn('vendor/np05j-firmware/**', build_yml)
+        self.assertNotIn('_publish.yml', build_yml)
+        self.assertNotIn('SUNUEFI_REPO_GPG_KEY', build_yml)
+        self.assertIn('--device np05j', shared_yml)
+        self.assertIn('SunUEFI-NP05J-Module', shared_yml)
+        self.assertIn('SunUEFI-NP05J-UEFI-Fastboot', shared_yml)
+        self.assertIn('SunUEFI-NP05J-Linux', shared_yml)
+        self.assertIn('np05j-distro overlays', overlays_yml)
+        self.assertIn('np05j-distro verify-overlay', overlays_yml)
+        self.assertIn('np05j-distro build', rootfs_yml)
+        self.assertIn('SunUEFI-NP05J-ESP', rootfs_yml)
+        self.assertIn('SunUEFI-NP05J-Root-', rootfs_yml)
 
     def test_native_np05j_port_c_suite(self):
         res = subprocess.run(
